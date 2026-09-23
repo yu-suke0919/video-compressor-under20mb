@@ -38,7 +38,12 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
+  var APP_VERSION = '2026-09-23a';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var DEBUG_NO_RERENDER = /[?&]rerender=off\b/.test(location.search);   // 原因の切り分け用: Safari向けの回避策を切る
   var CANCELLED = 'cancelled';
+  var STALLED = 'stalled';
+  var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、別の方式に切り替える
+  var MAX_STALL_RETRIES = 2;             // 高速モードで別のエンコード設定を試す回数
 
   // 出力に使うコーデック（優先順）。高速モードは Mediabunny の名前、互換モードは WebCodecs のコーデック文字列
   var FAST_VIDEO_CODECS = ['avc', 'hevc'];
@@ -70,7 +75,8 @@
     runBtn: $('runBtn'), progressWrap: $('progressWrap'), progressBar: $('progressBar'),
     phase: $('phase'), pct: $('pct'),
     outVideo: $('outVideo'), outEmpty: $('outEmpty'), outInfo: $('outInfo'), outWarn: $('outWarn'),
-    shareBtn: $('shareBtn'), saveBtn: $('saveBtn')
+    shareBtn: $('shareBtn'), saveBtn: $('saveBtn'),
+    diagBox: $('diagBox'), diagOut: $('diagOut'), diagCopy: $('diagCopy'), diagStatus: $('diagStatus')
   };
 
   // ---------------------------------------------------------------- 状態
@@ -84,6 +90,7 @@
     running: false,
     busy: false,         // 読み込み・解析中
     job: null,           // 実行中の圧縮1回ぶん（キャンセルは実行ごとに管理する）
+    attemptJob: null,    // その中の1回の処理（進まなくなったらこれだけ止める）
     srcUrl: null,
     out: null,           // { blob, name, type, original, url }
     compatAudio: null,   // 互換モードで再圧縮するときに音声を使い回す
@@ -124,6 +131,15 @@
     job.aborted.catch(function () { /* noop */ });
     return job;
   }
+  // 実行を止める。後片付けを始め（止まりきるのは待たない）、aborted をすぐ失敗させる
+  function stopJob(job, reason) {
+    if (!job || job.cancelled) return;
+    job.cancelled = true;
+    job.hooks.forEach(function (hook) {
+      try { Promise.resolve(hook()).catch(function () { /* noop */ }); } catch (e) { /* noop */ }
+    });
+    job.abort(new Error(reason));
+  }
   function throwIfCancelled(job) { if (job && job.cancelled) throw new Error(CANCELLED); }
   function isCancel(job, err) { return !!(job && job.cancelled) || !!(err && err.message === CANCELLED); }
   function setAlert(el, lines, danger) {
@@ -135,6 +151,21 @@
     });
     show(el, lines.length > 0);
   }
+  // 診断情報（うまく動かないときに、どこで止まったかを伝えてもらうための記録。動画の中身やファイル名は含めない）
+  var diag = { t0: Date.now(), lines: [] };
+  function log(msg) {
+    var line = ((Date.now() - diag.t0) / 1000).toFixed(1) + 's ' + msg;
+    diag.lines.push(line);
+    if (diag.lines.length > 400) diag.lines.splice(2, 1);   // 先頭（端末情報）は残す
+    if (els.diagOut) els.diagOut.value = diag.lines.join('\n');
+    try { console.log('[診断] ' + msg); } catch (e) { /* noop */ }
+  }
+  function errText(err) { return err ? ((err.name ? err.name + ': ' : '') + (err.message || String(err))) : String(err); }
+  function showDiag(open) {
+    show(els.diagBox, true);
+    if (open) els.diagBox.open = true;
+  }
+
   // 進捗は1フレームに1回だけ描く。数字とゲージを同じタイミングで更新し、
   // 処理中に頻繁に呼ばれてもゲージが遅れないよう、CSSのアニメーションは使わない
   var progress = { value: 0, label: null, raf: 0 };
@@ -256,8 +287,13 @@
       if (!vt) throw new Error('映像トラックが見つかりませんでした。');
       meta.width = vt.displayWidth;
       meta.height = vt.displayHeight;
-      return Promise.all([input.computeDuration(), vt.computePacketStats(120), vt.canDecode(), input.getPrimaryAudioTrack()]);
+      meta.videoCodec = vt.codec;
+      return Promise.all([input.computeDuration(), vt.computePacketStats(120), vt.canDecode(), input.getPrimaryAudioTrack(),
+        vt.getCodecParameterString().catch(function () { return null; }),
+        vt.hasHighDynamicRange().catch(function () { return null; })]);
     }).then(function (r) {
+      meta.codecString = r[4];
+      meta.hdr = r[5];
       meta.duration = r[0];
       meta.fps = snapFps(r[1].averagePacketRate);
       meta.fpsMeasured = !!meta.fps;
@@ -563,14 +599,18 @@
   }
 
   // ---------------------------------------------------------------- 高速モード（Mediabunny Conversion）
-  function pickFastEncoding(plan) {
+  function encKey(c) { return c.codec + '/' + c.hw + '/' + c.bitrateMode; }
+  function pickFastEncoding(plan, avoid) {
     // 既定は、指定したビットレートに素直に従う固定ビットレート（CBR）を優先する。
     // 可変ビットレート（VBR）を選んだときは VBR を優先し、使えなければ CBR にする
     var modes = plan.vbr ? ['variable', 'constant'] : ['constant', 'variable'];
     var cands = [];
     FAST_VIDEO_CODECS.forEach(function (codec) {
       ['prefer-hardware', 'no-preference'].forEach(function (hw) {
-        modes.forEach(function (bm) { cands.push({ codec: codec, hw: hw, bitrateMode: bm }); });
+        modes.forEach(function (bm) {
+          var c = { codec: codec, hw: hw, bitrateMode: bm };
+          if (!avoid || avoid.indexOf(encKey(c)) < 0) cands.push(c);
+        });
       });
     });
     return (function next(i) {
@@ -580,25 +620,34 @@
         width: plan.width, height: plan.height, frameRate: plan.outFps,
         quality: new M.Quality({ bitrate: plan.videoBitrate, bitrateMode: c.bitrateMode }),
         hardwareAcceleration: c.hw
-      }).then(function (ok) { return ok ? c : next(i + 1); }, function () { return next(i + 1); });
+      }).then(function (ok) {
+        log('エンコード設定 ' + encKey(c) + ' → ' + (ok ? '使える' : '使えない'));
+        return ok ? c : next(i + 1);
+      }, function (e) { log('エンコード設定 ' + encKey(c) + ' → 確認に失敗 ' + errText(e)); return next(i + 1); });
     })(0);
   }
 
-  function convertFast(plan, onProgress, job) {
+  function convertFast(plan, onProgress, job, avoid) {
     var input = new M.Input({ source: new M.BlobSource(state.file), formats: INPUT_FORMATS });
     var output = new M.Output({ format: new M.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new M.BufferTarget() });
     var conversion = null, chosen = null;
     function dispose() { try { input.dispose(); } catch (e) { /* noop */ } }
+    job.hooks.push(dispose);   // 準備中に止めた場合も、ファイルの読み込みを閉じる
 
-    return pickFastEncoding(plan).then(function (enc) {
+    return pickFastEncoding(plan, avoid).then(function (enc) {
       if (!enc) throw new Error('この端末では動画のエンコード（H.264）に対応していません。');
-      chosen = enc;
+      chosen = job.enc = enc;
       var video = {
         codec: enc.codec, width: plan.width, height: plan.height, fit: 'fill',
         quality: new M.Quality({ bitrate: plan.videoBitrate, bitrateMode: enc.bitrateMode }),
         hardwareAcceleration: enc.hw, keyFrameInterval: KEYFRAME_INTERVAL,
         forceTranscode: true, allowTransformationMetadata: false
       };
+      // Safari では画面全体の切り抜きを指定して、元と同じ解像度でも必ず描き直してからエンコードさせる。
+      // 描き直さないとデコードしたフレームをそのまま渡す経路になり、iPhoneで0%のまま止まることがあるため
+      // （原因の切り分け用に、URLの rerender=off で無効にできる）
+      if (isWebKit() && !DEBUG_NO_RERENDER) video.crop = { left: 0, top: 0, width: state.meta.width, height: state.meta.height };
+      log('描き直し ' + (video.crop ? 'あり（Safari向けの回避策）' : 'なし'));
       if (plan.fpsChanged) video.frameRate = plan.outFps;
       var audio;
       if (plan.audio.mode === 'aac') {
@@ -614,6 +663,9 @@
     }).then(function (conv) {
       conversion = conv;
       var discarded = conv.discardedTracks || [];
+      log('変換の準備（' + encKey(chosen) + '） isValid=' + conv.isValid + (discarded.length ? ' 除外=' + discarded.map(function (d) {
+        return (d.track && d.track.type) + ':' + d.reason;
+      }).join(',') : ''));
       var videoLost = discarded.filter(function (d) { return d.track && d.track.type === 'video'; })[0];
       if (!conv.isValid || videoLost) {
         throw new Error('高速モードで扱えない動画です（' + (videoLost ? videoLost.reason : 'invalid') + '）');
@@ -624,6 +676,7 @@
       job.hooks.push(function () { var stop = conv.cancel(); dispose(); return stop; });
       conv.onProgress = function (p) { onProgress(p); };
       throwIfCancelled(job);
+      log('変換を開始');
       return conv.execute().then(function () {
         return { blob: new Blob([output.target.buffer], { type: 'video/mp4' }), audioDropped: audioLost, frames: null,
           rateMode: chosen.bitrateMode };
@@ -664,9 +717,11 @@
       return Promise.resolve()
         .then(function () { return VideoEncoder.isConfigSupported(c.config); })
         .then(function (res) {
+          log('互換エンコード設定 ' + c.config.codec + '/' + c.config.hardwareAcceleration + '/' + (c.config.bitrateMode || '既定') +
+            ' → ' + ((res && res.supported) ? '使える' : '使えない'));
           return (res && res.supported) ? { config: res.config || c.config, mb: c.mb } : next(i + 1);
         })
-        .catch(function () { return next(i + 1); });
+        .catch(function (e) { log('互換エンコード設定の確認に失敗 ' + errText(e)); return next(i + 1); });
     })(0);
   }
 
@@ -953,23 +1008,52 @@
     var started = Date.now();
 
     var job = state.job = newJob();
+    var avoid = [];          // 進まなくなったエンコード設定（次は使わない）
+    var stallRetries = 0;
     state.running = true;
     setRunningUi(true);
     requestWakeLock();
+    showDiag(false);
+    log('圧縮開始 ' + describePlan(plan) + ' engine=' + engine);
 
-    // prevSize: 前回の圧縮結果のサイズ（再圧縮のときに表示する）
-    function attempt(index, prevSize) {
-      var label = index === 0 ? (engine === 'fast' ? '圧縮中' : '圧縮中（互換モード：再生しながら処理）')
-        : '圧縮結果が' + (prevSize / MB).toFixed(2) + 'MBで目標超過→再圧縮中（' + (index + 1) + '回目）';
+    // prevSize: 前回の圧縮結果のサイズ（再圧縮のときに表示する）。note: 進捗の欄に出す補足
+    function attempt(index, prevSize, note) {
+      var label = note || (index === 0 ? (engine === 'fast' ? '圧縮中' : '圧縮中（互換モード：再生しながら処理）')
+        : '圧縮結果が' + (prevSize / MB).toFixed(2) + 'MBで目標超過→再圧縮中（' + (index + 1) + '回目）');
       setProgress(0, label);
+      // 1回ぶんの処理（進まなくなったらこれだけ止めて、別の方式でやり直す）
+      var aj = state.attemptJob = newJob();
+      var t0 = Date.now(), lastVal = -1, idleMs = 0, lastTick = Date.now(), nextLog = 0;
       // キャンセル後に古い処理から届く進捗は無視する
-      var onProgress = function (p) { if (!job.cancelled) setProgress(p, label); };
-      var task = engine === 'fast' ? convertFast(plan, onProgress, job) : convertCompat(plan, onProgress, job);
+      var onProgress = function (p) {
+        if (job.cancelled || aj.cancelled) return;
+        if (p > lastVal + 0.0005) { lastVal = p; idleMs = 0; }
+        if (p >= nextLog) {
+          log('進捗 ' + Math.round(p * 100) + '%（' + ((Date.now() - t0) / 1000).toFixed(1) + '秒）');
+          nextLog = Math.floor(p * 10 + 1) / 10;
+        }
+        setProgress(p, label);
+      };
+      // 画面を表示しているのに進捗が止まったままなら、止まったとみなす（裏に回っていた時間は数えない）
+      var watchdog = setInterval(function () {
+        var now = Date.now(), dt = now - lastTick;
+        lastTick = now;
+        if (document.visibilityState !== 'visible' || dt > 5000) return;
+        idleMs += dt;
+        if (idleMs >= STALL_MS) {
+          clearInterval(watchdog);
+          log('進捗が' + Math.round(STALL_MS / 1000) + '秒止まったため中断（' + Math.round(Math.max(0, lastVal) * 100) + '%）');
+          stopJob(aj, STALLED);
+        }
+      }, 1000);
+      var task = engine === 'fast' ? convertFast(plan, onProgress, aj, avoid) : convertCompat(plan, onProgress, aj);
       task.catch(function () { /* 競争に負けた側の失敗は無視する */ });
 
       // キャンセルしたら、ライブラリ側が止まりきるのを待たずにすぐ抜ける
-      return Promise.race([task, job.aborted]).then(function (res) {
+      return Promise.race([task, job.aborted, aj.aborted]).then(function (res) {
+        clearInterval(watchdog);
         throwIfCancelled(job);
+        log('完了 ' + fmtBytes(res.blob.size) + '（' + ((Date.now() - t0) / 1000).toFixed(1) + '秒）');
         if (res.audioDropped && plan.audio.mode !== 'none') {
           plan.audio = { mode: 'none', bps: 0, label: 'なし', note: null };
           plan.audioBitrate = 0;
@@ -988,15 +1072,26 @@
         res.attempts = index + 1;
         return res;
       }, function (err) {
-        if (isCancel(job, err)) throw new Error(CANCELLED);
+        clearInterval(watchdog);
+        if (job.cancelled || (!aj.cancelled && isCancel(null, err))) throw new Error(CANCELLED);
+        var stalled = aj.cancelled;
+        if (!stalled) log('失敗（' + engine + '）' + errText(err));
+        // 高速モードで進まなくなったら、別のエンコード設定で同じ処理をやり直す
+        if (stalled && engine === 'fast' && aj.enc && stallRetries < MAX_STALL_RETRIES) {
+          stallRetries++;
+          avoid.push(encKey(aj.enc));
+          return attempt(index, prevSize, '処理が進まないため、別の設定でやり直し中（' + (stallRetries + 1) + '回目）');
+        }
         // 高速モードで扱えなかったら、互換モードでやり直す
-        if (engine === 'fast' && index === 0 && state.caps.compat) {
+        if (engine === 'fast' && (index === 0 || stalled) && state.caps.compat) {
           console.warn('高速モードに失敗したため互換モードに切り替えます:', err);
+          log('互換モードに切り替え');
           engine = 'compat';
           plan = makePlan(state.meta, { start: plan.trimStart, end: plan.trimEnd }, planSettings(plan),
             audioStrategy(state.meta, readSettings().audio, 'compat'), state.file.size);
-          return attempt(0);
+          return attempt(0, 0, stalled ? '処理が進まないため、互換モードでやり直し中' : null);
         }
+        if (stalled) throw new Error('圧縮が進まなくなりました。画面を表示したまま、もう一度お試しください。');
         throw err;
       });
     }
@@ -1007,10 +1102,19 @@
       showResult(res, plan, engine, (Date.now() - started) / 1000);
     }, function (err) {
       finishRun();
-      if (isCancel(job, err)) return;
+      if (isCancel(job, err)) { log('キャンセル'); return; }
       console.error(err);
-      setAlert(els.outWarn, ['エラー: ' + ((err && err.message) || String(err))], true);
+      log('エラーで終了 ' + errText(err));
+      setAlert(els.outWarn, ['エラー: ' + ((err && err.message) || String(err)),
+        'うまくいかないときは、画面のいちばん下の「診断情報」をコピーして作成者に伝えてください。'], true);
+      showDiag(true);
     });
+  }
+
+  function describePlan(plan) {
+    return plan.res + 'p ' + plan.width + 'x' + plan.height + ' mode=' + plan.mode + ' ' + Math.round(plan.videoBitrate / 1000) + 'kbps' +
+      ' fps=' + plan.srcFps + '→' + plan.outFps + ' vbr=' + (plan.vbr ? 'on' : 'off') + ' audio=' + plan.audio.mode +
+      ' trim=' + plan.trimStart.toFixed(1) + '-' + plan.trimEnd.toFixed(1) + 's';
   }
 
   // 計画を作り直すときに、元の計画と同じ設定を渡す
@@ -1024,6 +1128,7 @@
   function finishRun() {
     state.running = false;
     state.job = null;
+    state.attemptJob = null;
     releaseWakeLock();
     setRunningUi(false);
     refresh();
@@ -1048,14 +1153,11 @@
   function cancelRun() {
     var job = state.job;
     if (!job || job.cancelled) return;
-    job.cancelled = true;
     setPhase('キャンセルしています…');
     // 後片付けを始め（止まりきるのは待たない）、実行はすぐに終わらせる。
     // Android などでエンコーダが止まりきらなくても、画面が固まらないようにするため
-    job.hooks.forEach(function (hook) {
-      try { Promise.resolve(hook()).catch(function () { /* noop */ }); } catch (e) { /* noop */ }
-    });
-    job.abort(new Error(CANCELLED));
+    stopJob(state.attemptJob, CANCELLED);
+    stopJob(job, CANCELLED);
   }
 
   // ---------------------------------------------------------------- 結果
@@ -1172,12 +1274,17 @@
     els.srcInfo.textContent = '読み込み中…';
     refresh();
 
+    log('動画を選択 ' + ((file.name || '').split('.').pop() || '?') + ' ' + (file.type || '種類不明') + ' ' + fmtBytes(file.size));
     loadMetaFast(file).then(function (meta) {
+      log('解析（高速） ' + meta.width + 'x' + meta.height + ' ' + meta.fps + 'fps ' + (meta.duration || 0).toFixed(1) + 's codec=' +
+        (meta.codecString || meta.videoCodec) + ' hdr=' + meta.hdr + ' decode=' + meta.canDecode +
+        ' audio=' + (meta.audio ? meta.audio.codec + '/' + Math.round(meta.audio.bitrate / 1000) + 'kbps' : 'なし'));
       if (!meta.canDecode) throw new Error('decode');
       state.engine = 'fast';
       return meta;
     }).catch(function (err) {
       console.warn('高速モードで読み込めないため互換モードを使います:', err);
+      log('高速モードで読み込めない ' + errText(err));
       if (!state.caps.compat) {
         throw new Error('この動画は読み込めませんでした（この端末では対応していない形式の可能性があります）。');
       }
@@ -1191,6 +1298,8 @@
       els.srcInfo.textContent = meta.width + '×' + meta.height + '・' +
         (meta.fps ? fmtFps(meta.fps) : 'fps不明') + '・' + fmtDuration(meta.duration) + '・' + fmtBytes(file.size);
     }).catch(function (err) {
+      log('読み込みに失敗 ' + errText(err));
+      showDiag(false);
       state.file = null;
       els.srcInfo.textContent = '';
       setAlert(els.planWarn, [(err && err.message) || String(err)], true);
@@ -1256,6 +1365,11 @@
   });
 
   // ---------------------------------------------------------------- iOS向けの表示
+  // Safari（iOSではどのブラウザも中身はSafari）
+  function isWebKit() {
+    var ua = navigator.userAgent || '';
+    return isIOS() || (/AppleWebKit/.test(ua) && !/Chrome|Chromium|Edg|OPR|Android/.test(ua));
+  }
   // iPhone / iPad（iPadOS はMacとして名乗るので、タッチ対応かどうかで見分ける）
   function isIOS() {
     var ua = navigator.userAgent || '';
@@ -1316,16 +1430,17 @@
     ub.audio.checked = s.audio;
     updateBuiltUrl();
   }
-  function copyBuiltUrl() {
-    var text = ub.out.value;
-    var done = function () { ub.status.textContent = 'コピーしました'; };
+  // テキスト欄の内容をコピーする（クリップボードAPIが使えなければ選択してコピー）
+  function copyText(area, status) {
+    var text = area.value;
+    var done = function () { status.textContent = 'コピーしました'; };
     var fallback = function () {
-      ub.out.focus();
-      ub.out.select();
-      ub.out.setSelectionRange(0, text.length);
+      area.focus();
+      area.select();
+      area.setSelectionRange(0, text.length);
       var ok = false;
       try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
-      ub.status.textContent = ok ? 'コピーしました' : 'コピーできませんでした。URLを長押ししてコピーしてください。';
+      status.textContent = ok ? 'コピーしました' : 'コピーできませんでした。長押ししてコピーしてください。';
     };
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
     else fallback();
@@ -1339,7 +1454,8 @@
     el.addEventListener('input', updateBuiltUrl);
     el.addEventListener('change', updateBuiltUrl);
   });
-  ub.copy.addEventListener('click', copyBuiltUrl);
+  ub.copy.addEventListener('click', function () { copyText(ub.out, ub.status); });
+  els.diagCopy.addEventListener('click', function () { copyText(els.diagOut, els.diagStatus); });
   ub.load.addEventListener('click', function () { builderLoaded = true; loadBuilderFromScreen(); });
 
   // ---------------------------------------------------------------- 起動
@@ -1352,7 +1468,13 @@
       'iOS 17以降のSafari、または最新のChrome／Edgeでお試しください。'], true);
     els.pickBtn.disabled = true;
   }
-  detectCaps().then(refresh);
+  log('端末 ' + navigator.userAgent);
+  detectCaps().then(function () {
+    log('対応 VideoEncoder=' + (typeof window.VideoEncoder !== 'undefined') + ' AudioEncoder=' + (typeof window.AudioEncoder !== 'undefined') +
+      ' AAC=' + state.caps.aac + ' 互換モード=' + state.caps.compat + ' iOS=' + isIOS() + ' Safari=' + isWebKit() + ' ver=' + APP_VERSION);
+    refresh();
+  });
+  if (/^(1|on|true)$/i.test(new URLSearchParams(location.search).get('debug') || '')) showDiag(false);
   refresh();
 
   if ('serviceWorker' in navigator) {

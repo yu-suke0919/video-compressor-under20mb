@@ -164,12 +164,13 @@
     font: inherit; font-size: 16px; color: var(--text);
     background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px;
   }
-  #uOut {
+  #uOut, #diagOut {
     display: block; width: 100%; box-sizing: border-box; margin-top: 8px; resize: none;
     font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; color: var(--text);
     background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px;
   }
   #urlBuilder .grid2 { margin-top: 8px; }
+  #diagOut { font-size: 11px; resize: vertical; }
 </style>
 </head>
 <body>
@@ -334,6 +335,15 @@
       <button id="uLoad" type="button" class="btn btn-sm" style="width: 100%">今の設定を読み込む</button>
     </div>
     <p id="uStatus" class="hint" role="status"></p>
+  </details>
+
+  <!-- 8. 診断情報（うまく動かないときの報告用。圧縮を始めるかエラーが出ると表示） -->
+  <details class="settings hidden" id="diagBox">
+    <summary>診断情報</summary>
+    <p class="hint">うまく圧縮できないときは、これをコピーして作成者に伝えてください。端末の種類や処理の経過だけで、動画やファイル名は含みません。</p>
+    <textarea id="diagOut" rows="10" readonly aria-label="診断情報"></textarea>
+    <button id="diagCopy" type="button" class="btn btn-sm" style="width: 100%; margin-top: 8px">コピー</button>
+    <p id="diagStatus" class="hint" role="status"></p>
   </details>
 </main>
 
