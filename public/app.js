@@ -38,7 +38,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-23e';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-23f';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、別の方式に切り替える
@@ -514,13 +514,16 @@
 
     var plan = state.plan = currentPlan();
     els.audioLabel.textContent = '音声を残す（' + plan.audio.label + '）';
-    els.planInfo.textContent = '→ ' + plan.width + '×' + plan.height + '・' + fmtFps(plan.outFps) + '・' +
-      fmtRate(plan.videoBitrate) + '・予想' + fmtBytes(plan.estBytes);
+    var trimEst = trimOnlyEstimate(plan);
+    els.planInfo.textContent = trimEst
+      ? '→ トリミングのみ（再圧縮なし）・' + plan.width + '×' + plan.height + '・予想' + fmtBytes(trimEst)
+      : '→ ' + plan.width + '×' + plan.height + '・' + fmtFps(plan.outFps) + '・' +
+        fmtRate(plan.videoBitrate) + '・予想' + fmtBytes(plan.estBytes);
 
     // 注意文は2種類だけ
     var warns = [];
-    if (plan.mode === 'size' && plan.unreachable) warns.push(MSG_UNREACHABLE);
-    if (plan.overDiscord) warns.push(MSG_OVER_DISCORD);
+    if (plan.mode === 'size' && plan.unreachable && !trimEst) warns.push(MSG_UNREACHABLE);
+    if (trimEst ? trimEst > DISCORD_FREE_BYTES : plan.overDiscord) warns.push(MSG_OVER_DISCORD);
     setAlert(els.planWarn, warns);
 
     // 目標サイズを超えるのが分かっているときは実行させない（処理中はキャンセルボタンなので有効のまま）
@@ -683,14 +686,69 @@
       return res;
     }, function (err) {
       dispose();
-      // 利用者が止めたときだけキャンセル扱いにする（エンコーダのエラーで変換が中止された場合はエラーとして扱う）
-      if (job.cancelled) throw new Error(CANCELLED);
+      if (conversion && conversion.state === 'canceled') throw new Error(CANCELLED);
       throw err;
     });
   }
 
   function isFullTrimOf(plan) {
     return plan.trimStart <= 0.05 && plan.trimEnd >= state.meta.duration - 0.05;
+  }
+
+  // ---------------------------------------------------------------- トリミングのみ（再エンコードしない）
+  // 「◯MB以下で圧縮」で、解像度もfpsも元のまま、トリミングした元動画が目標サイズに収まる見込みなら、
+  // 再エンコードせずに切り出すだけにする（画質は元のまま）。見込みのサイズを返し、対象外なら 0
+  function trimOnlyEstimate(plan) {
+    if (!state.meta || !state.file || state.engine !== 'fast' || plan.mode !== 'size') return 0;
+    if (isFullTrimOf(plan)) return 0;   // 全体のときは「元の動画のまま」で扱う
+    if (plan.width !== state.meta.width || plan.height !== state.meta.height || plan.fpsChanged) return 0;
+    if (!(state.meta.duration > 0)) return 0;
+    var est = Math.round(state.file.size * plan.duration / state.meta.duration);
+    // 区切りがキーフレームに合わせて少し広がる分を見込み、狙うサイズ（目標の97%）で判定する
+    return est < plan.targetBytes * SIZE_SAFETY ? est : 0;
+  }
+
+  function convertCopy(plan, onProgress, job) {
+    var input = new M.Input({ source: new M.BlobSource(state.file), formats: INPUT_FORMATS });
+    var output = new M.Output({ format: new M.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new M.BufferTarget() });
+    var conversion = null;
+    function dispose() { try { input.dispose(); } catch (e) { /* noop */ } }
+    job.hooks.push(dispose);
+
+    return M.Conversion.init({
+      input: input, output: output,
+      video: {},
+      audio: plan.audio.mode === 'none' ? { discard: true } : {},
+      trim: { start: plan.trimStart, end: plan.trimEnd },
+      // 再エンコードせずにそのまま写す。区切りはキーフレームに合わせて広げる（開始が少し早まることがある）
+      copy: { mode: 'forced', boundaryPolicy: 'expand', shiftTolerance: Infinity },
+      showWarnings: false
+    }).then(function (conv) {
+      conversion = conv;
+      var discarded = conv.discardedTracks || [];
+      log('トリミングのみの準備 isValid=' + conv.isValid + (discarded.length ? ' 除外=' + discarded.map(function (d) {
+        return (d.track && d.track.type) + ':' + d.reason;
+      }).join(',') : ''));
+      var videoLost = discarded.filter(function (d) { return d.track && d.track.type === 'video'; })[0];
+      if (!conv.isValid || videoLost) {
+        throw new Error('トリミングのみでは扱えない動画です（' + (videoLost ? videoLost.reason : 'invalid') + '）');
+      }
+      var audioLost = plan.audio.mode !== 'none' &&
+        discarded.some(function (d) { return d.track && d.track.type === 'audio' && d.reason !== 'discarded_by_user'; });
+      job.hooks.push(function () { var stop = conv.cancel(); dispose(); return stop; });
+      conv.onProgress = function (p) { onProgress(p); };
+      throwIfCancelled(job);
+      return conv.execute().then(function () {
+        return { blob: new Blob([output.target.buffer], { type: 'video/mp4' }), audioDropped: audioLost, trimOnly: true };
+      });
+    }).then(function (res) {
+      dispose();
+      return res;
+    }, function (err) {
+      dispose();
+      if (conversion && conversion.state === 'canceled') throw new Error(CANCELLED);
+      throw err;
+    });
   }
 
   // ---------------------------------------------------------------- 互換モード（再生しながら取り込み）
@@ -1003,6 +1061,7 @@
     if (!state.file || state.running) return;
     var plan = currentPlan();
     var engine = state.engine;
+    if (engine === 'fast' && trimOnlyEstimate(plan)) engine = 'copy';   // トリミングのみ（再エンコードしない）
     var started = Date.now();
 
     var job = state.job = newJob();
@@ -1016,7 +1075,8 @@
 
     // prevSize: 前回の圧縮結果のサイズ（再圧縮のときに表示する）。note: 進捗の欄に出す補足
     function attempt(index, prevSize, note) {
-      var label = note || (index === 0 ? (engine === 'fast' ? '圧縮中' : '圧縮中（互換モード：再生しながら処理）')
+      var label = note || (index === 0 ? (engine === 'copy' ? 'トリミング中（再圧縮なし）'
+        : engine === 'fast' ? '圧縮中' : '圧縮中（互換モード：再生しながら処理）')
         : '圧縮結果が' + (prevSize / MB).toFixed(2) + 'MBで目標超過→再圧縮中（' + (index + 1) + '回目）');
       setProgress(0, label);
       // 1回ぶんの処理（進まなくなったらこれだけ止めて、別の方式でやり直す）
@@ -1044,10 +1104,8 @@
           stopJob(aj, STALLED);
         }
       }, 1000);
-      // 準備中にその場で出た例外も、失敗として受け取る（受け取れないと0%のまま固まる）
-      var task = Promise.resolve().then(function () {
-        return engine === 'fast' ? convertFast(plan, onProgress, aj, avoid) : convertCompat(plan, onProgress, aj);
-      });
+      var task = engine === 'copy' ? convertCopy(plan, onProgress, aj)
+        : engine === 'fast' ? convertFast(plan, onProgress, aj, avoid) : convertCompat(plan, onProgress, aj);
       task.catch(function () { /* 競争に負けた側の失敗は無視する */ });
 
       // キャンセルしたら、ライブラリ側が止まりきるのを待たずにすぐ抜ける
@@ -1055,6 +1113,16 @@
         clearInterval(watchdog);
         throwIfCancelled(job);
         log('完了 ' + fmtBytes(res.blob.size) + '（' + ((Date.now() - t0) / 1000).toFixed(1) + '秒）');
+        if (engine === 'copy') {
+          // トリミングのみで目標を超えたら、通常の圧縮に切り替える
+          if (res.blob.size >= plan.targetBytes) {
+            log('トリミングのみでは目標を超えたため、通常の圧縮に切り替え');
+            engine = 'fast';
+            return attempt(0, 0, 'トリミングのみでは' + (res.blob.size / MB).toFixed(2) + 'MBで目標超過→圧縮中');
+          }
+          res.attempts = 1;
+          return res;
+        }
         if (res.audioDropped && plan.audio.mode !== 'none') {
           plan.audio = { mode: 'none', bps: 0, label: 'なし', note: null };
           plan.audioBitrate = 0;
@@ -1077,6 +1145,11 @@
         if (job.cancelled || (!aj.cancelled && isCancel(null, err))) throw new Error(CANCELLED);
         var stalled = aj.cancelled;
         if (!stalled) log('失敗（' + engine + '）' + errText(err));
+        // トリミングのみがうまくいかなければ、通常の圧縮でやり直す
+        if (engine === 'copy') {
+          engine = 'fast';
+          return attempt(0);
+        }
         // 高速モードで進まなくなったら、別のエンコード設定で同じ処理をやり直す
         if (stalled && engine === 'fast' && aj.enc && stallRetries < MAX_STALL_RETRIES) {
           stallRetries++;
@@ -1097,7 +1170,7 @@
       });
     }
 
-    return Promise.resolve().then(function () { return attempt(0); }).then(function (res) {
+    return attempt(0).then(function (res) {
       setProgress(1, '完了');
       finishRun();
       showResult(res, plan, engine, (Date.now() - started) / 1000);
@@ -1190,10 +1263,17 @@
 
   function showResult(res, plan, engine, elapsed) {
     var base = String(state.file.name || 'video').replace(/\.[^.]+$/, '') || 'video';
-    setOutput({ blob: res.blob, name: base + '_compressed.mp4', type: 'video/mp4', original: false });
+    setOutput({ blob: res.blob, name: base + (res.trimOnly ? '_trimmed.mp4' : '_compressed.mp4'), type: 'video/mp4', original: false });
 
     var size = res.blob.size;
     var ratio = state.file.size > 0 ? Math.round((1 - size / state.file.size) * 100) : 0;
+    if (res.trimOnly) {
+      els.outInfo.textContent = fmtBytes(state.file.size) + ' → ' + fmtBytes(size) + '（-' + Math.max(0, ratio) + '%）・' +
+        plan.width + '×' + plan.height + '・トリミングのみ（再圧縮なし）・' + fmtDuration(elapsed) +
+        (res.audioDropped ? '・音声なし' : '');
+      setAlert(els.outWarn, size > DISCORD_FREE_BYTES ? [MSG_OVER_DISCORD] : []);
+      return;
+    }
     els.outInfo.textContent = fmtBytes(state.file.size) + ' → ' + fmtBytes(size) + '（' + (ratio >= 0 ? '-' : '+') +
       Math.abs(ratio) + '%）・' + plan.width + '×' + plan.height + '・' + fmtRate(plan.videoBitrate) + '・' +
       fmtDuration(elapsed) + (res.attempts > 1 ? '・' + res.attempts + '回で調整' : '') +
