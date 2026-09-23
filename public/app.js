@@ -904,7 +904,7 @@
     // prevSize: 前回の圧縮結果のサイズ（再圧縮のときに表示する）
     function attempt(index, prevSize) {
       var label = index === 0 ? (engine === 'fast' ? '圧縮中' : '圧縮中（互換モード：再生しながら処理）')
-        : '圧縮結果が' + (prevSize / MB).toFixed(2) + 'MBで目標を超えたため再圧縮中';
+        : '圧縮結果が' + (prevSize / MB).toFixed(2) + 'MBで目標超過→再圧縮中（' + (index + 1) + '回目）';
       setProgress(0, label);
       var job = engine === 'fast'
         ? convertFast(plan, function (p) { setProgress(p, label); })
