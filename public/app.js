@@ -38,12 +38,12 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-23c';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-23d';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、別の方式に切り替える
   var MAX_STALL_RETRIES = 2;             // 高速モードで別のエンコード設定を試す回数
-  var CONFIG_CHECK_MS = 4000;            // エンコード設定の確認（isConfigSupported）を待つ時間
+  var CONFIG_CHECK_MS = 3000;            // エンコード設定の確認（isConfigSupported）を待つ時間
 
   // 出力に使うコーデック（優先順）。高速モードは Mediabunny の名前、互換モードは WebCodecs のコーデック文字列
   var FAST_VIDEO_CODECS = ['avc', 'hevc'];
@@ -599,10 +599,33 @@
   }
 
   // ---------------------------------------------------------------- 高速モード（Mediabunny Conversion）
-  // ---------------------------------------------------------------- 直接モード
+  // ---------------------------------------------------------------- 設定の確認と直接モード
   // Discord や Brave などのアプリ内ブラウザ（iOS の WKWebView）では、エンコードできるかの確認
-  // （VideoEncoder.isConfigSupported）が返ってこないことがある。確認が一定時間返らなければ、
-  // 確認をせずにエンコーダを直接使う（Mediabunny にはカスタムエンコーダとして登録する）
+  // （VideoEncoder.isConfigSupported）が、設定によっては返ってこないことがある（高めのビットレートの固定ビットレートなど）。
+  // - 確認に時間制限を付け、返らない設定は「使えない」とみなす（アプリも Mediabunny も次の設定へ進む）
+  // - どの設定の確認も返らなかったときだけ、確認をせずにエンコーダを直接使う「直接モード」にする
+  //   （Mediabunny にはカスタムエンコーダとして登録する）
+  var configCheck = { timeouts: 0, answers: 0, activity: 0 };
+  var MAX_SILENT_CHECKS = 3;             // 1つも返事がないまま、これだけ確認が返らなければ直接モードにする
+  if (typeof VideoEncoder !== 'undefined' && VideoEncoder.isConfigSupported) {
+    var nativeIsConfigSupported = VideoEncoder.isConfigSupported.bind(VideoEncoder);
+    VideoEncoder.isConfigSupported = function (config) {
+      return withTimeout(nativeIsConfigSupported(config), CONFIG_CHECK_MS, function () {
+        configCheck.timeouts++;
+        log('設定の確認が返らない ' + describeConfig(config) + ' → 使えないものとして扱う');
+        return { supported: false, config: config, timedOut: true };
+      }).then(function (res) {
+        configCheck.activity++;
+        if (res && !res.timedOut) configCheck.answers++;   // 実際に返事があった
+        return res;
+      },
+        function (e) { configCheck.activity++; throw e; });
+    };
+  }
+  function describeConfig(c) {
+    return (c.codec || '?') + ' ' + c.width + 'x' + c.height + ' ' + Math.round((c.bitrate || 0) / 1000) + 'kbps ' +
+      (c.bitrateMode || '既定') + ' ' + (c.hardwareAcceleration || 'no-preference');
+  }
   var direct = { enabled: false, registered: false };
   var DIRECT_VIDEO_CODECS = ['avc', 'hevc'];          // 直接モードで使うコーデック（高速モード）
   var DIRECT_COMPAT_CODEC = /^(avc1|hvc1)\./;         // 同（互換モード）
@@ -647,7 +670,7 @@
   function enableDirect(reason) {
     if (direct.enabled) return;
     direct.enabled = true;
-    log('エンコード設定の確認が' + (CONFIG_CHECK_MS / 1000) + '秒返らないため、直接モードに切り替え（' + reason + '）');
+    log('直接モードに切り替え（' + reason + '）');
     if (M && M.registerEncoder && !direct.registered) {
       direct.registered = true;
       M.registerEncoder(DirectVideoEncoder);
@@ -683,22 +706,31 @@
     return (function next(i) {
       if (i >= cands.length) return Promise.resolve(null);
       var c = cands[i];
+      if (!direct.enabled && configCheck.answers === 0 && configCheck.timeouts >= MAX_SILENT_CHECKS) {
+        enableDirect('設定の確認が1つも返らない');
+      }
       if (direct.enabled) {
         // 直接モードでは確認をせず、H.264 から順に使ってみる（だめなら停止検出やエラーで次の候補へ）
         if (DIRECT_VIDEO_CODECS.indexOf(c.codec) < 0) return next(i + 1);
         log('エンコード設定 ' + encKey(c) + ' → 確認せずに使う（直接モード）');
         return Promise.resolve(c);
       }
-      return withTimeout(M.canEncodeVideo(c.codec, {
+      return M.canEncodeVideo(c.codec, {
         width: plan.width, height: plan.height, frameRate: plan.outFps,
         quality: new M.Quality({ bitrate: plan.videoBitrate, bitrateMode: c.bitrateMode }),
         hardwareAcceleration: c.hw
-      }), CONFIG_CHECK_MS, function () { enableDirect(encKey(c)); return 'direct'; }).then(function (ok) {
-        if (ok === 'direct') return next(i);   // 直接モードで同じ候補から選び直す
+      }).then(function (ok) {
         log('エンコード設定 ' + encKey(c) + ' → ' + (ok ? '使える' : '使えない'));
         return ok ? c : next(i + 1);
       }, function (e) { log('エンコード設定 ' + encKey(c) + ' → 確認に失敗 ' + errText(e)); return next(i + 1); });
-    })(0);
+    })(0).then(function (found) {
+      // どの設定も使えず、確認が返らないものがあったなら、直接モードで選び直す
+      if (!found && !direct.enabled && configCheck.timeouts > 0) {
+        enableDirect('使える設定が見つからず、確認が返らない設定があった');
+        return pickFastEncoding(plan, avoid);
+      }
+      return found;
+    });
   }
 
   function convertFast(plan, onProgress, job, avoid) {
@@ -784,6 +816,9 @@
     return (function next(i) {
       if (i >= cands.length) return Promise.resolve(null);
       var c = cands[i];
+      if (!direct.enabled && configCheck.answers === 0 && configCheck.timeouts >= MAX_SILENT_CHECKS) {
+        enableDirect('設定の確認が1つも返らない');
+      }
       if (direct.enabled) {
         // 直接モードでは確認をせず、H.264 の候補をそのまま使う
         if (!DIRECT_COMPAT_CODEC.test(c.config.codec)) return next(i + 1);
@@ -792,20 +827,20 @@
         return Promise.resolve({ config: c.config, mb: c.mb });
       }
       return Promise.resolve()
-        .then(function () {
-          return withTimeout(VideoEncoder.isConfigSupported(c.config), CONFIG_CHECK_MS, function () {
-            enableDirect(c.config.codec);
-            return 'direct';
-          });
-        })
+        .then(function () { return VideoEncoder.isConfigSupported(c.config); })
         .then(function (res) {
-          if (res === 'direct') return next(i);
           log('互換エンコード設定 ' + c.config.codec + '/' + c.config.hardwareAcceleration + '/' + (c.config.bitrateMode || '既定') +
             ' → ' + ((res && res.supported) ? '使える' : '使えない'));
           return (res && res.supported) ? { config: res.config || c.config, mb: c.mb } : next(i + 1);
         })
         .catch(function (e) { log('互換エンコード設定の確認に失敗 ' + errText(e)); return next(i + 1); });
-    })(0);
+    })(0).then(function (found) {
+      if (!found && !direct.enabled && configCheck.timeouts > 0) {
+        enableDirect('互換モードで使える設定が見つからず、確認が返らない設定があった');
+        return findCompatVideoConfig(plan);
+      }
+      return found;
+    });
   }
 
   function drain(encoder, max, job) {
@@ -1106,7 +1141,7 @@
       setProgress(0, label);
       // 1回ぶんの処理（進まなくなったらこれだけ止めて、別の方式でやり直す）
       var aj = state.attemptJob = newJob();
-      var t0 = Date.now(), lastVal = -1, idleMs = 0, lastTick = Date.now(), nextLog = 0;
+      var t0 = Date.now(), lastVal = -1, idleMs = 0, lastTick = Date.now(), nextLog = 0, lastActivity = configCheck.activity;
       // キャンセル後に古い処理から届く進捗は無視する
       var onProgress = function (p) {
         if (job.cancelled || aj.cancelled) return;
@@ -1122,6 +1157,8 @@
         var now = Date.now(), dt = now - lastTick;
         lastTick = now;
         if (document.visibilityState !== 'visible' || dt > 5000) return;
+        // 設定の確認が進んでいる間は、止まったとみなさない
+        if (configCheck.activity !== lastActivity) { lastActivity = configCheck.activity; idleMs = 0; return; }
         idleMs += dt;
         if (idleMs >= STALL_MS) {
           clearInterval(watchdog);
@@ -1159,6 +1196,12 @@
         if (job.cancelled || (!aj.cancelled && isCancel(null, err))) throw new Error(CANCELLED);
         var stalled = aj.cancelled;
         if (!stalled) log('失敗（' + engine + '）' + errText(err));
+        // 確認が返らない設定があって失敗したなら、直接モードで同じ処理をやり直す
+        if (engine === 'fast' && !direct.enabled && configCheck.timeouts > 0 && stallRetries < MAX_STALL_RETRIES) {
+          stallRetries++;
+          enableDirect('確認が返らない設定があり、変換に失敗');
+          return attempt(index, prevSize, 'うまくいかないため、別の方法でやり直し中');
+        }
         // 高速モードで進まなくなったら、別のエンコード設定で同じ処理をやり直す
         if ((stalled || direct.enabled) && engine === 'fast' && aj.enc && stallRetries < MAX_STALL_RETRIES) {
           stallRetries++;
