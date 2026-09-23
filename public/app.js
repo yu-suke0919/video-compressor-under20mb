@@ -38,7 +38,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-23f';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-23g';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、別の方式に切り替える
@@ -580,9 +580,9 @@
   function renderTrim() {
     var dur = state.meta ? state.meta.duration : 1;
     var a = state.trim.start / dur, b = state.trim.end / dur;
-    // つまみの幅（22px）の半分だけ内側を実際の可動域とする
-    els.trimFill.style.left = 'calc(11px + (100% - 22px) * ' + a + ')';
-    els.trimFill.style.width = 'calc((100% - 22px) * ' + Math.max(0, b - a) + ')';
+    // つまみの幅（--thumb-w）の半分だけ内側を実際の可動域とする
+    els.trimFill.style.left = 'calc(var(--thumb-w) / 2 + (100% - var(--thumb-w)) * ' + a + ')';
+    els.trimFill.style.width = 'calc((100% - var(--thumb-w)) * ' + Math.max(0, b - a) + ')';
     // 両方のつまみが右端に寄ったときに開始側を掴めるようにする
     els.trimStart.style.zIndex = a > 0.9 ? 3 : 2;
     els.trimEnd.style.zIndex = a > 0.9 ? 2 : 3;
