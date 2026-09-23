@@ -4,7 +4,7 @@
   "description": "動画をDiscordに投稿できるサイズに圧縮するPWA。実行時にビルドは不要で、ここの設定は同梱ライブラリを作り直すときだけ使う。",
   "license": "MIT",
   "scripts": {
-    "build:vendor": "esbuild tools/mediabunny-entry.js --bundle --minify --format=iife --global-name=Mediabunny --target=safari16 --legal-comments=eof \"--banner:js=/*! Mediabunny v1.59.0 (https://mediabunny.dev/) の必要部分だけを束ねたもの。MPL-2.0: vendor/mediabunny.LICENSE.txt */\" --outfile=vendor/mediabunny.min.js"
+    "build:vendor": "esbuild tools/mediabunny-entry.js --bundle --minify --format=iife --global-name=Mediabunny --target=safari16 --legal-comments=eof \"--banner:js=/*! Mediabunny v1.59.0 (https://mediabunny.dev/) の必要部分だけを束ねたもの。MPL-2.0: vendor/mediabunny.LICENSE.txt */\" --outfile=public/vendor/mediabunny.min.js"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

@@ -3,7 +3,7 @@
 動画を**Discordに投稿できるサイズ**（既定20MB以下）に圧縮して、共有シートからそのまま投稿できるWebアプリです。
 iPhoneのSafariで動き、ホーム画面に追加すればオフラインでも起動できます（PWA）。
 
-**公開URL: https://makanori0431.github.io/video-compressor-under20mb/**
+**公開URL: https://<プロジェクト名>.pages.dev/**（Cloudflare Pages）
 
 処理はすべて端末内（ブラウザ内）で完結します。動画がどこかにアップロードされることはありません。
 
@@ -56,7 +56,7 @@ Nintendo Switchアプリで録画した動画をDiscordに投稿するまでの�
 2. （任意）アクション **「メディアをトリミング」**。アプリ内でもトリミングできるので省略してかまいません
 3. アクション **「フォトアルバムに保存」**（またはファイルに保存）を追加
 4. アクション **「URLを開く」** を追加し、URLに
-   `https://makanori0431.github.io/video-compressor-under20mb/?target=20&res=720` を入れる
+   `https://<プロジェクト名>.pages.dev/?target=20&res=720` を入れる
 
 ### URLパラメータ
 
@@ -69,7 +69,7 @@ Nintendo Switchアプリで録画した動画をDiscordに投稿するまでの�
 | `mode` | `size` / `quality` | `size`＝◯MB以下で圧縮（既定）、`quality`＝なるべく圧縮 |
 | `fps` | `30` / `source` | `30`なら60fpsの動画を30fpsにする（既定）。`source`は元のフレームレートを保つ |
 
-例: `https://makanori0431.github.io/video-compressor-under20mb/?target=50&res=1080&mode=size`
+例: `https://<プロジェクト名>.pages.dev/?target=50&res=1080&mode=size`
 
 ---
 
@@ -170,24 +170,45 @@ Nintendo Switchアプリで録画した動画をDiscordに投稿するまでの�
 
 ## 開発・公開
 
-実行に必要なのは静的ファイルだけです。**GitHub Pages 側でのビルドは不要**です。
+公開するのは **`public/` フォルダの中身だけ**です。静的ファイルなので、**公開時のビルドは不要**です。
 
 ```bash
 # ローカルで確認（Service Workerを使うためhttpで配信する）
-python3 -m http.server 8000
+python3 -m http.server 8000 -d public
 # → http://localhost:8000/
 ```
 
-GitHub Pagesで公開する場合は、リポジトリの **Settings → Pages** で
-`Deploy from a branch` を選び、`main` ブランチの `/ (root)` を指定します。
-プロジェクトサイト（`/video-compressor-under20mb/` 配下）で動くよう、パスはすべて相対パスです。
+### Cloudflare Pages で公開する
 
-アセットを更新したときは `sw.js` の `CACHE` の値（例: `...-v5` → `...-v6`）を変えると、
-古いキャッシュが破棄されて新しいファイルが読み込まれます。
+**GitHub と連携する場合**（main に push するたびに自動で公開される）
+
+1. Cloudflare のダッシュボード → **Workers & Pages** → **Create** → **Pages** → **Connect to Git**
+2. このリポジトリを選ぶ
+3. ビルドの設定
+   | 項目 | 値 |
+   | --- | --- |
+   | Production branch | `main` |
+   | Framework preset | `None` |
+   | Build command | （空欄） |
+   | Build output directory | `public` |
+4. **Save and Deploy** → `https://<プロジェクト名>.pages.dev/` で公開される
+
+main 以外のブランチに push すると、そのブランチ用のプレビューURLが自動で作られます。
+PRの内容を実機で試してからマージする、という使い方ができます。
+
+**GitHub と連携しない場合**（手動でアップロード）
+
+1. **Workers & Pages** → **Create** → **Pages** → **Upload assets**
+2. `public` フォルダをドラッグ＆ドロップする（更新のたびに同じ操作をする）
+
+パスはすべて相対パスなので、ドメイン直下（`○○.pages.dev/`）でもサブディレクトリでも、コードを変えずに動きます。
+
+アセットを更新したときは `public/sw.js` の `CACHE` の値（例: `...-v5` → `...-v6`）を変えると、
+古いキャッシュが破棄されて新しいファイルが読み込まれます（ホーム画面のアプリには次に起動したときに反映）。
 
 ### 同梱ライブラリの作り直し
 
-`vendor/mediabunny.min.js` は、Mediabunny から**アプリが使う機能と入力形式（MP4 / MOV）だけ**を束ねたものです
+`public/vendor/mediabunny.min.js` は、Mediabunny から**アプリが使う機能と入力形式（MP4 / MOV）だけ**を束ねたものです
 （全体版は gzip 約170KB、この版は約95KB）。バージョンを上げるときなどは次で作り直します。
 
 ```bash
@@ -201,13 +222,13 @@ npm run build:vendor
 
 | ファイル | 内容 |
 | --- | --- |
-| `index.html` | 画面とスタイル（CSSは埋め込み。フレームワークは使っていません） |
-| `app.js` | 圧縮処理の本体 |
-| `vendor/mediabunny.min.js` | Mediabunny の必要部分（MPL-2.0） |
-| `sw.js` | Service Worker（全アセットをキャッシュしてオフライン起動） |
-| `manifest.json` | PWAの定義（アプリ名「20MB圧縮」、スタンドアロン表示） |
-| `icons/` | アイコン（PNG） |
-| `package.json` / `tools/` | 同梱ライブラリを作り直すときだけ使う設定 |
+| `public/index.html` | 画面とスタイル（CSSは埋め込み。フレームワークは使っていません） |
+| `public/app.js` | 圧縮処理の本体 |
+| `public/vendor/mediabunny.min.js` | Mediabunny の必要部分（MPL-2.0） |
+| `public/sw.js` | Service Worker（全アセットをキャッシュしてオフライン起動） |
+| `public/manifest.json` | PWAの定義（アプリ名「20MB圧縮」、スタンドアロン表示） |
+| `public/icons/` | アイコン（PNG） |
+| `package.json` / `tools/` | 同梱ライブラリを作り直すときだけ使う設定（公開はされない） |
 
 ---
 
@@ -216,6 +237,6 @@ npm run build:vendor
 このアプリは MIT License（[LICENSE](LICENSE)）です。
 
 同梱している [Mediabunny](https://mediabunny.dev/)（v1.59.0）は **MPL-2.0** です
-（[vendor/mediabunny.LICENSE.txt](vendor/mediabunny.LICENSE.txt)）。
+（[public/vendor/mediabunny.LICENSE.txt](public/vendor/mediabunny.LICENSE.txt)）。
 必要な部分を束ねただけで、ライブラリのコード自体は改変していません。元のソースコードは
 [GitHub](https://github.com/Vanilagy/mediabunny) と npm で公開されています。
