@@ -38,8 +38,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-23a';        // 診断情報に出す（どの版で起きたかを見分ける）
-  var DEBUG_NO_RERENDER = /[?&]rerender=off\b/.test(location.search);   // 原因の切り分け用: Safari向けの回避策を切る
+  var APP_VERSION = '2026-09-23b';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、別の方式に切り替える
@@ -643,11 +642,6 @@
         hardwareAcceleration: enc.hw, keyFrameInterval: KEYFRAME_INTERVAL,
         forceTranscode: true, allowTransformationMetadata: false
       };
-      // Safari では画面全体の切り抜きを指定して、元と同じ解像度でも必ず描き直してからエンコードさせる。
-      // 描き直さないとデコードしたフレームをそのまま渡す経路になり、iPhoneで0%のまま止まることがあるため
-      // （原因の切り分け用に、URLの rerender=off で無効にできる）
-      if (isWebKit() && !DEBUG_NO_RERENDER) video.crop = { left: 0, top: 0, width: state.meta.width, height: state.meta.height };
-      log('描き直し ' + (video.crop ? 'あり（Safari向けの回避策）' : 'なし'));
       if (plan.fpsChanged) video.frameRate = plan.outFps;
       var audio;
       if (plan.audio.mode === 'aac') {
@@ -1365,11 +1359,6 @@
   });
 
   // ---------------------------------------------------------------- iOS向けの表示
-  // Safari（iOSではどのブラウザも中身はSafari）
-  function isWebKit() {
-    var ua = navigator.userAgent || '';
-    return isIOS() || (/AppleWebKit/.test(ua) && !/Chrome|Chromium|Edg|OPR|Android/.test(ua));
-  }
   // iPhone / iPad（iPadOS はMacとして名乗るので、タッチ対応かどうかで見分ける）
   function isIOS() {
     var ua = navigator.userAgent || '';
@@ -1471,7 +1460,7 @@
   log('端末 ' + navigator.userAgent);
   detectCaps().then(function () {
     log('対応 VideoEncoder=' + (typeof window.VideoEncoder !== 'undefined') + ' AudioEncoder=' + (typeof window.AudioEncoder !== 'undefined') +
-      ' AAC=' + state.caps.aac + ' 互換モード=' + state.caps.compat + ' iOS=' + isIOS() + ' Safari=' + isWebKit() + ' ver=' + APP_VERSION);
+      ' AAC=' + state.caps.aac + ' 互換モード=' + state.caps.compat + ' iOS=' + isIOS() + ' Brave=' + !!navigator.brave + ' ver=' + APP_VERSION);
     refresh();
   });
   if (/^(1|on|true)$/i.test(new URLSearchParams(location.search).get('debug') || '')) showDiag(false);
