@@ -79,13 +79,21 @@
   /* 動画の表示枠（縦画面で1画面に収まるよう高さを抑える） */
   .media-box {
     position: relative; background: #000; border-radius: 12px; overflow: hidden;
-    transition: height .25s ease;
+    margin-left: auto; margin-right: auto; transition: height .25s ease, width .25s ease;
   }
-  /* 圧縮前は元動画を大きく、圧縮が終わったら圧縮後の動画を大きく（2つの合計の高さは変えない） */
-  .media-box.is-large { height: 26vh; height: 26svh; min-height: 150px; }
-  .media-box.is-small { height: 12vh; height: 12svh; min-height: 64px; }
+  /* 圧縮前は元動画を幅いっぱいに大きく、圧縮が終わったら圧縮後の動画を幅いっぱいに大きく（2つの合計の高さは変えない）。
+     小さいほうは16:9の小窓にして中央に置く */
+  .media-box.is-large { width: 100%; height: 26vh; height: 26svh; min-height: 150px; }
+  .media-box.is-small {
+    height: 12vh; height: 12svh; min-height: 64px;
+    width: min(100%, max(114px, 12vh * 16 / 9)); width: min(100%, max(114px, 12svh * 16 / 9));
+  }
   /* 圧縮中は進捗バーの分だけ、小さいほうの枠をさらに小さくする */
-  .app.is-running .media-box.is-small { height: 8vh; height: 8svh; min-height: 48px; }
+  .app.is-running .media-box.is-small {
+    height: 7vh; height: 7svh; min-height: 46px;
+    width: min(100%, max(82px, 7vh * 16 / 9)); width: min(100%, max(82px, 7svh * 16 / 9));
+  }
+  .media-box.is-small .media-empty { font-size: 12px; padding: 4px; text-align: center; }
   .media-box video { width: 100%; height: 100%; object-fit: contain; display: block; }
   .media-empty {
     position: absolute; inset: 0; width: 100%; display: flex; flex-direction: column; align-items: center;
