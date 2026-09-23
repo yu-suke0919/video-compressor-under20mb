@@ -903,7 +903,7 @@
 
     function attempt(index) {
       var label = index === 0 ? (engine === 'fast' ? '圧縮中' : '圧縮中（互換モード：再生しながら処理）')
-        : '目標を超えたので再圧縮中（' + (index + 1) + '回目 / 最大' + MAX_ATTEMPTS + '回）';
+        : '目標を超えた(' + plan.targetMB + 'MB)ので再圧縮中';
       setProgress(0, label);
       var job = engine === 'fast'
         ? convertFast(plan, function (p) { setProgress(p, label); })
