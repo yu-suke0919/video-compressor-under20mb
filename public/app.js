@@ -6,9 +6,10 @@
  *   互換モード … 高速モードで扱えない動画向け。<video> を再生しながら requestVideoFrameCallback で
  *                フレームを取り出し、WebCodecs でエンコードして Mediabunny で mp4 にまとめる
  *
- * 圧縮の方針:
- *   なるべく圧縮 … 720p30で1.2Mbps相当の画質（画素数×フレームレートに比例）
- *   ◯MB以下で圧縮 … 長さと音声から逆算。超えたら実サイズからビットレートを直し、最大2回まで再圧縮
+ * 圧縮の方針（解像度は選んだ720p/1080pで固定し、ビットレートだけで容量を調整する）:
+ *   なるべく圧縮 … 解像度ごとの「下限ビットレート」で圧縮する
+ *   ◯MB以下で圧縮 … 下限を下回らない範囲で、目標サイズに収まるなるべく高いビットレートにする。
+ *                   超えたら実サイズからビットレートを直し、最大2回まで再圧縮
  *
  * すべて端末内で完結し、外部にデータは送信しない。
  */
@@ -24,9 +25,12 @@
   var SIZE_SAFETY = 0.95;                // 目標サイズの安全係数（超えたら再圧縮するので攻める）
   var AUDIO_BITRATE = 128000;            // 音声を再エンコードするときのビットレート
   var AUDIO_COPY_MAX_BITRATE = 192000;   // これ以下のAACは再エンコードせずそのまま使う
-  var MIN_VIDEO_BITRATE = 300000;        // 映像ビットレートの下限
-  var QUALITY_BPP = 1200000 / (1280 * 720 * 30);   // 画質の基準: 720p30で1.2Mbps（≒0.0434 bit/画素/フレーム）
-  var MIN_SHORT_SIDE = 144;
+  var DISCORD_FREE_BYTES = 20 * 1024 * 1024;   // Discord無料アカウントの上限（注意文の基準）
+  // 下限ビットレートの既定値（kbps）。720p30で1.2Mbps、1080pは画素数に比例させて同等の画質
+  var DEFAULT_MIN_KBPS = { '720': 1200, '1080': 2700 };
+  var MIN_KBPS_LIMITS = [100, 50000];
+  var MSG_UNREACHABLE = '目標サイズに圧縮できません。解像度を下げるか、詳細設定にて下限ビットレートを引き下げてください。';
+  var MSG_OVER_DISCORD = '20MBを超える為、Discord(無料垢)では送信できません。';
   var DEFAULT_FPS = 30;
   var MAX_FPS = 60;
   var MAX_ATTEMPTS = 3;                  // 初回 + 最大2回の再圧縮
@@ -55,14 +59,14 @@
     unsupported: $('unsupported'), file: $('file'), pickBtn: $('pickBtn'), repickBtn: $('repickBtn'),
     srcVideo: $('srcVideo'), srcInfo: $('srcInfo'),
     trimStart: $('trimStart'), trimEnd: $('trimEnd'), trimFill: $('trimFill'), trimLabel: $('trimLabel'),
-    setStartBtn: $('setStartBtn'), setEndBtn: $('setEndBtn'),
     res720: $('res720'), res1080: $('res1080'), modeQuality: $('modeQuality'), modeSize: $('modeSize'),
     sizeLabel: $('sizeLabel'), planInfo: $('planInfo'), planWarn: $('planWarn'),
     targetSize: $('targetSize'), halfFps: $('halfFps'), audioOn: $('audioOn'), audioLabel: $('audioLabel'),
+    minRate720: $('minRate720'), minRate1080: $('minRate1080'), autoRun: $('autoRun'),
     runBtn: $('runBtn'), progressWrap: $('progressWrap'), progressBar: $('progressBar'),
     phase: $('phase'), pct: $('pct'),
     outVideo: $('outVideo'), outEmpty: $('outEmpty'), outInfo: $('outInfo'), outWarn: $('outWarn'),
-    shareBtn: $('shareBtn'), saveBtn: $('saveBtn'), offlineState: $('offlineState')
+    shareBtn: $('shareBtn'), saveBtn: $('saveBtn')
   };
 
   // ---------------------------------------------------------------- 状態
@@ -118,17 +122,34 @@
     });
     show(el, lines.length > 0);
   }
+  // 進捗は1フレームに1回だけ描く。数字とゲージを同じタイミングで更新し、
+  // 処理中に頻繁に呼ばれてもゲージが遅れないよう、CSSのアニメーションは使わない
+  var progress = { value: 0, label: null, raf: 0 };
   function setProgress(ratio, label) {
-    var p = Math.max(0, Math.min(1, ratio || 0));
-    els.progressBar.style.width = (p * 100).toFixed(1) + '%';
-    els.pct.textContent = Math.round(p * 100) + '%';
-    if (label) els.phase.textContent = label;
+    progress.value = Math.max(0, Math.min(1, ratio || 0));
+    if (label) progress.label = label;
+    if (!progress.raf) progress.raf = requestAnimationFrame(drawProgress);
+  }
+  function setPhase(label) {
+    progress.label = label;
+    if (!progress.raf) progress.raf = requestAnimationFrame(drawProgress);
+  }
+  function drawProgress() {
+    progress.raf = 0;
+    els.progressBar.style.transform = 'scaleX(' + progress.value.toFixed(4) + ')';
+    els.pct.textContent = Math.round(progress.value * 100) + '%';
+    if (progress.label !== null) els.phase.textContent = progress.label;
   }
 
   // ---------------------------------------------------------------- 設定
   function radioValue(name, fallback) {
     var el = document.querySelector('input[name="' + name + '"]:checked');
     return el ? el.value : fallback;
+  }
+  function readKbps(input, fallback) {
+    var v = parseFloat(input.value);
+    if (!isFinite(v)) v = fallback;
+    return Math.min(MIN_KBPS_LIMITS[1], Math.max(MIN_KBPS_LIMITS[0], Math.round(v)));
   }
   function readSettings() {
     var mb = parseFloat(els.targetSize.value);
@@ -140,11 +161,18 @@
       targetMB: mb,
       targetBytes: Math.floor(mb * 1024 * 1024),
       halfFps: !!els.halfFps.checked,
-      audio: !!els.audioOn.checked
+      audio: !!els.audioOn.checked,
+      autoRun: !!els.autoRun.checked,
+      // 解像度ごとの下限ビットレート（bps）
+      minBitrate: {
+        '720': readKbps(els.minRate720, DEFAULT_MIN_KBPS['720']) * 1000,
+        '1080': readKbps(els.minRate1080, DEFAULT_MIN_KBPS['1080']) * 1000
+      }
     };
   }
 
-  // ショートカットなどから ?target=20&res=720&mode=size&fps=30 で初期値を渡せる
+  // ショートカットなどから URL で初期値を渡せる（詳細設定の項目も含む）
+  //   res=720|1080  mode=size|quality  target=MB  fps=30|source  audio=on|off  min720=kbps  min1080=kbps  auto=on|off
   function applyUrlParams() {
     var params;
     try { params = new URLSearchParams(window.location.search); } catch (e) { return; }
@@ -159,6 +187,16 @@
     var f = (params.get('fps') || '').toLowerCase();
     if (f === '30' || f === 'half') els.halfFps.checked = true;
     else if (f === 'source' || f === 'keep' || f === '60') els.halfFps.checked = false;
+    var a = (params.get('audio') || '').toLowerCase();
+    if (a === 'on' || a === '1' || a === 'true') els.audioOn.checked = true;
+    else if (a === 'off' || a === '0' || a === 'false') els.audioOn.checked = false;
+    var au = (params.get('auto') || '').toLowerCase();
+    if (au === 'on' || au === '1' || au === 'true') els.autoRun.checked = true;
+    else if (au === 'off' || au === '0' || au === 'false') els.autoRun.checked = false;
+    [['min720', els.minRate720], ['min1080', els.minRate1080]].forEach(function (pair) {
+      var v = parseFloat(params.get(pair[0]));
+      if (isFinite(v) && v >= MIN_KBPS_LIMITS[0] && v <= MIN_KBPS_LIMITS[1]) pair[1].value = String(Math.round(v));
+    });
   }
 
   // ---------------------------------------------------------------- 対応判定
@@ -328,23 +366,23 @@
     var outFps = (settings.halfFps && srcFps > 40) ? srcFps / 2 : srcFps;
     outFps = Math.min(Math.max(outFps, 1), MAX_FPS);
     var audioBps = audio.bps;
-    var capScale = resolutionCap(meta, settings.res);
-    var srcShort = Math.min(meta.width, meta.height);
-    var videoBps, scale, width, height;
-    var belowFloor = false, qualityLimited = false;
+    // 解像度は選んだもので固定（元より大きくはしない）。容量はビットレートだけで調整する
+    var scale = resolutionCap(meta, settings.res);
+    var width = even(meta.width * scale);
+    var height = even(meta.height * scale);
+    var floorBps = settings.minBitrate[settings.res];
+    var videoBps, unreachable = false;
 
     if (settings.mode === 'quality') {
-      // なるべく圧縮: 選んだ解像度で 720p30=1.2Mbps 相当の画質を狙う
-      scale = capScale;
-      width = even(meta.width * scale);
-      height = even(meta.height * scale);
-      videoBps = Math.round(width * height * outFps * QUALITY_BPP);
+      // なるべく圧縮: 下限ビットレートで圧縮する
+      videoBps = floorBps;
     } else if (forcedVideoBitrate) {
-      videoBps = Math.floor(forcedVideoBitrate);
+      // 再圧縮: 実サイズから求め直した値（下限は下回らない）
+      videoBps = Math.max(floorBps, Math.floor(forcedVideoBitrate));
     } else {
-      // ◯MB以下で圧縮: 長さと音声から逆算する
+      // ◯MB以下で圧縮: 目標サイズに収まるなるべく高いビットレート。下限を下回るなら圧縮できない
       videoBps = Math.floor(settings.targetBytes * 8 * SIZE_SAFETY / duration - audioBps);
-      if (videoBps < MIN_VIDEO_BITRATE) { videoBps = MIN_VIDEO_BITRATE; belowFloor = true; }
+      if (videoBps < floorBps) { unreachable = true; videoBps = floorBps; }
     }
 
     // 元動画より高いビットレートで焼き直しても容量が増えるだけなので上限を設ける
@@ -352,29 +390,17 @@
     var srcCap = Math.floor(srcBps * 0.8) - audioBps;
     if (isFinite(srcCap) && srcCap > 100000 && videoBps > srcCap) videoBps = srcCap;
 
-    if (settings.mode === 'size') {
-      // そのビットレートで画質の基準を満たす大きさまで下げる（選んだ解像度が上限）
-      var qualityScale = Math.sqrt(videoBps / (meta.width * meta.height * outFps * QUALITY_BPP));
-      scale = Math.min(1, capScale, qualityScale);
-      qualityLimited = qualityScale < Math.min(1, capScale);
-      if (srcShort * scale < MIN_SHORT_SIDE) scale = Math.min(1, MIN_SHORT_SIDE / srcShort);
-      width = even(meta.width * scale);
-      height = even(meta.height * scale);
-    }
-
     var estBytes = Math.round((videoBps + audioBps) * duration / 8);
     return {
       mode: settings.mode, res: settings.res, halfFps: settings.halfFps,
-      targetMB: settings.targetMB, targetBytes: settings.targetBytes,
+      targetMB: settings.targetMB, targetBytes: settings.targetBytes, minBitrate: settings.minBitrate,
       trimStart: trim.start, trimEnd: trim.end, duration: duration,
       srcFps: srcFps, outFps: outFps, fpsChanged: Math.abs(outFps - srcFps) > 0.05,
-      width: width, height: height, videoBitrate: videoBps,
+      width: width, height: height, videoBitrate: videoBps, floorBitrate: floorBps,
       audio: audio, audioBitrate: audioBps,
-      qualityLimited: qualityLimited, belowFloor: belowFloor,
       estBytes: estBytes,
-      overTarget: estBytes >= settings.targetBytes,
-      // 下限ビットレートでも収まる長さ（これを超えたらトリミングしてもらう）
-      maxSeconds: Math.floor(settings.targetBytes * 8 * SIZE_SAFETY / (MIN_VIDEO_BITRATE + audioBps))
+      unreachable: unreachable,                        // 目標サイズに収められない（◯MB以下で圧縮のとき）
+      overDiscord: estBytes > DISCORD_FREE_BYTES       // Discord無料アカウントの上限を超える見込み
     };
   }
 
@@ -405,13 +431,13 @@
     var hasFile = !!(state.file && state.meta);
     var locked = state.running || state.busy;
 
-    [els.trimStart, els.trimEnd, els.setStartBtn, els.setEndBtn].forEach(function (el) { el.disabled = !hasFile || locked; });
-    [els.res720, els.res1080, els.modeQuality, els.modeSize, els.targetSize, els.halfFps, els.audioOn]
-      .forEach(function (el) { el.disabled = state.running; });
+    [els.trimStart, els.trimEnd].forEach(function (el) { el.disabled = !hasFile || locked; });
+    [els.res720, els.res1080, els.modeQuality, els.modeSize, els.targetSize, els.halfFps, els.audioOn,
+      els.minRate720, els.minRate1080, els.autoRun].forEach(function (el) { el.disabled = state.running; });
     els.repickBtn.disabled = locked;
-    els.runBtn.disabled = !hasFile || state.busy;
 
     if (!hasFile) {
+      els.runBtn.disabled = !state.running;
       els.planInfo.textContent = '';
       setAlert(els.planWarn, []);
       return;
@@ -419,22 +445,17 @@
 
     var plan = state.plan = currentPlan();
     els.audioLabel.textContent = '音声を残す（' + plan.audio.label + '）';
-    els.planInfo.textContent = '→ ' + plan.width + '×' + plan.height + (plan.qualityLimited ? '（縮小）' : '') +
-      '・' + fmtFps(plan.outFps) + '・' + fmtRate(plan.videoBitrate) + '・予想' + fmtBytes(plan.estBytes);
+    els.planInfo.textContent = '→ ' + plan.width + '×' + plan.height + '・' + fmtFps(plan.outFps) + '・' +
+      fmtRate(plan.videoBitrate) + '・予想' + fmtBytes(plan.estBytes);
 
+    // 注意文は2種類だけ
     var warns = [];
-    if (plan.mode === 'size' && plan.overTarget) {
-      warns.push('この長さでは' + plan.targetMB + 'MBに収まりません（画質の下限' + fmtRate(MIN_VIDEO_BITRATE) +
-        'を優先）。' + fmtDuration(plan.maxSeconds) + '以内にトリミングしてください。');
-    } else if (plan.mode === 'quality' && plan.overTarget) {
-      warns.push('予想サイズが' + plan.targetMB + 'MBを超えます。Discordに送るなら「' + plan.targetMB + 'MB以下で圧縮」を選んでください。');
-    }
-    if (plan.audio.note) warns.push(plan.audio.note);
-    if (state.engine === 'compat') {
-      warns.push('この動画は互換モード（再生しながら処理）になるため、動画の長さと同じくらい時間がかかります。画面を開いたままにしてください。');
-    }
-    if (!state.meta.fpsMeasured) warns.push('フレームレートを測れなかったため、' + fmtFps(DEFAULT_FPS) + 'として計算しています。');
+    if (plan.mode === 'size' && plan.unreachable) warns.push(MSG_UNREACHABLE);
+    if (plan.overDiscord) warns.push(MSG_OVER_DISCORD);
     setAlert(els.planWarn, warns);
+
+    // 目標サイズを超えるのが分かっているときは実行させない（処理中はキャンセルボタンなので有効のまま）
+    els.runBtn.disabled = !state.running && (state.busy || (plan.mode === 'size' && plan.unreachable));
 
     updatePassthrough(s);
   }
@@ -447,8 +468,8 @@
       if (!state.out) {
         setOutput({ blob: state.file, name: state.file.name || 'video.mp4', type: state.file.type || 'video/mp4', original: true });
       }
-      els.outInfo.textContent = '元の動画のままで' + fmtBytes(state.file.size) + '（' + settings.targetMB + 'MB以下）';
-      setAlert(els.outWarn, ['すでに目標サイズ以下なので、画質を落とさずそのまま共有・保存できます。さらに小さくしたい場合は「圧縮する」を押してください。']);
+      els.outInfo.textContent = '元の動画のまま・' + fmtBytes(state.file.size) + '（' + settings.targetMB + 'MB以下なので圧縮不要）';
+      setAlert(els.outWarn, state.file.size > DISCORD_FREE_BYTES ? [MSG_OVER_DISCORD] : []);
     } else if (!canPass && state.out && state.out.original) {
       clearOutput();
     }
@@ -488,12 +509,6 @@
     try { els.srcVideo.currentTime = which === 'start' ? s : e; } catch (err) { /* noop */ }
     renderTrim();
     refresh();
-  }
-
-  function setTrimFromPlayhead(which) {
-    var t = els.srcVideo.currentTime || 0;
-    if (which === 'start') els.trimStart.value = String(t); else els.trimEnd.value = String(t);
-    onTrimInput(which);
   }
 
   // ---------------------------------------------------------------- 高速モード（Mediabunny Conversion）
@@ -875,7 +890,6 @@
     if (!state.file || state.running) return;
     var plan = currentPlan();
     var engine = state.engine;
-    var notes = [];
     var started = Date.now();
 
     state.running = true;
@@ -884,7 +898,7 @@
     requestWakeLock();
 
     function attempt(index) {
-      var label = index === 0 ? (engine === 'fast' ? '圧縮中' : '圧縮中（互換モード）')
+      var label = index === 0 ? (engine === 'fast' ? '圧縮中' : '圧縮中（互換モード：再生しながら処理）')
         : '目標を超えたので再圧縮中（' + (index + 1) + '回目 / 最大' + MAX_ATTEMPTS + '回）';
       setProgress(0, label);
       var job = engine === 'fast'
@@ -894,14 +908,15 @@
       return job.then(function (res) {
         throwIfCancelled();
         if (res.audioDropped && plan.audio.mode !== 'none') {
-          notes.push('音声を変換できなかったため、音声なしで書き出しました。');
           plan.audio = { mode: 'none', bps: 0, label: 'なし', note: null };
           plan.audioBitrate = 0;
         }
         if (plan.mode === 'size' && res.blob.size > plan.targetBytes && index + 1 < MAX_ATTEMPTS) {
           var audioBytes = plan.audioBitrate * plan.duration / 8;
           var next = nextBitrate(plan, res.blob.size - audioBytes, audioBytes);
-          if (next) {
+          // 下限を下回る値は下限に揃え、それ以上下げられないならやめる
+          if (next) next = Math.max(next, plan.floorBitrate);
+          if (next && next < plan.videoBitrate) {
             plan = makePlan(state.meta, { start: plan.trimStart, end: plan.trimEnd }, planSettings(plan),
               plan.audio, state.file.size, next);
             return attempt(index + 1);
@@ -915,7 +930,6 @@
         if (engine === 'fast' && index === 0 && state.caps.compat) {
           console.warn('高速モードに失敗したため互換モードに切り替えます:', err);
           engine = 'compat';
-          notes.push('高速モードで処理できなかったため、互換モード（再生しながら処理）で圧縮しました。');
           plan = makePlan(state.meta, { start: plan.trimStart, end: plan.trimEnd }, planSettings(plan),
             audioStrategy(state.meta, readSettings().audio, 'compat'), state.file.size);
           return attempt(0);
@@ -927,7 +941,7 @@
     return attempt(0).then(function (res) {
       setProgress(1, '完了');
       finishRun();
-      showResult(res, plan, engine, notes, (Date.now() - started) / 1000);
+      showResult(res, plan, engine, (Date.now() - started) / 1000);
     }, function (err) {
       finishRun();
       if (isCancel(err)) return;
@@ -936,10 +950,11 @@
     });
   }
 
+  // 計画を作り直すときに、元の計画と同じ設定を渡す
   function planSettings(plan) {
     return {
       mode: plan.mode, res: plan.res, halfFps: plan.halfFps,
-      targetMB: plan.targetMB, targetBytes: plan.targetBytes
+      targetMB: plan.targetMB, targetBytes: plan.targetBytes, minBitrate: plan.minBitrate
     };
   }
 
@@ -968,7 +983,7 @@
 
   function cancelRun() {
     state.cancel = true;
-    els.phase.textContent = 'キャンセルしています…';
+    setPhase('キャンセルしています…');
     if (state.cancelHook) {
       Promise.resolve(state.cancelHook()).catch(function () { /* noop */ });
     }
@@ -999,24 +1014,20 @@
     els.saveBtn.disabled = true;
   }
 
-  function showResult(res, plan, engine, notes, elapsed) {
+  function showResult(res, plan, engine, elapsed) {
     var base = String(state.file.name || 'video').replace(/\.[^.]+$/, '') || 'video';
     setOutput({ blob: res.blob, name: base + '_compressed.mp4', type: 'video/mp4', original: false });
 
     var size = res.blob.size;
     var ratio = state.file.size > 0 ? Math.round((1 - size / state.file.size) * 100) : 0;
     els.outInfo.textContent = fmtBytes(state.file.size) + ' → ' + fmtBytes(size) + '（' + (ratio >= 0 ? '-' : '+') +
-      Math.abs(ratio) + '%）・' + plan.width + '×' + plan.height + '・' + fmtDuration(elapsed) +
-      (res.attempts > 1 ? '・' + res.attempts + '回で調整' : '') + (engine === 'compat' ? '・互換モード' : '');
+      Math.abs(ratio) + '%）・' + plan.width + '×' + plan.height + '・' + fmtRate(plan.videoBitrate) + '・' +
+      fmtDuration(elapsed) + (res.attempts > 1 ? '・' + res.attempts + '回で調整' : '') +
+      (plan.audio.mode === 'none' && readSettings().audio ? '・音声なし' : '') + (engine === 'compat' ? '・互換モード' : '');
 
-    var warns = notes.slice();
-    if (plan.mode === 'size' && size > plan.targetBytes) {
-      warns.unshift(res.attempts + '回試しましたが' + plan.targetMB + 'MBに収まりませんでした。' +
-        fmtDuration(plan.maxSeconds) + '以内にトリミングするか、詳細設定で目標サイズを上げてください。');
-    }
-    if (res.frames && plan.duration > 0 && res.frames / plan.duration < plan.outFps * 0.7) {
-      warns.push('取り込めたフレームが毎秒約' + (res.frames / plan.duration).toFixed(1) + '枚のため、動きがなめらかでない場合があります。');
-    }
+    var warns = [];
+    if (plan.mode === 'size' && size > plan.targetBytes) warns.push(MSG_UNREACHABLE);
+    if (size > DISCORD_FREE_BYTES) warns.push(MSG_OVER_DISCORD);
     setAlert(els.outWarn, warns);
   }
 
@@ -1104,7 +1115,16 @@
     }).then(function () {
       state.busy = false;
       refresh();
+      autoRunIfEnabled(file);
     });
+  }
+
+  // 「動画をアップロードしたら即圧縮」がオンなら、選んだ直後に圧縮を始める。
+  // 目標サイズに収まらない（ボタンが無効）ときや、元のままで目標以下（圧縮不要）のときは始めない
+  function autoRunIfEnabled(file) {
+    if (!els.autoRun.checked || state.file !== file || !state.meta || state.running) return;
+    if (els.runBtn.disabled || (state.out && state.out.original)) return;
+    run();
   }
 
   // ---------------------------------------------------------------- 配線
@@ -1116,8 +1136,6 @@
   });
   els.trimStart.addEventListener('input', function () { onTrimInput('start'); });
   els.trimEnd.addEventListener('input', function () { onTrimInput('end'); });
-  els.setStartBtn.addEventListener('click', function () { setTrimFromPlayhead('start'); });
-  els.setEndBtn.addEventListener('click', function () { setTrimFromPlayhead('end'); });
 
   // プレビュー再生はトリミング範囲の中だけにする
   els.srcVideo.addEventListener('play', function () {
@@ -1132,6 +1150,13 @@
 
   ['res720', 'res1080', 'modeQuality', 'modeSize', 'halfFps', 'audioOn'].forEach(function (k) {
     els[k].addEventListener('change', refresh);
+  });
+  [els.minRate720, els.minRate1080].forEach(function (el) {
+    el.addEventListener('input', refresh);
+    el.addEventListener('change', function () {
+      el.value = String(readKbps(el, DEFAULT_MIN_KBPS[el === els.minRate720 ? '720' : '1080']));   // 確定したら正規化
+      refresh();
+    });
   });
   els.targetSize.addEventListener('input', refresh);
   els.targetSize.addEventListener('change', function () {
@@ -1161,9 +1186,7 @@
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('./sw.js').then(function () {
-        els.offlineState.textContent = 'オフライン対応済み。';
-      }).catch(function () { /* オフライン対応なしでも動く */ });
+      navigator.serviceWorker.register('./sw.js').catch(function () { /* オフライン対応なしでも動く */ });
     });
   }
 
@@ -1173,8 +1196,8 @@
     estimateFps: estimateFps, snapFps: snapFps, audioStrategy: audioStrategy,
     state: state,
     constants: {
-      SIZE_SAFETY: SIZE_SAFETY, AUDIO_BITRATE: AUDIO_BITRATE, QUALITY_BPP: QUALITY_BPP,
-      MIN_VIDEO_BITRATE: MIN_VIDEO_BITRATE, MAX_ATTEMPTS: MAX_ATTEMPTS
+      SIZE_SAFETY: SIZE_SAFETY, AUDIO_BITRATE: AUDIO_BITRATE, DEFAULT_MIN_KBPS: DEFAULT_MIN_KBPS,
+      DISCORD_FREE_BYTES: DISCORD_FREE_BYTES, MAX_ATTEMPTS: MAX_ATTEMPTS
     }
   };
 })();

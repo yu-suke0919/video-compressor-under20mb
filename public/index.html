@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>20MB圧縮</title>
+<title>動画圧縮する静的サイト</title>
 <meta name="description" content="動画をDiscordに投稿できるサイズ（既定20MB以下）に圧縮するツール。処理はすべて端末内で完結します。">
 <link rel="manifest" href="./manifest.json">
 <link rel="icon" href="./icons/icon-192.png" sizes="192x192">
@@ -17,14 +17,14 @@
   :root {
     color-scheme: light dark;
     --bg: #f2f2f7; --surface: #ffffff; --surface-2: #e9e9f0; --text: #12141a; --muted: #636779;
-    --line: #d9dae3; --accent: #5b4bdc; --on-accent: #ffffff; --ok: #1f8a4c; --on-ok: #ffffff;
+    --line: #d9dae3; --accent: #007aff; --on-accent: #ffffff; --discord: #5865f2; --on-discord: #ffffff;
     --danger: #c62828; --warn-bg: #fff4e0; --warn-text: #74480a; --warn-line: #f5d49a;
     --err-bg: #ffeceb; --err-text: #8b1a1a; --err-line: #f5c2c0;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #0b0d12; --surface: #171a22; --surface-2: #232838; --text: #f2f3f7; --muted: #9ba0b4;
-      --line: #2e3446; --accent: #8b7bff; --on-accent: #10111a; --ok: #3ccf7e; --on-ok: #07190e;
+      --line: #2e3446; --accent: #0a84ff; --on-accent: #ffffff; --discord: #5865f2; --on-discord: #ffffff;
       --danger: #ff6b6b; --warn-bg: #3a2c12; --warn-text: #ffd79a; --warn-line: #5c4419;
       --err-bg: #3a1a1a; --err-text: #ffb4b4; --err-line: #5c2525;
     }
@@ -46,8 +46,7 @@
   .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
-  header h1 { font-size: 15px; margin: 0; display: flex; align-items: center; gap: 6px; }
-  header img { width: 22px; height: 22px; border-radius: 6px; }
+  header h1 { font-size: 16px; margin: 0; }
 
   /* ボタン */
   .btn {
@@ -57,10 +56,10 @@
   }
   .btn:disabled { opacity: .45; cursor: default; }
   .btn-sm { width: auto; padding: 4px 10px; font-size: 13px; font-weight: 500; border-radius: 9px; }
-  .btn-xs { width: auto; padding: 3px 8px; font-size: 12px; font-weight: 500; border-radius: 8px; }
   .btn-primary { background: var(--accent); color: var(--on-accent); border-color: transparent; padding: 11px 12px; font-size: 17px; }
   .btn-primary.is-cancel { background: transparent; color: var(--danger); border-color: var(--danger); }
-  .btn-ok { background: var(--ok); color: var(--on-ok); border-color: transparent; }
+  .btn-discord { background: var(--discord); color: var(--on-discord); border-color: transparent; line-height: 1.25; padding: 7px 12px; }
+  .btn-discord span { display: block; }
 
   /* 2×2 の択一ボタン */
   .toggle-input { position: absolute; opacity: 0; pointer-events: none; }
@@ -110,8 +109,7 @@
   }
   .trim input[type="range"]:disabled::-webkit-slider-thumb { border-color: var(--line); cursor: default; }
   .trim-times { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
-  .trim-times .btn { white-space: nowrap; flex: none; }
-  #trimLabel { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #trimLabel { display: block; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* 注意書き・進捗 */
   .alert {
@@ -122,7 +120,7 @@
   .alert p { margin: 0; }
   .alert p + p { margin-top: 3px; }
   .progress { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
-  .progress > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s linear; }
+  .progress > i { display: block; height: 100%; width: 100%; background: var(--accent); transform-origin: left center; transform: scaleX(0); }
 
   /* 詳細設定 */
   details.settings summary { font-size: 13px; color: var(--muted); cursor: pointer; }
@@ -142,7 +140,7 @@
 <main class="app">
 
   <header class="row">
-    <h1><img src="./icons/icon-192.png" alt="">20MB圧縮</h1>
+    <h1>動画圧縮する静的サイト</h1>
     <button id="repickBtn" type="button" class="btn btn-sm hidden">別の動画</button>
   </header>
 
@@ -167,11 +165,7 @@
       <input type="range" id="trimStart" min="0" max="1" step="0.1" value="0" aria-label="開始位置" disabled>
       <input type="range" id="trimEnd" min="0" max="1" step="0.1" value="1" aria-label="終了位置" disabled>
     </div>
-    <div class="row trim-times">
-      <button type="button" id="setStartBtn" class="btn btn-xs" disabled title="再生位置を開始にする">⇤ 開始</button>
-      <span id="trimLabel">トリミング</span>
-      <button type="button" id="setEndBtn" class="btn btn-xs" disabled title="再生位置を終了にする">終了 ⇥</button>
-    </div>
+    <div class="trim-times"><span id="trimLabel">トリミング</span></div>
   </section>
 
   <!-- 3. 2×2 の設定ボタン（上段: 解像度、下段: 圧縮方法。どちらも択一） -->
@@ -202,9 +196,22 @@
       <label for="targetSize">目標サイズ（「MB以下で圧縮」用）</label>
       <span><input id="targetSize" type="number" inputmode="decimal" min="1" max="500" step="1" value="20"> MB</span>
     </div>
+    <div class="row" style="margin-top: 8px">
+      <label for="minRate720">下限ビットレート（720p）</label>
+      <span><input id="minRate720" type="number" inputmode="numeric" min="100" max="50000" step="100" value="1200"> kbps</span>
+    </div>
+    <div class="row" style="margin-top: 6px">
+      <label for="minRate1080">下限ビットレート（1080p）</label>
+      <span><input id="minRate1080" type="number" inputmode="numeric" min="100" max="50000" step="100" value="2700"> kbps</span>
+    </div>
+    <p class="hint">「なるべく圧縮」はこの値で圧縮します。「MB以下で圧縮」は、この値を下回らない範囲で目標サイズに収まるなるべく高いビットレートにします。</p>
     <div class="check">
       <input type="checkbox" id="halfFps" checked>
       <label for="halfFps">60fpsの動画は30fpsにする（容量を抑えられます）</label>
+    </div>
+    <div class="check">
+      <input type="checkbox" id="autoRun">
+      <label for="autoRun">動画をアップロードしたら即圧縮</label>
     </div>
     <div class="check">
       <input type="checkbox" id="audioOn" checked>
@@ -230,13 +237,13 @@
 
   <!-- 6. 共有 / 保存 -->
   <div class="grid2">
-    <button id="shareBtn" type="button" class="btn btn-ok" disabled>共有</button>
+    <button id="shareBtn" type="button" class="btn btn-discord" disabled><span>Discord等に</span><span>共有</span></button>
     <button id="saveBtn" type="button" class="btn" disabled>保存</button>
   </div>
 
   <footer>
-    すべて端末内で処理（アップロードなし）。長い動画は画質が下がり、目標サイズに収まらないことがあります。
-    <span id="offlineState"></span>
+    ブラウザの付属機能を利用して圧縮するため、ここに表示される動画はネット上にアップロードされません。
+    本サイトは無保証で提供しています。利用によって生じたいかなる損害についても、作成者は責任を負いません。
   </footer>
 </main>
 

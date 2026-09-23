@@ -1,7 +1,7 @@
 {
-  "name": "20MB圧縮",
+  "name": "動画圧縮する静的サイト",
   "short_name": "20MB圧縮",
-  "description": "動画をDiscordに投稿できるサイズ（既定20MB未満）に圧縮するツール。処理はすべて端末内で完結します。",
+  "description": "動画をDiscordなどに送れるサイズに圧縮する静的サイト。ブラウザの機能で処理し、動画はアップロードされません。",
   "lang": "ja",
   "dir": "ltr",
   "start_url": "./",
