@@ -3,7 +3,7 @@
 動画を**Discordに投稿できるサイズ**（既定20MB以下）に圧縮して、共有シートからそのまま投稿できるWebアプリです。
 iPhoneのSafariで動き、ホーム画面に追加すればオフラインでも起動できます（PWA）。
 
-**公開URL: https://<プロジェクト名>.pages.dev/**（Cloudflare Pages）
+**公開URL: https://maka-u20mb.pages.dev/**（Cloudflare Pages）
 
 処理はすべて端末内（ブラウザ内）で完結します。動画がどこかにアップロードされることはありません。
 
@@ -56,7 +56,7 @@ Nintendo Switchアプリで録画した動画をDiscordに投稿するまでの�
 2. （任意）アクション **「メディアをトリミング」**。アプリ内でもトリミングできるので省略してかまいません
 3. アクション **「フォトアルバムに保存」**（またはファイルに保存）を追加
 4. アクション **「URLを開く」** を追加し、URLに
-   `https://<プロジェクト名>.pages.dev/?target=20&res=720` を入れる
+   `https://maka-u20mb.pages.dev/?target=20&res=720` を入れる
 
 ### URLパラメータ
 
@@ -69,7 +69,7 @@ Nintendo Switchアプリで録画した動画をDiscordに投稿するまでの�
 | `mode` | `size` / `quality` | `size`＝◯MB以下で圧縮（既定）、`quality`＝なるべく圧縮 |
 | `fps` | `30` / `source` | `30`なら60fpsの動画を30fpsにする（既定）。`source`は元のフレームレートを保つ |
 
-例: `https://<プロジェクト名>.pages.dev/?target=50&res=1080&mode=size`
+例: `https://maka-u20mb.pages.dev/?target=50&res=1080&mode=size`
 
 ---
 
@@ -187,11 +187,12 @@ python3 -m http.server 8000 -d public
 3. ビルドの設定
    | 項目 | 値 |
    | --- | --- |
+   | Project name | 好きな名前（このリポジトリでは `maka-u20mb`） |
    | Production branch | `main` |
    | Framework preset | `None` |
    | Build command | （空欄） |
    | Build output directory | `public` |
-4. **Save and Deploy** → `https://<プロジェクト名>.pages.dev/` で公開される
+4. **Save and Deploy** → `https://<Project name>.pages.dev/` で公開される
 
 main 以外のブランチに push すると、そのブランチ用のプレビューURLが自動で作られます。
 PRの内容を実機で試してからマージする、という使い方ができます。
