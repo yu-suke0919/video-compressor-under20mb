@@ -5,5 +5,6 @@ export {
   Input, BlobSource, MP4, QTFF,
   Output, Mp4OutputFormat, BufferTarget,
   Conversion, Quality, canEncodeVideo, canEncodeAudio,
-  EncodedPacket, EncodedVideoPacketSource, EncodedAudioPacketSource
+  EncodedPacket, EncodedVideoPacketSource, EncodedAudioPacketSource,
+  CustomVideoEncoder, registerEncoder
 } from 'mediabunny';
