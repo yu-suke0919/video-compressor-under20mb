@@ -149,6 +149,19 @@
   }
   details.settings .hint { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
   footer { font-size: 11px; color: var(--muted); text-align: center; }
+
+  /* URLを作る（画面の下・最初は閉じている） */
+  #urlBuilder { margin-top: 14px; }
+  details.settings select {
+    font: inherit; font-size: 16px; color: var(--text);
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px;
+  }
+  #uOut {
+    display: block; width: 100%; box-sizing: border-box; margin-top: 8px; resize: none;
+    font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; color: var(--text);
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px;
+  }
+  #urlBuilder .grid2 { margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -223,6 +236,10 @@
     </div>
     <p class="hint">「なるべく圧縮」はこの値で圧縮します。「MB以下で圧縮」は、この値を下回らない範囲で目標サイズに収まるなるべく高いビットレートにします。</p>
     <div class="check">
+      <input type="checkbox" id="vbrOn">
+      <label for="vbrOn">可変ビットレート（VBR）で圧縮（激しい場面に多く割り振る。目標を超えたら自動で再圧縮）</label>
+    </div>
+    <div class="check">
       <input type="checkbox" id="halfFps" checked>
       <label for="halfFps">60fpsの動画は30fpsにする（容量を抑えられます）</label>
     </div>
@@ -262,6 +279,54 @@
     ブラウザの付属機能を利用して圧縮するため、ここに表示される動画はネット上にアップロードされません。
     本サイトは無保証で提供しています。利用によって生じたいかなる損害についても、作成者は責任を負いません。
   </footer>
+
+  <!-- 7. 設定済みのURLを作る（ショートカットやブックマーク用） -->
+  <details class="settings" id="urlBuilder">
+    <summary>設定済みのURLを作る</summary>
+    <p class="hint">ここで選んだ設定が最初から入った状態で開くURLを作ります。ブックマークやショートカットに使えます。既定値と同じ項目はURLから省きます。</p>
+    <div class="row" style="margin-top: 8px">
+      <label for="uRes">解像度</label>
+      <select id="uRes"><option value="720">720p</option><option value="1080">1080p</option></select>
+    </div>
+    <div class="row" style="margin-top: 6px">
+      <label for="uMode">圧縮方法</label>
+      <select id="uMode"><option value="size">目標サイズ以下で圧縮</option><option value="quality">なるべく圧縮</option></select>
+    </div>
+    <div class="row" style="margin-top: 6px">
+      <label for="uTarget">目標サイズ</label>
+      <span><input id="uTarget" type="number" inputmode="decimal" min="1" max="500" step="1" value="20"> MB</span>
+    </div>
+    <div class="row" style="margin-top: 6px">
+      <label for="uMin720">下限ビットレート（720p）</label>
+      <span><input id="uMin720" type="number" inputmode="numeric" min="100" max="50000" step="100" value="1200"> kbps</span>
+    </div>
+    <div class="row" style="margin-top: 6px">
+      <label for="uMin1080">下限ビットレート（1080p）</label>
+      <span><input id="uMin1080" type="number" inputmode="numeric" min="100" max="50000" step="100" value="2700"> kbps</span>
+    </div>
+    <div class="check">
+      <input type="checkbox" id="uVbr">
+      <label for="uVbr">可変ビットレート（VBR）で圧縮</label>
+    </div>
+    <div class="check">
+      <input type="checkbox" id="uFps" checked>
+      <label for="uFps">60fpsの動画は30fpsにする</label>
+    </div>
+    <div class="check">
+      <input type="checkbox" id="uAuto">
+      <label for="uAuto">動画をアップロードしたら即圧縮</label>
+    </div>
+    <div class="check">
+      <input type="checkbox" id="uAudio" checked>
+      <label for="uAudio">音声を残す</label>
+    </div>
+    <textarea id="uOut" rows="3" readonly aria-label="作成したURL"></textarea>
+    <div class="grid2">
+      <button id="uCopy" type="button" class="btn btn-sm" style="width: 100%">コピー</button>
+      <button id="uLoad" type="button" class="btn btn-sm" style="width: 100%">今の設定を読み込む</button>
+    </div>
+    <p id="uStatus" class="hint" role="status"></p>
+  </details>
 </main>
 
 <script src="./vendor/mediabunny.min.js"></script>

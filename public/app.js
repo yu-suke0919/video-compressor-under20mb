@@ -66,6 +66,7 @@
     sizeLabel: $('sizeLabel'), planInfo: $('planInfo'), planWarn: $('planWarn'),
     targetSize: $('targetSize'), halfFps: $('halfFps'), audioOn: $('audioOn'), audioLabel: $('audioLabel'),
     minRate720: $('minRate720'), minRate1080: $('minRate1080'), autoRun: $('autoRun'), capLabel: $('capLabel'),
+    vbrOn: $('vbrOn'),
     runBtn: $('runBtn'), progressWrap: $('progressWrap'), progressBar: $('progressBar'),
     phase: $('phase'), pct: $('pct'),
     outVideo: $('outVideo'), outEmpty: $('outEmpty'), outInfo: $('outInfo'), outWarn: $('outWarn'),
@@ -174,6 +175,7 @@
       // 上限（この値「未満」に収める）。見積もりはこの97%を狙う
       targetBytes: Math.floor(mb * MB),
       halfFps: !!els.halfFps.checked,
+      vbr: !!els.vbrOn.checked,
       audio: !!els.audioOn.checked,
       autoRun: !!els.autoRun.checked,
       // 解像度ごとの下限ビットレート（bps）
@@ -185,7 +187,7 @@
   }
 
   // ショートカットなどから URL で初期値を渡せる（詳細設定の項目も含む）
-  //   res=720|1080  mode=size|quality  target=MB  fps=30|source  audio=on|off  min720=kbps  min1080=kbps  auto=on|off
+  //   res=720|1080  mode=size|quality  target=MB  fps=30|source  audio=on|off  min720=kbps  min1080=kbps  auto=on|off  vbr=on|off
   function applyUrlParams() {
     var params;
     try { params = new URLSearchParams(window.location.search); } catch (e) { return; }
@@ -203,6 +205,9 @@
     var a = (params.get('audio') || '').toLowerCase();
     if (a === 'on' || a === '1' || a === 'true') els.audioOn.checked = true;
     else if (a === 'off' || a === '0' || a === 'false') els.audioOn.checked = false;
+    var vb = (params.get('vbr') || '').toLowerCase();
+    if (vb === 'on' || vb === '1' || vb === 'true') els.vbrOn.checked = true;
+    else if (vb === 'off' || vb === '0' || vb === 'false') els.vbrOn.checked = false;
     var au = (params.get('auto') || '').toLowerCase();
     if (au === 'on' || au === '1' || au === 'true') els.autoRun.checked = true;
     else if (au === 'off' || au === '0' || au === 'false') els.autoRun.checked = false;
@@ -405,7 +410,7 @@
 
     var estBytes = Math.round((videoBps + audioBps) * duration / 8);
     return {
-      mode: settings.mode, res: settings.res, halfFps: settings.halfFps,
+      mode: settings.mode, res: settings.res, halfFps: settings.halfFps, vbr: !!settings.vbr,
       targetMB: settings.targetMB, targetBytes: settings.targetBytes, minBitrate: settings.minBitrate,
       trimStart: trim.start, trimEnd: trim.end, duration: duration,
       srcFps: srcFps, outFps: outFps, fpsChanged: Math.abs(outFps - srcFps) > 0.05,
@@ -459,7 +464,7 @@
 
     [els.trimStart, els.trimEnd].forEach(function (el) { el.disabled = !hasFile || locked; });
     [els.res720, els.res1080, els.modeQuality, els.modeSize, els.targetSize, els.halfFps, els.audioOn,
-      els.minRate720, els.minRate1080, els.autoRun].forEach(function (el) { el.disabled = state.running; });
+      els.minRate720, els.minRate1080, els.autoRun, els.vbrOn].forEach(function (el) { el.disabled = state.running; });
     els.repickBtn.disabled = locked;
 
     if (!hasFile) {
@@ -559,8 +564,9 @@
 
   // ---------------------------------------------------------------- 高速モード（Mediabunny Conversion）
   function pickFastEncoding(plan) {
-    // 指定したビットレートに素直に従わせるため、どちらのモードも固定ビットレートを優先する
-    var modes = ['constant', 'variable'];
+    // 既定は、指定したビットレートに素直に従う固定ビットレート（CBR）を優先する。
+    // 可変ビットレート（VBR）を選んだときは VBR を優先し、使えなければ CBR にする
+    var modes = plan.vbr ? ['variable', 'constant'] : ['constant', 'variable'];
     var cands = [];
     FAST_VIDEO_CODECS.forEach(function (codec) {
       ['prefer-hardware', 'no-preference'].forEach(function (hw) {
@@ -581,11 +587,12 @@
   function convertFast(plan, onProgress, job) {
     var input = new M.Input({ source: new M.BlobSource(state.file), formats: INPUT_FORMATS });
     var output = new M.Output({ format: new M.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new M.BufferTarget() });
-    var conversion = null;
+    var conversion = null, chosen = null;
     function dispose() { try { input.dispose(); } catch (e) { /* noop */ } }
 
     return pickFastEncoding(plan).then(function (enc) {
       if (!enc) throw new Error('この端末では動画のエンコード（H.264）に対応していません。');
+      chosen = enc;
       var video = {
         codec: enc.codec, width: plan.width, height: plan.height, fit: 'fill',
         quality: new M.Quality({ bitrate: plan.videoBitrate, bitrateMode: enc.bitrateMode }),
@@ -618,7 +625,8 @@
       conv.onProgress = function (p) { onProgress(p); };
       throwIfCancelled(job);
       return conv.execute().then(function () {
-        return { blob: new Blob([output.target.buffer], { type: 'video/mp4' }), audioDropped: audioLost, frames: null };
+        return { blob: new Blob([output.target.buffer], { type: 'video/mp4' }), audioDropped: audioLost, frames: null,
+          rateMode: chosen.bitrateMode };
       });
     }).then(function (res) {
       dispose();
@@ -638,7 +646,7 @@
   function findCompatVideoConfig(plan) {
     var cands = [];
     ['prefer-hardware', 'no-preference'].forEach(function (accel) {
-      ['constant', null].forEach(function (mode) {
+      (plan.vbr ? ['variable', 'constant'] : ['constant', null]).forEach(function (mode) {
         COMPAT_VIDEO_CODECS.forEach(function (c) {
           var cfg = {
             codec: c.codec, width: plan.width, height: plan.height, bitrate: plan.videoBitrate,
@@ -924,7 +932,8 @@
               return {
                 blob: new Blob([output.target.buffer], { type: 'video/mp4' }),
                 audioDropped: plan.audio.mode === 'aac' && !asrc,
-                frames: vr.frames
+                frames: vr.frames,
+                rateMode: found.config.bitrateMode || 'variable'   // 指定なしは WebCodecs の既定（可変）
               };
             });
           }, function (err) {
@@ -1008,7 +1017,7 @@
   function planSettings(plan) {
     return {
       mode: plan.mode, res: plan.res, halfFps: plan.halfFps,
-      targetMB: plan.targetMB, targetBytes: plan.targetBytes, minBitrate: plan.minBitrate
+      targetMB: plan.targetMB, targetBytes: plan.targetBytes, minBitrate: plan.minBitrate, vbr: plan.vbr
     };
   }
 
@@ -1085,6 +1094,7 @@
     els.outInfo.textContent = fmtBytes(state.file.size) + ' → ' + fmtBytes(size) + '（' + (ratio >= 0 ? '-' : '+') +
       Math.abs(ratio) + '%）・' + plan.width + '×' + plan.height + '・' + fmtRate(plan.videoBitrate) + '・' +
       fmtDuration(elapsed) + (res.attempts > 1 ? '・' + res.attempts + '回で調整' : '') +
+      (res.rateMode ? (res.rateMode === 'variable' ? '・VBR' : '・CBR') : '') +
       (plan.audio.mode === 'none' && readSettings().audio ? '・音声なし' : '') + (engine === 'compat' ? '・互換モード' : '');
 
     var warns = [];
@@ -1220,7 +1230,7 @@
     if (els.srcVideo.currentTime >= state.trim.end) els.srcVideo.pause();
   });
 
-  ['res720', 'res1080', 'modeQuality', 'modeSize', 'halfFps', 'audioOn'].forEach(function (k) {
+  ['res720', 'res1080', 'modeQuality', 'modeSize', 'halfFps', 'audioOn', 'vbrOn'].forEach(function (k) {
     els[k].addEventListener('change', refresh);
   });
   [els.minRate720, els.minRate1080].forEach(function (el) {
@@ -1263,9 +1273,79 @@
       '<span>Discord等に共有・動画保存</span>';
   }
 
+  // ---------------------------------------------------------------- URLを作る
+  // 画面の下のボックスで選んだ設定を URL パラメータにする（既定値と同じ項目は省く）
+  var ub = {
+    box: $('urlBuilder'), res: $('uRes'), mode: $('uMode'), target: $('uTarget'),
+    min720: $('uMin720'), min1080: $('uMin1080'), vbr: $('uVbr'), fps: $('uFps'),
+    auto: $('uAuto'), audio: $('uAudio'), out: $('uOut'), copy: $('uCopy'), load: $('uLoad'), status: $('uStatus')
+  };
+  function buildUrl() {
+    var q = [];
+    var mb = parseFloat(ub.target.value);
+    if (!isFinite(mb) || mb < MIN_TARGET_MB) mb = DEFAULT_TARGET_MB;
+    if (mb > MAX_TARGET_MB) mb = MAX_TARGET_MB;
+    var k720 = readKbps(ub.min720, DEFAULT_MIN_KBPS['720']);
+    var k1080 = readKbps(ub.min1080, DEFAULT_MIN_KBPS['1080']);
+    if (ub.res.value !== '720') q.push('res=' + ub.res.value);
+    if (ub.mode.value !== 'size') q.push('mode=' + ub.mode.value);
+    if (mb !== DEFAULT_TARGET_MB) q.push('target=' + mb);
+    if (k720 !== DEFAULT_MIN_KBPS['720']) q.push('min720=' + k720);
+    if (k1080 !== DEFAULT_MIN_KBPS['1080']) q.push('min1080=' + k1080);
+    if (ub.vbr.checked) q.push('vbr=on');
+    if (!ub.fps.checked) q.push('fps=source');
+    if (ub.auto.checked) q.push('auto=on');
+    if (!ub.audio.checked) q.push('audio=off');
+    return location.origin + location.pathname + (q.length ? '?' + q.join('&') : '');
+  }
+  function updateBuiltUrl() {
+    ub.out.value = buildUrl();
+    ub.status.textContent = '';
+  }
+  // 今の画面の設定をボックスに写す
+  function loadBuilderFromScreen() {
+    var s = readSettings();
+    ub.res.value = s.res;
+    ub.mode.value = s.mode;
+    ub.target.value = String(s.targetMB);
+    ub.min720.value = String(s.minBitrate['720'] / 1000);
+    ub.min1080.value = String(s.minBitrate['1080'] / 1000);
+    ub.vbr.checked = s.vbr;
+    ub.fps.checked = s.halfFps;
+    ub.auto.checked = s.autoRun;
+    ub.audio.checked = s.audio;
+    updateBuiltUrl();
+  }
+  function copyBuiltUrl() {
+    var text = ub.out.value;
+    var done = function () { ub.status.textContent = 'コピーしました'; };
+    var fallback = function () {
+      ub.out.focus();
+      ub.out.select();
+      ub.out.setSelectionRange(0, text.length);
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      ub.status.textContent = ok ? 'コピーしました' : 'コピーできませんでした。URLを長押ししてコピーしてください。';
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+    else fallback();
+  }
+  var builderLoaded = false;
+  ub.box.addEventListener('toggle', function () {
+    if (ub.box.open && !builderLoaded) { builderLoaded = true; loadBuilderFromScreen(); }   // 最初に開いたときは今の画面の設定から始める
+  });
+  [ub.res, ub.mode, ub.vbr, ub.fps, ub.auto, ub.audio].forEach(function (el) { el.addEventListener('change', updateBuiltUrl); });
+  [ub.target, ub.min720, ub.min1080].forEach(function (el) {
+    el.addEventListener('input', updateBuiltUrl);
+    el.addEventListener('change', updateBuiltUrl);
+  });
+  ub.copy.addEventListener('click', copyBuiltUrl);
+  ub.load.addEventListener('click', function () { builderLoaded = true; loadBuilderFromScreen(); });
+
   // ---------------------------------------------------------------- 起動
   setupIOSButtons();
   applyUrlParams();
+  loadBuilderFromScreen();
   var missing = checkSupport();
   if (missing.length) {
     setAlert(els.unsupported, ['この環境では利用できません。次の機能に対応していません: ' + missing.join('、'),
