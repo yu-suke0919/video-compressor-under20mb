@@ -38,11 +38,12 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-23b';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-23c';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、別の方式に切り替える
   var MAX_STALL_RETRIES = 2;             // 高速モードで別のエンコード設定を試す回数
+  var CONFIG_CHECK_MS = 4000;            // エンコード設定の確認（isConfigSupported）を待つ時間
 
   // 出力に使うコーデック（優先順）。高速モードは Mediabunny の名前、互換モードは WebCodecs のコーデック文字列
   var FAST_VIDEO_CODECS = ['avc', 'hevc'];
@@ -598,6 +599,73 @@
   }
 
   // ---------------------------------------------------------------- 高速モード（Mediabunny Conversion）
+  // ---------------------------------------------------------------- 直接モード
+  // Discord や Brave などのアプリ内ブラウザ（iOS の WKWebView）では、エンコードできるかの確認
+  // （VideoEncoder.isConfigSupported）が返ってこないことがある。確認が一定時間返らなければ、
+  // 確認をせずにエンコーダを直接使う（Mediabunny にはカスタムエンコーダとして登録する）
+  var direct = { enabled: false, registered: false };
+  var DIRECT_VIDEO_CODECS = ['avc', 'hevc'];          // 直接モードで使うコーデック（高速モード）
+  var DIRECT_COMPAT_CODEC = /^(avc1|hvc1)\./;         // 同（互換モード）
+  function DirectVideoEncoder() { this.encoder = null; this.outputs = 0; }
+  if (M && M.CustomVideoEncoder) {
+    DirectVideoEncoder.prototype = Object.create(M.CustomVideoEncoder.prototype);
+    DirectVideoEncoder.prototype.constructor = DirectVideoEncoder;
+  }
+  DirectVideoEncoder.supports = function (codec) {
+    return direct.enabled && DIRECT_VIDEO_CODECS.indexOf(codec) >= 0;
+  };
+  DirectVideoEncoder.prototype.init = function () {
+    var self = this;
+    log('直接モードでエンコーダを準備 ' + self.config.codec + ' ' + self.config.width + 'x' + self.config.height +
+      ' ' + Math.round((self.config.bitrate || 0) / 1000) + 'kbps ' + (self.config.bitrateMode || '既定') + ' ' +
+      (self.config.hardwareAcceleration || 'no-preference'));
+    self.encoder = new VideoEncoder({
+      output: function (chunk, meta) {
+        if (self.outputs++ === 0) log('直接モードで最初のデータを受け取り');
+        self.onPacket(M.EncodedPacket.fromEncodedChunk(chunk), meta);
+      },
+      error: function (e) { log('直接モードのエンコーダでエラー ' + errText(e)); self.onError(e); }
+    });
+    self.encoder.configure(self.config);
+  };
+  DirectVideoEncoder.prototype.encode = function (sample, options) {
+    var enc = this.encoder;
+    var frame = sample.toVideoFrame();
+    try { enc.encode(frame, options); } finally { frame.close(); }
+    // 詰まりすぎないように、エンコーダの待ち行列が減るまで待つ
+    return (function wait() {
+      if (enc.state !== 'configured' || enc.encodeQueueSize <= 4) return Promise.resolve();
+      return sleep(5).then(wait);
+    })();
+  };
+  DirectVideoEncoder.prototype.flush = function () {
+    return this.encoder && this.encoder.state === 'configured' ? this.encoder.flush() : Promise.resolve();
+  };
+  DirectVideoEncoder.prototype.close = function () {
+    try { if (this.encoder && this.encoder.state !== 'closed') this.encoder.close(); } catch (e) { /* noop */ }
+  };
+  function enableDirect(reason) {
+    if (direct.enabled) return;
+    direct.enabled = true;
+    log('エンコード設定の確認が' + (CONFIG_CHECK_MS / 1000) + '秒返らないため、直接モードに切り替え（' + reason + '）');
+    if (M && M.registerEncoder && !direct.registered) {
+      direct.registered = true;
+      M.registerEncoder(DirectVideoEncoder);
+    }
+  }
+  // promise が ms 以内に決着しなければ、onTimeout() の値で決着させる
+  function withTimeout(promise, ms, onTimeout) {
+    return new Promise(function (resolve, reject) {
+      var done = false;
+      var timer = setTimeout(function () { if (!done) { done = true; resolve(onTimeout()); } }, ms);
+      Promise.resolve(promise).then(function (v) {
+        if (!done) { done = true; clearTimeout(timer); resolve(v); }
+      }, function (e) {
+        if (!done) { done = true; clearTimeout(timer); reject(e); }
+      });
+    });
+  }
+
   function encKey(c) { return c.codec + '/' + c.hw + '/' + c.bitrateMode; }
   function pickFastEncoding(plan, avoid) {
     // 既定は、指定したビットレートに素直に従う固定ビットレート（CBR）を優先する。
@@ -615,11 +683,18 @@
     return (function next(i) {
       if (i >= cands.length) return Promise.resolve(null);
       var c = cands[i];
-      return M.canEncodeVideo(c.codec, {
+      if (direct.enabled) {
+        // 直接モードでは確認をせず、H.264 から順に使ってみる（だめなら停止検出やエラーで次の候補へ）
+        if (DIRECT_VIDEO_CODECS.indexOf(c.codec) < 0) return next(i + 1);
+        log('エンコード設定 ' + encKey(c) + ' → 確認せずに使う（直接モード）');
+        return Promise.resolve(c);
+      }
+      return withTimeout(M.canEncodeVideo(c.codec, {
         width: plan.width, height: plan.height, frameRate: plan.outFps,
         quality: new M.Quality({ bitrate: plan.videoBitrate, bitrateMode: c.bitrateMode }),
         hardwareAcceleration: c.hw
-      }).then(function (ok) {
+      }), CONFIG_CHECK_MS, function () { enableDirect(encKey(c)); return 'direct'; }).then(function (ok) {
+        if (ok === 'direct') return next(i);   // 直接モードで同じ候補から選び直す
         log('エンコード設定 ' + encKey(c) + ' → ' + (ok ? '使える' : '使えない'));
         return ok ? c : next(i + 1);
       }, function (e) { log('エンコード設定 ' + encKey(c) + ' → 確認に失敗 ' + errText(e)); return next(i + 1); });
@@ -680,7 +755,8 @@
       return res;
     }, function (err) {
       dispose();
-      if (conversion && conversion.state === 'canceled') throw new Error(CANCELLED);
+      // 利用者が止めたときだけキャンセル扱いにする（エンコーダのエラーで変換が中止された場合はエラーとして扱う）
+      if (job.cancelled) throw new Error(CANCELLED);
       throw err;
     });
   }
@@ -708,9 +784,22 @@
     return (function next(i) {
       if (i >= cands.length) return Promise.resolve(null);
       var c = cands[i];
+      if (direct.enabled) {
+        // 直接モードでは確認をせず、H.264 の候補をそのまま使う
+        if (!DIRECT_COMPAT_CODEC.test(c.config.codec)) return next(i + 1);
+        log('互換エンコード設定 ' + c.config.codec + '/' + c.config.hardwareAcceleration + '/' + (c.config.bitrateMode || '既定') +
+          ' → 確認せずに使う（直接モード）');
+        return Promise.resolve({ config: c.config, mb: c.mb });
+      }
       return Promise.resolve()
-        .then(function () { return VideoEncoder.isConfigSupported(c.config); })
+        .then(function () {
+          return withTimeout(VideoEncoder.isConfigSupported(c.config), CONFIG_CHECK_MS, function () {
+            enableDirect(c.config.codec);
+            return 'direct';
+          });
+        })
         .then(function (res) {
+          if (res === 'direct') return next(i);
           log('互換エンコード設定 ' + c.config.codec + '/' + c.config.hardwareAcceleration + '/' + (c.config.bitrateMode || '既定') +
             ' → ' + ((res && res.supported) ? '使える' : '使えない'));
           return (res && res.supported) ? { config: res.config || c.config, mb: c.mb } : next(i + 1);
@@ -1071,10 +1160,11 @@
         var stalled = aj.cancelled;
         if (!stalled) log('失敗（' + engine + '）' + errText(err));
         // 高速モードで進まなくなったら、別のエンコード設定で同じ処理をやり直す
-        if (stalled && engine === 'fast' && aj.enc && stallRetries < MAX_STALL_RETRIES) {
+        if ((stalled || direct.enabled) && engine === 'fast' && aj.enc && stallRetries < MAX_STALL_RETRIES) {
           stallRetries++;
           avoid.push(encKey(aj.enc));
-          return attempt(index, prevSize, '処理が進まないため、別の設定でやり直し中（' + (stallRetries + 1) + '回目）');
+          return attempt(index, prevSize, (stalled ? '処理が進まないため' : 'うまくいかないため') +
+            '、別の設定でやり直し中（' + (stallRetries + 1) + '回目）');
         }
         // 高速モードで扱えなかったら、互換モードでやり直す
         if (engine === 'fast' && (index === 0 || stalled) && state.caps.compat) {
@@ -1084,6 +1174,9 @@
           plan = makePlan(state.meta, { start: plan.trimStart, end: plan.trimEnd }, planSettings(plan),
             audioStrategy(state.meta, readSettings().audio, 'compat'), state.file.size);
           return attempt(0, 0, stalled ? '処理が進まないため、互換モードでやり直し中' : null);
+        }
+        if (direct.enabled && isIOS()) {
+          throw new Error('このアプリ内ブラウザでは動画のエンコードがうまく動かないようです。右上のメニューなどから「Safariで開く」を選んでお試しください。');
         }
         if (stalled) throw new Error('圧縮が進まなくなりました。画面を表示したまま、もう一度お試しください。');
         throw err;
