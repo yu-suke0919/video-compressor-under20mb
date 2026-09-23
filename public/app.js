@@ -38,12 +38,11 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-23d';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-23e';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、別の方式に切り替える
   var MAX_STALL_RETRIES = 2;             // 高速モードで別のエンコード設定を試す回数
-  var CONFIG_CHECK_MS = 3000;            // エンコード設定の確認（isConfigSupported）を待つ時間
 
   // 出力に使うコーデック（優先順）。高速モードは Mediabunny の名前、互換モードは WebCodecs のコーデック文字列
   var FAST_VIDEO_CODECS = ['avc', 'hevc'];
@@ -419,7 +418,8 @@
     var srcFps = meta.fps || DEFAULT_FPS;
     var outFps = (settings.halfFps && srcFps > 40) ? srcFps / 2 : srcFps;
     outFps = Math.min(Math.max(outFps, 1), MAX_FPS);
-    var audioBps = audio.bps;
+    // 音声をそのまま使うときは実測値（小数）なので、整数にしてから使う
+    var audioBps = Math.round(audio.bps || 0);
     // 解像度は選んだもので固定（元より大きくはしない）。容量はビットレートだけで調整する
     var scale = resolutionCap(meta, settings.res);
     var width = even(meta.width * scale);
@@ -443,6 +443,8 @@
     var srcBps = meta.duration > 0 ? fileSize * 8 / meta.duration : Infinity;
     var srcCap = Math.floor(srcBps * 0.8) - audioBps;
     if (isFinite(srcCap) && srcCap > 100000 && videoBps > srcCap) videoBps = srcCap;
+    // ビットレートは必ず整数にする（小数だと Mediabunny が例外を出し、0%のまま止まっていた）
+    videoBps = Math.floor(videoBps);
 
     var estBytes = Math.round((videoBps + audioBps) * duration / 8);
     return {
@@ -599,96 +601,6 @@
   }
 
   // ---------------------------------------------------------------- 高速モード（Mediabunny Conversion）
-  // ---------------------------------------------------------------- 設定の確認と直接モード
-  // Discord や Brave などのアプリ内ブラウザ（iOS の WKWebView）では、エンコードできるかの確認
-  // （VideoEncoder.isConfigSupported）が、設定によっては返ってこないことがある（高めのビットレートの固定ビットレートなど）。
-  // - 確認に時間制限を付け、返らない設定は「使えない」とみなす（アプリも Mediabunny も次の設定へ進む）
-  // - どの設定の確認も返らなかったときだけ、確認をせずにエンコーダを直接使う「直接モード」にする
-  //   （Mediabunny にはカスタムエンコーダとして登録する）
-  var configCheck = { timeouts: 0, answers: 0, activity: 0 };
-  var MAX_SILENT_CHECKS = 3;             // 1つも返事がないまま、これだけ確認が返らなければ直接モードにする
-  if (typeof VideoEncoder !== 'undefined' && VideoEncoder.isConfigSupported) {
-    var nativeIsConfigSupported = VideoEncoder.isConfigSupported.bind(VideoEncoder);
-    VideoEncoder.isConfigSupported = function (config) {
-      return withTimeout(nativeIsConfigSupported(config), CONFIG_CHECK_MS, function () {
-        configCheck.timeouts++;
-        log('設定の確認が返らない ' + describeConfig(config) + ' → 使えないものとして扱う');
-        return { supported: false, config: config, timedOut: true };
-      }).then(function (res) {
-        configCheck.activity++;
-        if (res && !res.timedOut) configCheck.answers++;   // 実際に返事があった
-        return res;
-      },
-        function (e) { configCheck.activity++; throw e; });
-    };
-  }
-  function describeConfig(c) {
-    return (c.codec || '?') + ' ' + c.width + 'x' + c.height + ' ' + Math.round((c.bitrate || 0) / 1000) + 'kbps ' +
-      (c.bitrateMode || '既定') + ' ' + (c.hardwareAcceleration || 'no-preference');
-  }
-  var direct = { enabled: false, registered: false };
-  var DIRECT_VIDEO_CODECS = ['avc', 'hevc'];          // 直接モードで使うコーデック（高速モード）
-  var DIRECT_COMPAT_CODEC = /^(avc1|hvc1)\./;         // 同（互換モード）
-  function DirectVideoEncoder() { this.encoder = null; this.outputs = 0; }
-  if (M && M.CustomVideoEncoder) {
-    DirectVideoEncoder.prototype = Object.create(M.CustomVideoEncoder.prototype);
-    DirectVideoEncoder.prototype.constructor = DirectVideoEncoder;
-  }
-  DirectVideoEncoder.supports = function (codec) {
-    return direct.enabled && DIRECT_VIDEO_CODECS.indexOf(codec) >= 0;
-  };
-  DirectVideoEncoder.prototype.init = function () {
-    var self = this;
-    log('直接モードでエンコーダを準備 ' + self.config.codec + ' ' + self.config.width + 'x' + self.config.height +
-      ' ' + Math.round((self.config.bitrate || 0) / 1000) + 'kbps ' + (self.config.bitrateMode || '既定') + ' ' +
-      (self.config.hardwareAcceleration || 'no-preference'));
-    self.encoder = new VideoEncoder({
-      output: function (chunk, meta) {
-        if (self.outputs++ === 0) log('直接モードで最初のデータを受け取り');
-        self.onPacket(M.EncodedPacket.fromEncodedChunk(chunk), meta);
-      },
-      error: function (e) { log('直接モードのエンコーダでエラー ' + errText(e)); self.onError(e); }
-    });
-    self.encoder.configure(self.config);
-  };
-  DirectVideoEncoder.prototype.encode = function (sample, options) {
-    var enc = this.encoder;
-    var frame = sample.toVideoFrame();
-    try { enc.encode(frame, options); } finally { frame.close(); }
-    // 詰まりすぎないように、エンコーダの待ち行列が減るまで待つ
-    return (function wait() {
-      if (enc.state !== 'configured' || enc.encodeQueueSize <= 4) return Promise.resolve();
-      return sleep(5).then(wait);
-    })();
-  };
-  DirectVideoEncoder.prototype.flush = function () {
-    return this.encoder && this.encoder.state === 'configured' ? this.encoder.flush() : Promise.resolve();
-  };
-  DirectVideoEncoder.prototype.close = function () {
-    try { if (this.encoder && this.encoder.state !== 'closed') this.encoder.close(); } catch (e) { /* noop */ }
-  };
-  function enableDirect(reason) {
-    if (direct.enabled) return;
-    direct.enabled = true;
-    log('直接モードに切り替え（' + reason + '）');
-    if (M && M.registerEncoder && !direct.registered) {
-      direct.registered = true;
-      M.registerEncoder(DirectVideoEncoder);
-    }
-  }
-  // promise が ms 以内に決着しなければ、onTimeout() の値で決着させる
-  function withTimeout(promise, ms, onTimeout) {
-    return new Promise(function (resolve, reject) {
-      var done = false;
-      var timer = setTimeout(function () { if (!done) { done = true; resolve(onTimeout()); } }, ms);
-      Promise.resolve(promise).then(function (v) {
-        if (!done) { done = true; clearTimeout(timer); resolve(v); }
-      }, function (e) {
-        if (!done) { done = true; clearTimeout(timer); reject(e); }
-      });
-    });
-  }
-
   function encKey(c) { return c.codec + '/' + c.hw + '/' + c.bitrateMode; }
   function pickFastEncoding(plan, avoid) {
     // 既定は、指定したビットレートに素直に従う固定ビットレート（CBR）を優先する。
@@ -706,15 +618,6 @@
     return (function next(i) {
       if (i >= cands.length) return Promise.resolve(null);
       var c = cands[i];
-      if (!direct.enabled && configCheck.answers === 0 && configCheck.timeouts >= MAX_SILENT_CHECKS) {
-        enableDirect('設定の確認が1つも返らない');
-      }
-      if (direct.enabled) {
-        // 直接モードでは確認をせず、H.264 から順に使ってみる（だめなら停止検出やエラーで次の候補へ）
-        if (DIRECT_VIDEO_CODECS.indexOf(c.codec) < 0) return next(i + 1);
-        log('エンコード設定 ' + encKey(c) + ' → 確認せずに使う（直接モード）');
-        return Promise.resolve(c);
-      }
       return M.canEncodeVideo(c.codec, {
         width: plan.width, height: plan.height, frameRate: plan.outFps,
         quality: new M.Quality({ bitrate: plan.videoBitrate, bitrateMode: c.bitrateMode }),
@@ -723,14 +626,7 @@
         log('エンコード設定 ' + encKey(c) + ' → ' + (ok ? '使える' : '使えない'));
         return ok ? c : next(i + 1);
       }, function (e) { log('エンコード設定 ' + encKey(c) + ' → 確認に失敗 ' + errText(e)); return next(i + 1); });
-    })(0).then(function (found) {
-      // どの設定も使えず、確認が返らないものがあったなら、直接モードで選び直す
-      if (!found && !direct.enabled && configCheck.timeouts > 0) {
-        enableDirect('使える設定が見つからず、確認が返らない設定があった');
-        return pickFastEncoding(plan, avoid);
-      }
-      return found;
-    });
+    })(0);
   }
 
   function convertFast(plan, onProgress, job, avoid) {
@@ -816,16 +712,6 @@
     return (function next(i) {
       if (i >= cands.length) return Promise.resolve(null);
       var c = cands[i];
-      if (!direct.enabled && configCheck.answers === 0 && configCheck.timeouts >= MAX_SILENT_CHECKS) {
-        enableDirect('設定の確認が1つも返らない');
-      }
-      if (direct.enabled) {
-        // 直接モードでは確認をせず、H.264 の候補をそのまま使う
-        if (!DIRECT_COMPAT_CODEC.test(c.config.codec)) return next(i + 1);
-        log('互換エンコード設定 ' + c.config.codec + '/' + c.config.hardwareAcceleration + '/' + (c.config.bitrateMode || '既定') +
-          ' → 確認せずに使う（直接モード）');
-        return Promise.resolve({ config: c.config, mb: c.mb });
-      }
       return Promise.resolve()
         .then(function () { return VideoEncoder.isConfigSupported(c.config); })
         .then(function (res) {
@@ -834,13 +720,7 @@
           return (res && res.supported) ? { config: res.config || c.config, mb: c.mb } : next(i + 1);
         })
         .catch(function (e) { log('互換エンコード設定の確認に失敗 ' + errText(e)); return next(i + 1); });
-    })(0).then(function (found) {
-      if (!found && !direct.enabled && configCheck.timeouts > 0) {
-        enableDirect('互換モードで使える設定が見つからず、確認が返らない設定があった');
-        return findCompatVideoConfig(plan);
-      }
-      return found;
-    });
+    })(0);
   }
 
   function drain(encoder, max, job) {
@@ -1141,7 +1021,7 @@
       setProgress(0, label);
       // 1回ぶんの処理（進まなくなったらこれだけ止めて、別の方式でやり直す）
       var aj = state.attemptJob = newJob();
-      var t0 = Date.now(), lastVal = -1, idleMs = 0, lastTick = Date.now(), nextLog = 0, lastActivity = configCheck.activity;
+      var t0 = Date.now(), lastVal = -1, idleMs = 0, lastTick = Date.now(), nextLog = 0;
       // キャンセル後に古い処理から届く進捗は無視する
       var onProgress = function (p) {
         if (job.cancelled || aj.cancelled) return;
@@ -1157,8 +1037,6 @@
         var now = Date.now(), dt = now - lastTick;
         lastTick = now;
         if (document.visibilityState !== 'visible' || dt > 5000) return;
-        // 設定の確認が進んでいる間は、止まったとみなさない
-        if (configCheck.activity !== lastActivity) { lastActivity = configCheck.activity; idleMs = 0; return; }
         idleMs += dt;
         if (idleMs >= STALL_MS) {
           clearInterval(watchdog);
@@ -1166,7 +1044,10 @@
           stopJob(aj, STALLED);
         }
       }, 1000);
-      var task = engine === 'fast' ? convertFast(plan, onProgress, aj, avoid) : convertCompat(plan, onProgress, aj);
+      // 準備中にその場で出た例外も、失敗として受け取る（受け取れないと0%のまま固まる）
+      var task = Promise.resolve().then(function () {
+        return engine === 'fast' ? convertFast(plan, onProgress, aj, avoid) : convertCompat(plan, onProgress, aj);
+      });
       task.catch(function () { /* 競争に負けた側の失敗は無視する */ });
 
       // キャンセルしたら、ライブラリ側が止まりきるのを待たずにすぐ抜ける
@@ -1196,18 +1077,11 @@
         if (job.cancelled || (!aj.cancelled && isCancel(null, err))) throw new Error(CANCELLED);
         var stalled = aj.cancelled;
         if (!stalled) log('失敗（' + engine + '）' + errText(err));
-        // 確認が返らない設定があって失敗したなら、直接モードで同じ処理をやり直す
-        if (engine === 'fast' && !direct.enabled && configCheck.timeouts > 0 && stallRetries < MAX_STALL_RETRIES) {
-          stallRetries++;
-          enableDirect('確認が返らない設定があり、変換に失敗');
-          return attempt(index, prevSize, 'うまくいかないため、別の方法でやり直し中');
-        }
         // 高速モードで進まなくなったら、別のエンコード設定で同じ処理をやり直す
-        if ((stalled || direct.enabled) && engine === 'fast' && aj.enc && stallRetries < MAX_STALL_RETRIES) {
+        if (stalled && engine === 'fast' && aj.enc && stallRetries < MAX_STALL_RETRIES) {
           stallRetries++;
           avoid.push(encKey(aj.enc));
-          return attempt(index, prevSize, (stalled ? '処理が進まないため' : 'うまくいかないため') +
-            '、別の設定でやり直し中（' + (stallRetries + 1) + '回目）');
+          return attempt(index, prevSize, '処理が進まないため、別の設定でやり直し中（' + (stallRetries + 1) + '回目）');
         }
         // 高速モードで扱えなかったら、互換モードでやり直す
         if (engine === 'fast' && (index === 0 || stalled) && state.caps.compat) {
@@ -1218,15 +1092,12 @@
             audioStrategy(state.meta, readSettings().audio, 'compat'), state.file.size);
           return attempt(0, 0, stalled ? '処理が進まないため、互換モードでやり直し中' : null);
         }
-        if (direct.enabled && isIOS()) {
-          throw new Error('このアプリ内ブラウザでは動画のエンコードがうまく動かないようです。右上のメニューなどから「Safariで開く」を選んでお試しください。');
-        }
         if (stalled) throw new Error('圧縮が進まなくなりました。画面を表示したまま、もう一度お試しください。');
         throw err;
       });
     }
 
-    return attempt(0).then(function (res) {
+    return Promise.resolve().then(function () { return attempt(0); }).then(function (res) {
       setProgress(1, '完了');
       finishRun();
       showResult(res, plan, engine, (Date.now() - started) / 1000);
