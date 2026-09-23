@@ -6,7 +6,7 @@
  */
 'use strict';
 
-var CACHE = 'video-compressor-under20mb-v13';
+var CACHE = 'video-compressor-under20mb-v14';
 
 // registration の scope（= このファイルが置かれたディレクトリ）を基準にする
 var ASSETS = [
