@@ -22,10 +22,12 @@
   var DEFAULT_TARGET_MB = 20;            // Discord無料アカウントの上限（2026年8月に10MBから引き上げ）
   var MIN_TARGET_MB = 1;
   var MAX_TARGET_MB = 500;
-  var SIZE_SAFETY = 0.95;                // 目標サイズの安全係数（超えたら再圧縮するので攻める）
+  var MB = 1000 * 1000;                  // 1MB = 100万バイト（iPhoneのファイル表示と同じ数え方）
+  var TARGET_MARGIN = 0.005;             // 確実にDiscordに送れるよう、目標サイズから0.5%引いた値を上限にする（20MB→19.9MB）
+  var SIZE_SAFETY = 0.95;                // 上限に対する安全係数（超えたら再圧縮するので攻める）
   var AUDIO_BITRATE = 128000;            // 音声を再エンコードするときのビットレート
   var AUDIO_COPY_MAX_BITRATE = 192000;   // これ以下のAACは再エンコードせずそのまま使う
-  var DISCORD_FREE_BYTES = 20 * 1024 * 1024;   // Discord無料アカウントの上限（注意文の基準）
+  var DISCORD_FREE_BYTES = 20 * MB;     // Discord無料アカウントの上限（注意文の基準）
   // 下限ビットレートの既定値（kbps）。720p30で1.2Mbps、1080pは画素数に比例させて同等の画質
   var DEFAULT_MIN_KBPS = { '720': 1200, '1080': 2700 };
   var MIN_KBPS_LIMITS = [100, 50000];
@@ -36,7 +38,7 @@
   var MAX_ATTEMPTS = 3;                  // 初回 + 最大2回の再圧縮
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
-  var AUDIO_DECODE_MAX_BYTES = 400 * 1024 * 1024;   // 互換モードで音声を扱うファイルサイズの上限
+  var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
   var CANCELLED = 'cancelled';
 
   // 出力に使うコーデック（優先順）。高速モードは Mediabunny の名前、互換モードは WebCodecs のコーデック文字列
@@ -62,7 +64,7 @@
     res720: $('res720'), res1080: $('res1080'), modeQuality: $('modeQuality'), modeSize: $('modeSize'),
     sizeLabel: $('sizeLabel'), planInfo: $('planInfo'), planWarn: $('planWarn'),
     targetSize: $('targetSize'), halfFps: $('halfFps'), audioOn: $('audioOn'), audioLabel: $('audioLabel'),
-    minRate720: $('minRate720'), minRate1080: $('minRate1080'), autoRun: $('autoRun'),
+    minRate720: $('minRate720'), minRate1080: $('minRate1080'), autoRun: $('autoRun'), capLabel: $('capLabel'),
     runBtn: $('runBtn'), progressWrap: $('progressWrap'), progressBar: $('progressBar'),
     phase: $('phase'), pct: $('pct'),
     outVideo: $('outVideo'), outEmpty: $('outEmpty'), outInfo: $('outInfo'), outWarn: $('outWarn'),
@@ -90,9 +92,9 @@
   // ---------------------------------------------------------------- 小道具
   function show(el, visible) { el.classList.toggle('hidden', !visible); }
   function fmtBytes(n) {
-    if (n < 1024) return n + ' B';
-    if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
-    return (n / 1024 / 1024).toFixed(1) + ' MB';
+    if (n < 1000) return n + ' B';
+    if (n < MB) return (n / 1000).toFixed(0) + ' KB';
+    return (n / MB).toFixed(1) + ' MB';
   }
   function fmtDuration(sec) {
     sec = Math.round(sec);
@@ -159,7 +161,8 @@
       res: radioValue('res', '720') === '1080' ? '1080' : '720',
       mode: radioValue('mode', 'size') === 'quality' ? 'quality' : 'size',
       targetMB: mb,
-      targetBytes: Math.floor(mb * 1024 * 1024),
+      // 実際に守る上限（目標サイズから0.5%引いた値）。見積もり・再圧縮・判定はすべてこれを使う
+      targetBytes: Math.floor(mb * MB * (1 - TARGET_MARGIN)),
       halfFps: !!els.halfFps.checked,
       audio: !!els.audioOn.checked,
       autoRun: !!els.autoRun.checked,
@@ -428,6 +431,8 @@
   function refresh() {
     var s = readSettings();
     els.sizeLabel.textContent = String(s.targetMB);
+    // 上限は丸めずに見せる（例: 50MB → 49.75 MB）
+    els.capLabel.textContent = String(Math.round(s.targetBytes / MB * 100) / 100) + ' MB';
     var hasFile = !!(state.file && state.meta);
     var locked = state.running || state.busy;
 
@@ -1197,7 +1202,7 @@
     state: state,
     constants: {
       SIZE_SAFETY: SIZE_SAFETY, AUDIO_BITRATE: AUDIO_BITRATE, DEFAULT_MIN_KBPS: DEFAULT_MIN_KBPS,
-      DISCORD_FREE_BYTES: DISCORD_FREE_BYTES, MAX_ATTEMPTS: MAX_ATTEMPTS
+      DISCORD_FREE_BYTES: DISCORD_FREE_BYTES, MAX_ATTEMPTS: MAX_ATTEMPTS, MB: MB, TARGET_MARGIN: TARGET_MARGIN
     }
   };
 })();
