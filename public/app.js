@@ -61,6 +61,7 @@
     app: document.querySelector('.app'),
     srcVideo: $('srcVideo'), srcInfo: $('srcInfo'), srcBox: $('srcBox'), outBox: $('outBox'),
     trimStart: $('trimStart'), trimEnd: $('trimEnd'), trimFill: $('trimFill'), trimLabel: $('trimLabel'),
+    trimTicks: $('trimTicks'),
     res720: $('res720'), res1080: $('res1080'), modeQuality: $('modeQuality'), modeSize: $('modeSize'),
     sizeLabel: $('sizeLabel'), planInfo: $('planInfo'), planWarn: $('planWarn'),
     targetSize: $('targetSize'), halfFps: $('halfFps'), audioOn: $('audioOn'), audioLabel: $('audioLabel'),
@@ -507,7 +508,27 @@
     els.trimStart.value = '0';
     els.trimEnd.value = String(duration);
     state.trim = { start: 0, end: duration };
+    renderTicks(duration);
     renderTrim();
+  }
+
+  // 目盛りの間隔: 5秒 → 10秒 → 30秒 … のうち、線が24本以下に収まる最小のもの
+  var TICK_INTERVALS = [5, 10, 30, 60, 120, 300, 600];
+  function tickInterval(duration) {
+    for (var i = 0; i < TICK_INTERVALS.length; i++) {
+      if (duration / TICK_INTERVALS[i] <= 24) return TICK_INTERVALS[i];
+    }
+    return TICK_INTERVALS[TICK_INTERVALS.length - 1];
+  }
+
+  function renderTicks(duration) {
+    els.trimTicks.innerHTML = '';
+    state.tickInterval = tickInterval(duration);
+    for (var t = state.tickInterval; t < duration - 0.05; t += state.tickInterval) {
+      var tick = document.createElement('i');
+      tick.style.left = (t / duration * 100) + '%';
+      els.trimTicks.appendChild(tick);
+    }
   }
 
   function renderTrim() {
@@ -521,7 +542,7 @@
     els.trimEnd.style.zIndex = a > 0.9 ? 2 : 3;
     if (!state.meta) { els.trimLabel.textContent = 'トリミング'; return; }
     els.trimLabel.textContent = fmtClock(state.trim.start) + '–' + fmtClock(state.trim.end) +
-      '（' + (state.trim.end - state.trim.start).toFixed(1) + '秒）';
+      '（' + (state.trim.end - state.trim.start).toFixed(1) + '秒・目盛' + state.tickInterval + '秒）';
   }
 
   function onTrimInput(which) {
