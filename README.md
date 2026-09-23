@@ -1,4 +1,4 @@
-# 動画圧縮する静的サイト（video-compressor-under20mb）
+# アップロード不要の動画圧縮（video-compressor-under20mb）
 
 動画を**Discordに投稿できるサイズ**（既定20MB以下）に圧縮して、共有シートからそのまま投稿できるWebアプリです。
 iPhoneのSafariで動き、ホーム画面に追加すればオフラインでも起動できます（PWA）。
@@ -237,7 +237,7 @@ npm run build:vendor
 | `public/app.js` | 圧縮処理の本体 |
 | `public/vendor/mediabunny.min.js` | Mediabunny の必要部分（MPL-2.0） |
 | `public/sw.js` | Service Worker（全アセットをキャッシュしてオフライン起動） |
-| `public/manifest.json` | PWAの定義（名前「動画圧縮する静的サイト」、ホーム画面のアイコン名「20MB圧縮」、スタンドアロン表示） |
+| `public/manifest.json` | PWAの定義（名前「アップロード不要の動画圧縮」、ホーム画面のアイコン名「20MB圧縮」、スタンドアロン表示） |
 | `public/icons/` | アイコン（PNG） |
 | `package.json` / `tools/` | 同梱ライブラリを作り直すときだけ使う設定（公開はされない） |
 
