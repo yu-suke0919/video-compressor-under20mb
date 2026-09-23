@@ -80,8 +80,7 @@
     caps: { aac: false, compat: false },
     running: false,
     busy: false,         // 読み込み・解析中
-    cancel: false,
-    cancelHook: null,
+    job: null,           // 実行中の圧縮1回ぶん（キャンセルは実行ごとに管理する）
     srcUrl: null,
     out: null,           // { blob, name, type, original, url }
     compatAudio: null,   // 互換モードで再圧縮するときに音声を使い回す
@@ -112,8 +111,18 @@
   function fmtFps(fps) { return (Math.round(fps * 10) / 10) + 'fps'; }
   function even(n) { return Math.max(2, Math.round(n / 2) * 2); }
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
-  function throwIfCancelled() { if (state.cancel) throw new Error(CANCELLED); }
-  function isCancel(err) { return state.cancel || (err && err.message === CANCELLED); }
+  // 圧縮1回ぶんの情報。キャンセルは実行ごとに管理し、止まりきらない古い処理が次の実行に影響しないようにする
+  //   cancelled … キャンセルされたか
+  //   hooks     … キャンセル時にすぐ実行する後片付け（エンコーダを閉じる、再生を止める など）
+  //   aborted   … キャンセルした瞬間に失敗する Promise（処理の完了と競わせて、画面をすぐ戻すために使う）
+  function newJob() {
+    var job = { cancelled: false, hooks: [] };
+    job.aborted = new Promise(function (resolve, reject) { job.abort = reject; });
+    job.aborted.catch(function () { /* noop */ });
+    return job;
+  }
+  function throwIfCancelled(job) { if (job && job.cancelled) throw new Error(CANCELLED); }
+  function isCancel(job, err) { return !!(job && job.cancelled) || !!(err && err.message === CANCELLED); }
   function setAlert(el, lines, danger) {
     el.classList.toggle('danger', !!danger);
     el.innerHTML = '';
@@ -536,7 +545,7 @@
     })(0);
   }
 
-  function convertFast(plan, onProgress) {
+  function convertFast(plan, onProgress, job) {
     var input = new M.Input({ source: new M.BlobSource(state.file), formats: INPUT_FORMATS });
     var output = new M.Output({ format: new M.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new M.BufferTarget() });
     var conversion = null;
@@ -571,18 +580,17 @@
       }
       var audioLost = plan.audio.mode !== 'none' &&
         discarded.some(function (d) { return d.track && d.track.type === 'audio' && d.reason !== 'discarded_by_user'; });
-      state.cancelHook = function () { return conv.cancel(); };
+      // キャンセル時: 変換を止め、ファイルの読み込みも閉じる（止まりきるのは待たない）
+      job.hooks.push(function () { var stop = conv.cancel(); dispose(); return stop; });
       conv.onProgress = function (p) { onProgress(p); };
-      throwIfCancelled();
+      throwIfCancelled(job);
       return conv.execute().then(function () {
         return { blob: new Blob([output.target.buffer], { type: 'video/mp4' }), audioDropped: audioLost, frames: null };
       });
     }).then(function (res) {
-      state.cancelHook = null;
       dispose();
       return res;
     }, function (err) {
-      state.cancelHook = null;
       dispose();
       if (conversion && conversion.state === 'canceled') throw new Error(CANCELLED);
       throw err;
@@ -621,10 +629,10 @@
     })(0);
   }
 
-  function drain(encoder, max) {
+  function drain(encoder, max, job) {
     return new Promise(function (resolve, reject) {
       (function check() {
-        if (state.cancel) return reject(new Error(CANCELLED));
+        if (job && job.cancelled) return reject(new Error(CANCELLED));
         if (encoder.state !== 'configured' || encoder.encodeQueueSize <= max) return resolve();
         setTimeout(check, 15);
       })();
@@ -632,7 +640,7 @@
   }
 
   // 音声: ファイル全体をWeb Audioでデコードし、トリミング範囲だけAACへ再エンコードする
-  function encodeCompatAudio(plan, onProgress) {
+  function encodeCompatAudio(plan, onProgress, job) {
     var key = plan.trimStart + '-' + plan.trimEnd;
     if (state.compatAudio && state.compatAudio.key === key) return Promise.resolve(state.compatAudio.data);
     var decoded = null;
@@ -645,7 +653,7 @@
       });
     }).then(function (audioBuffer) {
       decoded = audioBuffer;
-      throwIfCancelled();
+      throwIfCancelled(job);
       if (!decoded || decoded.length === 0) return null;
       var channels = Math.min(2, decoded.numberOfChannels);
       var sampleRate = decoded.sampleRate;
@@ -654,7 +662,7 @@
         if (!res || !res.supported) return null;
         var from = Math.max(0, Math.floor(plan.trimStart * sampleRate));
         var to = Math.min(decoded.length, Math.ceil(plan.trimEnd * sampleRate));
-        return runAudioEncoder(decoded, from, to, channels, sampleRate, res.config || cfg, onProgress);
+        return runAudioEncoder(decoded, from, to, channels, sampleRate, res.config || cfg, onProgress, job);
       });
     }).then(function (data) {
       decoded = null;
@@ -662,13 +670,13 @@
       return data;
     }).catch(function (err) {
       decoded = null;
-      if (isCancel(err)) throw err;
+      if (isCancel(job, err)) throw new Error(CANCELLED);
       console.warn('音声のエンコードに失敗したため、音声なしで続行します:', err);
       return null;
     });
   }
 
-  function runAudioEncoder(audioBuffer, from, to, channels, sampleRate, config, onProgress) {
+  function runAudioEncoder(audioBuffer, from, to, channels, sampleRate, config, onProgress, job) {
     return new Promise(function (resolve, reject) {
       var packets = [];
       var encoder = new AudioEncoder({
@@ -676,12 +684,16 @@
         error: function (e) { reject(e); }
       });
       encoder.configure(config);
+      job.hooks.push(function () {
+        try { if (encoder.state !== 'closed') encoder.close(); } catch (e) { /* noop */ }
+        reject(new Error(CANCELLED));
+      });
       var CHUNK = 1024, pos = from, total = Math.max(1, to - from), n = 0;
       (function pump() {
         try {
-          throwIfCancelled();
+          throwIfCancelled(job);
           while (pos < to) {
-            if (encoder.encodeQueueSize > 24) return drain(encoder, 8).then(pump, reject);
+            if (encoder.encodeQueueSize > 24) return drain(encoder, 8, job).then(pump, reject);
             var len = Math.min(CHUNK, to - pos);
             var data = new Float32Array(len * channels);
             for (var c = 0; c < channels; c++) {
@@ -711,7 +723,7 @@
   }
 
   // 映像: <video> をトリミング範囲だけ再生し、フレームを取り出してエンコードする
-  function encodeCompatVideo(videoEl, plan, config, onPacket, onProgress) {
+  function encodeCompatVideo(videoEl, plan, config, onPacket, onProgress, job) {
     var width = plan.width, height = plan.height;
     function makeCanvas(offscreen) {
       var c;
@@ -736,6 +748,8 @@
         error: function (e) { fail(e); }
       });
       encoder.configure(config);
+      // キャンセルしたらその場で止めて、プレビューの動画を元に戻す（次の実行とぶつからないように）
+      job.hooks.push(function () { fail(new Error(CANCELLED)); });
 
       function cleanup() {
         videoEl.onended = null;
@@ -770,7 +784,7 @@
       }
       function onFrame(now, frameMeta) {
         if (finished) return;
-        if (state.cancel) return fail(new Error(CANCELLED));
+        if (job.cancelled) return fail(new Error(CANCELLED));
         try {
           var t = (frameMeta && typeof frameMeta.mediaTime === 'number') ? frameMeta.mediaTime : videoEl.currentTime;
           if (t >= end) return finish();
@@ -798,7 +812,7 @@
           if (encoder.encodeQueueSize > 6) {
             // エンコードが追いつかないときは再生を止めて待つ
             videoEl.pause();
-            drain(encoder, 2).then(function () {
+            drain(encoder, 2, job).then(function () {
               if (finished) return;
               Promise.resolve(videoEl.play()).catch(function () { /* noop */ });
               videoEl.requestVideoFrameCallback(onFrame);
@@ -812,7 +826,7 @@
       }
       var watchdog = setInterval(function () {
         if (finished) return;
-        if (state.cancel) return fail(new Error(CANCELLED));
+        if (job.cancelled) return fail(new Error(CANCELLED));
         if (videoEl.ended || videoEl.currentTime >= end) finish();
       }, 400);
       videoEl.onended = finish;
@@ -820,7 +834,7 @@
       // 開始位置へシークしてから再生する
       var seeked = false;
       function begin() {
-        if (seeked) return;
+        if (seeked || finished) return;
         seeked = true;
         Promise.resolve(videoEl.play()).then(function () {
           videoEl.requestVideoFrameCallback(onFrame);
@@ -834,14 +848,14 @@
     });
   }
 
-  function convertCompat(plan, onProgress) {
+  function convertCompat(plan, onProgress, job) {
     var audioSpan = plan.audio.mode === 'aac' ? 0.15 : 0;
     var audioPromise = plan.audio.mode === 'aac'
-      ? encodeCompatAudio(plan, function (r) { onProgress(r * audioSpan); })
+      ? encodeCompatAudio(plan, function (r) { onProgress(r * audioSpan); }, job)
       : Promise.resolve(null);
 
     return audioPromise.then(function (audio) {
-      throwIfCancelled();
+      throwIfCancelled(job);
       return findCompatVideoConfig(plan).then(function (found) {
         if (!found) throw new Error('この端末では動画のエンコード（H.264）に対応していません。');
         var output = new M.Output({ format: new M.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new M.BufferTarget() });
@@ -867,7 +881,7 @@
           }
           return encodeCompatVideo(els.srcVideo, plan, found.config, onPacket, function (r) {
             onProgress(audioSpan + r * (1 - audioSpan));
-          }).then(function (vr) {
+          }, job).then(function (vr) {
             pushAudioUntil(Infinity);
             return chain.then(function () {
               vsrc.close();
@@ -896,8 +910,8 @@
     var engine = state.engine;
     var started = Date.now();
 
+    var job = state.job = newJob();
     state.running = true;
-    state.cancel = false;
     setRunningUi(true);
     requestWakeLock();
 
@@ -906,12 +920,14 @@
       var label = index === 0 ? (engine === 'fast' ? '圧縮中' : '圧縮中（互換モード：再生しながら処理）')
         : '圧縮結果が' + (prevSize / MB).toFixed(2) + 'MBで目標超過→再圧縮中（' + (index + 1) + '回目）';
       setProgress(0, label);
-      var job = engine === 'fast'
-        ? convertFast(plan, function (p) { setProgress(p, label); })
-        : convertCompat(plan, function (p) { setProgress(p, label); });
+      // キャンセル後に古い処理から届く進捗は無視する
+      var onProgress = function (p) { if (!job.cancelled) setProgress(p, label); };
+      var task = engine === 'fast' ? convertFast(plan, onProgress, job) : convertCompat(plan, onProgress, job);
+      task.catch(function () { /* 競争に負けた側の失敗は無視する */ });
 
-      return job.then(function (res) {
-        throwIfCancelled();
+      // キャンセルしたら、ライブラリ側が止まりきるのを待たずにすぐ抜ける
+      return Promise.race([task, job.aborted]).then(function (res) {
+        throwIfCancelled(job);
         if (res.audioDropped && plan.audio.mode !== 'none') {
           plan.audio = { mode: 'none', bps: 0, label: 'なし', note: null };
           plan.audioBitrate = 0;
@@ -930,7 +946,7 @@
         res.attempts = index + 1;
         return res;
       }, function (err) {
-        if (isCancel(err)) throw new Error(CANCELLED);
+        if (isCancel(job, err)) throw new Error(CANCELLED);
         // 高速モードで扱えなかったら、互換モードでやり直す
         if (engine === 'fast' && index === 0 && state.caps.compat) {
           console.warn('高速モードに失敗したため互換モードに切り替えます:', err);
@@ -949,7 +965,7 @@
       showResult(res, plan, engine, (Date.now() - started) / 1000);
     }, function (err) {
       finishRun();
-      if (isCancel(err)) return;
+      if (isCancel(job, err)) return;
       console.error(err);
       setAlert(els.outWarn, ['エラー: ' + ((err && err.message) || String(err))], true);
     });
@@ -965,7 +981,7 @@
 
   function finishRun() {
     state.running = false;
-    state.cancelHook = null;
+    state.job = null;
     releaseWakeLock();
     setRunningUi(false);
     refresh();
@@ -987,11 +1003,16 @@
   }
 
   function cancelRun() {
-    state.cancel = true;
+    var job = state.job;
+    if (!job || job.cancelled) return;
+    job.cancelled = true;
     setPhase('キャンセルしています…');
-    if (state.cancelHook) {
-      Promise.resolve(state.cancelHook()).catch(function () { /* noop */ });
-    }
+    // 後片付けを始め（止まりきるのは待たない）、実行はすぐに終わらせる。
+    // Android などでエンコーダが止まりきらなくても、画面が固まらないようにするため
+    job.hooks.forEach(function (hook) {
+      try { Promise.resolve(hook()).catch(function () { /* noop */ }); } catch (e) { /* noop */ }
+    });
+    job.abort(new Error(CANCELLED));
   }
 
   // ---------------------------------------------------------------- 結果
