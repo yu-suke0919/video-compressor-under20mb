@@ -901,9 +901,10 @@
     setRunningUi(true);
     requestWakeLock();
 
-    function attempt(index) {
+    // prevSize: 前回の圧縮結果のサイズ（再圧縮のときに表示する）
+    function attempt(index, prevSize) {
       var label = index === 0 ? (engine === 'fast' ? '圧縮中' : '圧縮中（互換モード：再生しながら処理）')
-        : '目標を超えた(' + plan.targetMB + 'MB)ので再圧縮中';
+        : '圧縮結果が' + (prevSize / MB).toFixed(2) + 'MBで目標を超えたため再圧縮中';
       setProgress(0, label);
       var job = engine === 'fast'
         ? convertFast(plan, function (p) { setProgress(p, label); })
@@ -923,7 +924,7 @@
           if (next && next < plan.videoBitrate) {
             plan = makePlan(state.meta, { start: plan.trimStart, end: plan.trimEnd }, planSettings(plan),
               plan.audio, state.file.size, next);
-            return attempt(index + 1);
+            return attempt(index + 1, res.blob.size);
           }
         }
         res.attempts = index + 1;
