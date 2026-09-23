@@ -83,7 +83,7 @@
   }
   /* 圧縮前は元動画を幅いっぱいに大きく、圧縮が終わったら圧縮後の動画を幅いっぱいに大きく（2つの合計の高さは変えない）。
      小さいほうは16:9の小窓にして中央に置く */
-  .media-box.is-large { width: 100%; height: 26vh; height: 26svh; min-height: 150px; }
+  .media-box.is-large { width: 100%; height: 25vh; height: 25svh; min-height: 150px; }
   .media-box.is-small {
     height: 12vh; height: 12svh; min-height: 64px;
     width: min(100%, max(114px, 12vh * 16 / 9)); width: min(100%, max(114px, 12svh * 16 / 9));
@@ -105,31 +105,34 @@
   .meta-line { font-size: 12px; color: var(--muted); text-align: center; min-height: 1.2em; line-height: 1.35; }
 
   /* トリミング（2本のレンジを重ね、つまみの部分だけ触れるようにする） */
-  .trim { position: relative; height: 30px; }
-  .trim-track, .trim-fill { position: absolute; top: 12px; height: 6px; border-radius: 3px; }
-  .trim-track { left: 11px; right: 11px; background: var(--surface-2); }
+  /* つまみを画面の端から離す（iPhoneの「端からスワイプで戻る」と重ならないように）。
+     --thumb-w はつまみの触れる範囲の幅。バーの両端はその半分だけ内側になる */
+  .trim { --thumb-w: 44px; --trim-h: 40px; position: relative; height: var(--trim-h); margin: 0 12px; touch-action: none; }
+  .trim-track, .trim-fill { position: absolute; top: 17px; height: 6px; border-radius: 3px; }
+  .trim-track { left: calc(var(--thumb-w) / 2); right: calc(var(--thumb-w) / 2); background: var(--surface-2); }
   .trim-fill { background: var(--accent); opacity: .4; }
   /* 目盛り（5秒・10秒などの間隔で縦線を引く） */
-  .trim-ticks { position: absolute; left: 11px; right: 11px; top: 0; bottom: 0; pointer-events: none; }
-  .trim-ticks i { position: absolute; top: 8px; width: 1px; height: 14px; margin-left: -0.5px; background: var(--muted); opacity: .55; }
+  .trim-ticks { position: absolute; left: calc(var(--thumb-w) / 2); right: calc(var(--thumb-w) / 2); top: 0; bottom: 0; pointer-events: none; }
+  .trim-ticks i { position: absolute; top: 13px; width: 1px; height: 14px; margin-left: -0.5px; background: var(--muted); opacity: .55; }
   .trim input[type="range"] {
-    position: absolute; inset: 0; width: 100%; height: 30px; margin: 0; background: none;
-    pointer-events: none; -webkit-appearance: none; appearance: none;
+    position: absolute; inset: 0; width: 100%; height: var(--trim-h); margin: 0; background: none;
+    pointer-events: none; -webkit-appearance: none; appearance: none; touch-action: none;
   }
-  .trim input[type="range"]::-webkit-slider-runnable-track { height: 30px; background: transparent; }
-  .trim input[type="range"]::-moz-range-track { height: 30px; background: transparent; }
-  /* つまみは縦線。見た目は幅6pxだが、指で掴みやすいよう触れる範囲は幅22pxにしてある */
+  .trim input[type="range"]::-webkit-slider-runnable-track { height: var(--trim-h); background: transparent; }
+  .trim input[type="range"]::-moz-range-track { height: var(--trim-h); background: transparent; }
+  /* つまみは縦線。見た目は幅6px・高さ30pxだが、指で掴みやすいよう触れる範囲は幅44px・高さ40pxにしてある */
   .trim input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none; appearance: none; pointer-events: auto; margin-top: 0; cursor: ew-resize;
-    width: 22px; height: 30px; border: none; border-radius: 3px; box-shadow: none;
-    background: linear-gradient(90deg, transparent 8px, var(--accent) 8px, var(--accent) 14px, transparent 14px);
+    width: var(--thumb-w); height: var(--trim-h); border: none; border-radius: 3px; box-shadow: none;
+    background: linear-gradient(90deg, transparent 19px, var(--accent) 19px, var(--accent) 25px, transparent 25px) center / 100% 30px no-repeat;
   }
   .trim input[type="range"]::-moz-range-thumb {
-    pointer-events: auto; cursor: ew-resize; width: 22px; height: 30px; border: none; border-radius: 3px;
-    background: linear-gradient(90deg, transparent 8px, var(--accent) 8px, var(--accent) 14px, transparent 14px);
+    pointer-events: auto; cursor: ew-resize; width: var(--thumb-w); height: var(--trim-h); border: none; border-radius: 3px;
+    background: linear-gradient(90deg, transparent 19px, var(--accent) 19px, var(--accent) 25px, transparent 25px) center / 100% 30px no-repeat;
   }
   .trim input[type="range"]:disabled::-webkit-slider-thumb {
-    background: linear-gradient(90deg, transparent 8px, var(--line) 8px, var(--line) 14px, transparent 14px); cursor: default;
+    background: linear-gradient(90deg, transparent 19px, var(--line) 19px, var(--line) 25px, transparent 25px) center / 100% 30px no-repeat;
+    cursor: default;
   }
   .trim-times { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
   #trimLabel { display: block; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
