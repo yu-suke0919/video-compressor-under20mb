@@ -1,7 +1,7 @@
 # アップロード不要の動画圧縮（video-compressor-under20mb）
 
-動画を**Discordに投稿できるサイズ**（既定20MB以下）に圧縮して、共有シートからそのまま投稿できるWebアプリです。
-iPhoneのSafariで動き、ホーム画面に追加すればオフラインでも起動できます（PWA）。
+動画をDiscordに投稿できるサイズ（20MB以下）に圧縮するサイトです。端末内の処理能力を利用して圧縮するため、アップロードは不要です。
+共有シートからそのままDiscordに投稿でき、iPhoneのSafariでホーム画面に追加すればオフラインでも起動できます（PWA）。
 
 **公開URL: https://maka-u20mb.pages.dev/**（Cloudflare Pages）
 
