@@ -196,7 +196,7 @@
       <label for="targetSize">目標サイズ（「MB以下で圧縮」用）</label>
       <span><input id="targetSize" type="number" inputmode="decimal" min="1" max="500" step="1" value="20"> MB</span>
     </div>
-    <p class="hint">確実に送れるよう、目標サイズから0.5%引いた <span id="capLabel">19.9 MB</span> を上限にして圧縮します（1MB＝100万バイト）。</p>
+    <p class="hint">目標サイズの97%（<span id="capLabel">19.4 MB</span>）を狙って圧縮し、目標サイズ未満に収まらなければ自動で圧縮し直します（1MB＝100万バイト）。</p>
     <div class="row" style="margin-top: 8px">
       <label for="minRate720">下限ビットレート（720p）</label>
       <span><input id="minRate720" type="number" inputmode="numeric" min="100" max="50000" step="100" value="1200"> kbps</span>
