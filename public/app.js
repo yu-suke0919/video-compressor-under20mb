@@ -23,8 +23,7 @@
   var MIN_TARGET_MB = 1;
   var MAX_TARGET_MB = 500;
   var MB = 1000 * 1000;                  // 1MB = 100万バイト（iPhoneのファイル表示と同じ数え方）
-  var TARGET_MARGIN = 0.005;             // 確実にDiscordに送れるよう、目標サイズから0.5%引いた値を上限にする（20MB→19.9MB）
-  var SIZE_SAFETY = 0.95;                // 上限に対する安全係数（超えたら再圧縮するので攻める）
+  var SIZE_SAFETY = 0.97;                // 目標サイズの97%を狙う（20MB→19.4MB）。エンコーダの誤差（数%）を吸収して再圧縮を避ける
   var AUDIO_BITRATE = 128000;            // 音声を再エンコードするときのビットレート
   var AUDIO_COPY_MAX_BITRATE = 192000;   // これ以下のAACは再エンコードせずそのまま使う
   var DISCORD_FREE_BYTES = 20 * MB;     // Discord無料アカウントの上限（注意文の基準）
@@ -161,8 +160,8 @@
       res: radioValue('res', '720') === '1080' ? '1080' : '720',
       mode: radioValue('mode', 'size') === 'quality' ? 'quality' : 'size',
       targetMB: mb,
-      // 実際に守る上限（目標サイズから0.5%引いた値）。見積もり・再圧縮・判定はすべてこれを使う
-      targetBytes: Math.floor(mb * MB * (1 - TARGET_MARGIN)),
+      // 上限（この値「未満」に収める）。見積もりはこの97%を狙う
+      targetBytes: Math.floor(mb * MB),
       halfFps: !!els.halfFps.checked,
       audio: !!els.audioOn.checked,
       autoRun: !!els.autoRun.checked,
@@ -431,8 +430,8 @@
   function refresh() {
     var s = readSettings();
     els.sizeLabel.textContent = String(s.targetMB);
-    // 上限は丸めずに見せる（例: 50MB → 49.75 MB）
-    els.capLabel.textContent = String(Math.round(s.targetBytes / MB * 100) / 100) + ' MB';
+    // 狙うサイズは丸めずに見せる（例: 50MB → 49.75 MB）
+    els.capLabel.textContent = String(Math.round(s.targetBytes * SIZE_SAFETY / MB * 100) / 100) + ' MB';
     var hasFile = !!(state.file && state.meta);
     var locked = state.running || state.busy;
 
@@ -468,7 +467,7 @@
   // すでに目標サイズ以下なら、圧縮せずそのまま共有・保存できるようにする
   function updatePassthrough(settings) {
     if (state.running) return;
-    var canPass = settings.mode === 'size' && isFullTrim() && state.file.size <= settings.targetBytes;
+    var canPass = settings.mode === 'size' && isFullTrim() && state.file.size < settings.targetBytes;
     if (canPass && (!state.out || state.out.original)) {
       if (!state.out) {
         setOutput({ blob: state.file, name: state.file.name || 'video.mp4', type: state.file.type || 'video/mp4', original: true });
@@ -916,7 +915,7 @@
           plan.audio = { mode: 'none', bps: 0, label: 'なし', note: null };
           plan.audioBitrate = 0;
         }
-        if (plan.mode === 'size' && res.blob.size > plan.targetBytes && index + 1 < MAX_ATTEMPTS) {
+        if (plan.mode === 'size' && res.blob.size >= plan.targetBytes && index + 1 < MAX_ATTEMPTS) {
           var audioBytes = plan.audioBitrate * plan.duration / 8;
           var next = nextBitrate(plan, res.blob.size - audioBytes, audioBytes);
           // 下限を下回る値は下限に揃え、それ以上下げられないならやめる
@@ -1031,7 +1030,7 @@
       (plan.audio.mode === 'none' && readSettings().audio ? '・音声なし' : '') + (engine === 'compat' ? '・互換モード' : '');
 
     var warns = [];
-    if (plan.mode === 'size' && size > plan.targetBytes) warns.push(MSG_UNREACHABLE);
+    if (plan.mode === 'size' && size >= plan.targetBytes) warns.push(MSG_UNREACHABLE);
     if (size > DISCORD_FREE_BYTES) warns.push(MSG_OVER_DISCORD);
     setAlert(els.outWarn, warns);
   }
@@ -1202,7 +1201,7 @@
     state: state,
     constants: {
       SIZE_SAFETY: SIZE_SAFETY, AUDIO_BITRATE: AUDIO_BITRATE, DEFAULT_MIN_KBPS: DEFAULT_MIN_KBPS,
-      DISCORD_FREE_BYTES: DISCORD_FREE_BYTES, MAX_ATTEMPTS: MAX_ATTEMPTS, MB: MB, TARGET_MARGIN: TARGET_MARGIN
+      DISCORD_FREE_BYTES: DISCORD_FREE_BYTES, MAX_ATTEMPTS: MAX_ATTEMPTS, MB: MB
     }
   };
 })();
