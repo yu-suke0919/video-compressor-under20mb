@@ -100,23 +100,29 @@
   .trim { position: relative; height: 30px; }
   .trim-track, .trim-fill { position: absolute; top: 12px; height: 6px; border-radius: 3px; }
   .trim-track { left: 11px; right: 11px; background: var(--surface-2); }
-  .trim-fill { background: var(--accent); }
+  .trim-fill { background: var(--accent); opacity: .4; }
+  /* 目盛り（5秒・10秒などの間隔で縦線を引く） */
+  .trim-ticks { position: absolute; left: 11px; right: 11px; top: 0; bottom: 0; pointer-events: none; }
+  .trim-ticks i { position: absolute; top: 8px; width: 1px; height: 14px; margin-left: -0.5px; background: var(--muted); opacity: .55; }
   .trim input[type="range"] {
     position: absolute; inset: 0; width: 100%; height: 30px; margin: 0; background: none;
     pointer-events: none; -webkit-appearance: none; appearance: none;
   }
   .trim input[type="range"]::-webkit-slider-runnable-track { height: 30px; background: transparent; }
   .trim input[type="range"]::-moz-range-track { height: 30px; background: transparent; }
+  /* つまみは縦線。見た目は幅6pxだが、指で掴みやすいよう触れる範囲は幅22pxにしてある */
   .trim input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none; appearance: none; pointer-events: auto; margin-top: 4px; cursor: pointer;
-    width: 22px; height: 22px; border-radius: 50%; background: var(--surface);
-    border: 3px solid var(--accent); box-shadow: 0 1px 3px rgba(0, 0, 0, .35);
+    -webkit-appearance: none; appearance: none; pointer-events: auto; margin-top: 0; cursor: ew-resize;
+    width: 22px; height: 30px; border: none; border-radius: 3px; box-shadow: none;
+    background: linear-gradient(90deg, transparent 8px, var(--accent) 8px, var(--accent) 14px, transparent 14px);
   }
   .trim input[type="range"]::-moz-range-thumb {
-    pointer-events: auto; cursor: pointer; width: 16px; height: 16px; border-radius: 50%;
-    background: var(--surface); border: 3px solid var(--accent); box-shadow: 0 1px 3px rgba(0, 0, 0, .35);
+    pointer-events: auto; cursor: ew-resize; width: 22px; height: 30px; border: none; border-radius: 3px;
+    background: linear-gradient(90deg, transparent 8px, var(--accent) 8px, var(--accent) 14px, transparent 14px);
   }
-  .trim input[type="range"]:disabled::-webkit-slider-thumb { border-color: var(--line); cursor: default; }
+  .trim input[type="range"]:disabled::-webkit-slider-thumb {
+    background: linear-gradient(90deg, transparent 8px, var(--line) 8px, var(--line) 14px, transparent 14px); cursor: default;
+  }
   .trim-times { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
   #trimLabel { display: block; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -170,6 +176,7 @@
   <section aria-label="トリミング">
     <div class="trim">
       <div class="trim-track"></div>
+      <div class="trim-ticks" id="trimTicks"></div>
       <div class="trim-fill" id="trimFill"></div>
       <input type="range" id="trimStart" min="0" max="1" step="0.1" value="0" aria-label="開始位置" disabled>
       <input type="range" id="trimEnd" min="0" max="1" step="0.1" value="1" aria-label="終了位置" disabled>
