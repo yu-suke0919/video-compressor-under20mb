@@ -58,7 +58,8 @@
   var $ = function (id) { return document.getElementById(id); };
   var els = {
     unsupported: $('unsupported'), file: $('file'), pickBtn: $('pickBtn'), repickBtn: $('repickBtn'),
-    srcVideo: $('srcVideo'), srcInfo: $('srcInfo'),
+    app: document.querySelector('.app'),
+    srcVideo: $('srcVideo'), srcInfo: $('srcInfo'), srcBox: $('srcBox'), outBox: $('outBox'),
     trimStart: $('trimStart'), trimEnd: $('trimEnd'), trimFill: $('trimFill'), trimLabel: $('trimLabel'),
     res720: $('res720'), res1080: $('res1080'), modeQuality: $('modeQuality'), modeSize: $('modeSize'),
     sizeLabel: $('sizeLabel'), planInfo: $('planInfo'), planWarn: $('planWarn'),
@@ -436,7 +437,18 @@
   }
 
   // ---------------------------------------------------------------- 表示の更新
+  // 圧縮前は元動画を大きく、圧縮が終わったら圧縮後の動画を大きく表示する。
+  // 元のまま共有できる（圧縮不要）ときや、圧縮し直している間は、元動画を大きくする
+  function updateMediaLayout() {
+    var done = !!(state.out && !state.out.original) && !state.running;
+    els.srcBox.classList.toggle('is-large', !done);
+    els.srcBox.classList.toggle('is-small', done);
+    els.outBox.classList.toggle('is-large', done);
+    els.outBox.classList.toggle('is-small', !done);
+  }
+
   function refresh() {
+    updateMediaLayout();
     var s = readSettings();
     els.sizeLabel.textContent = String(s.targetMB);
     // 狙うサイズは丸めずに見せる（例: 50MB → 49.75 MB）
@@ -988,6 +1000,7 @@
   }
 
   function setRunningUi(running) {
+    els.app.classList.toggle('is-running', running);
     show(els.progressWrap, running);
     els.runBtn.textContent = running ? 'キャンセル' : '圧縮する';
     els.runBtn.classList.toggle('is-cancel', running);
@@ -1025,6 +1038,7 @@
     show(els.outEmpty, false);
     els.shareBtn.disabled = state.running;
     els.saveBtn.disabled = state.running;
+    updateMediaLayout();
   }
 
   function clearOutput() {
@@ -1038,6 +1052,7 @@
     setAlert(els.outWarn, []);
     els.shareBtn.disabled = true;
     els.saveBtn.disabled = true;
+    updateMediaLayout();
   }
 
   function showResult(res, plan, engine, elapsed) {
@@ -1065,14 +1080,24 @@
   function share() {
     if (!state.out) return;
     var file = outFile();
-    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-      navigator.share({ files: [file] }).catch(function (err) {
-        if (err && err.name === 'AbortError') return;
-        download();   // 共有できなければダウンロードにフォールバック
-      });
-    } else {
+    // 共有の仕組みがない環境（PCなど）は、そのままダウンロードする
+    if (!navigator.share || !navigator.canShare) return download();
+    // 共有の仕組みはあるのに断られた場合は、ダウンロードに切り替えたうえで理由を表示する
+    // （Android の Chrome は .mov など共有できない形式があるため、元のまま共有するときに起きうる）
+    if (!navigator.canShare({ files: [file] })) {
       download();
+      return showShareProblem('この端末では「' + file.name + '」（' + (file.type || '形式不明') + '）を共有できないため、保存（ダウンロード）しました。');
     }
+    navigator.share({ files: [file] }).catch(function (err) {
+      if (err && err.name === 'AbortError') return;   // 共有シートを閉じただけ
+      download();
+      showShareProblem('共有できなかったため、保存（ダウンロード）しました（' + ((err && (err.name + ': ' + err.message)) || err) + '）。');
+    });
+  }
+
+  function showShareProblem(message) {
+    console.warn(message);
+    setAlert(els.outWarn, [message], true);
   }
 
   function download() {
@@ -1199,7 +1224,26 @@
     if (state.running) { e.preventDefault(); e.returnValue = ''; }
   });
 
+  // ---------------------------------------------------------------- iOS向けの表示
+  // iPhone / iPad（iPadOS はMacとして名乗るので、タッチ対応かどうかで見分ける）
+  function isIOS() {
+    var ua = navigator.userAgent || '';
+    return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 0);
+  }
+  // iOSは共有シートの「ビデオを保存」で写真アプリに保存できるので、ボタンを1つにまとめる
+  function setupIOSButtons() {
+    if (!isIOS()) return;
+    els.app.classList.add('is-ios');
+    els.shareBtn.innerHTML =
+      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M12 3v12"/><path d="M8 7l4-4 4 4"/>' +
+      '<path d="M8 10H6a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1h-2"/></svg>' +
+      '<span>Discord等に共有・動画保存</span>';
+  }
+
   // ---------------------------------------------------------------- 起動
+  setupIOSButtons();
   applyUrlParams();
   var missing = checkSupport();
   if (missing.length) {

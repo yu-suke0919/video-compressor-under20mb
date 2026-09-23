@@ -60,6 +60,10 @@
   .btn-primary.is-cancel { background: transparent; color: var(--danger); border-color: var(--danger); }
   .btn-discord { background: var(--discord); color: var(--on-discord); border-color: transparent; line-height: 1.25; padding: 7px 12px; }
   .btn-discord span { display: block; }
+  /* iOS: 共有シートに「ビデオを保存」があるので保存ボタンは出さず、共有ボタンを横いっぱいにする */
+  .app.is-ios #saveBtn { display: none; }
+  .app.is-ios #shareBtn { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 11px 12px; }
+  .app.is-ios #shareBtn svg { flex: none; }
 
   /* 2×2 の択一ボタン */
   .toggle-input { position: absolute; opacity: 0; pointer-events: none; }
@@ -75,8 +79,13 @@
   /* 動画の表示枠（縦画面で1画面に収まるよう高さを抑える） */
   .media-box {
     position: relative; background: #000; border-radius: 12px; overflow: hidden;
-    height: 19vh; height: 19svh; min-height: 110px;
+    transition: height .25s ease;
   }
+  /* 圧縮前は元動画を大きく、圧縮が終わったら圧縮後の動画を大きく（2つの合計の高さは変えない） */
+  .media-box.is-large { height: 26vh; height: 26svh; min-height: 150px; }
+  .media-box.is-small { height: 12vh; height: 12svh; min-height: 64px; }
+  /* 圧縮中は進捗バーの分だけ、小さいほうの枠をさらに小さくする */
+  .app.is-running .media-box.is-small { height: 8vh; height: 8svh; min-height: 48px; }
   .media-box video { width: 100%; height: 100%; object-fit: contain; display: block; }
   .media-empty {
     position: absolute; inset: 0; width: 100%; display: flex; flex-direction: column; align-items: center;
@@ -148,7 +157,7 @@
 
   <!-- 1. 元動画 -->
   <input id="file" type="file" accept="video/*" class="visually-hidden">
-  <div class="media-box">
+  <div class="media-box is-large" id="srcBox">
     <video id="srcVideo" class="hidden" playsinline webkit-playsinline controls preload="metadata"></video>
     <button id="pickBtn" type="button" class="media-empty">
       動画を選択
@@ -229,7 +238,7 @@
   </div>
 
   <!-- 5. 圧縮後の動画 -->
-  <div class="media-box">
+  <div class="media-box is-small" id="outBox">
     <video id="outVideo" class="hidden" playsinline webkit-playsinline controls></video>
     <div id="outEmpty" class="media-empty">圧縮後の動画がここに表示されます</div>
   </div>
