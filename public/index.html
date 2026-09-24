@@ -227,7 +227,7 @@
     </div>
     <div>
       <input type="radio" class="toggle-input" name="mode" id="modeSize" value="size" checked>
-      <label class="toggle" for="modeSize"><span id="sizeLabel">20</span>MB以下で圧縮</label>
+      <label class="toggle" for="modeSize"><span id="sizeLabel">20</span>MB以内に圧縮</label>
     </div>
   </div>
   <div id="planInfo" class="meta-line"></div>
@@ -236,7 +236,7 @@
   <details class="settings">
     <summary>詳細設定</summary>
     <div class="row" style="margin-top: 6px">
-      <label for="targetSize">目標サイズ（「MB以下で圧縮」用）</label>
+      <label for="targetSize">目標サイズ（「MB以内に圧縮」用）</label>
       <span><input id="targetSize" type="number" inputmode="decimal" min="1" max="500" step="1" value="20"> MB</span>
     </div>
     <p class="hint">目標サイズの97%（<span id="capLabel">19.4 MB</span>）を狙って圧縮し、目標サイズ未満に収まらなければ自動で圧縮し直します（1MB＝100万バイト）。</p>
@@ -248,7 +248,7 @@
       <label for="minRate1080">下限ビットレート（1080p）</label>
       <span><input id="minRate1080" type="number" inputmode="numeric" min="100" max="50000" step="100" value="2700"> kbps</span>
     </div>
-    <p class="hint">「なるべく圧縮」はこの値で圧縮します。「MB以下で圧縮」は、この値を下回らない範囲で目標サイズに収まるなるべく高いビットレートにします。</p>
+    <p class="hint">「なるべく圧縮」はこの値で圧縮します。「MB以内に圧縮」は、この値を下回らない範囲で目標サイズに収まるなるべく高いビットレートにします。</p>
     <div class="check">
       <input type="checkbox" id="vbrOn" checked>
       <label for="vbrOn">可変ビットレート（VBR）で圧縮（激しい場面に多く割り振る。目標を超えたら自動で再圧縮）</label>
@@ -304,7 +304,7 @@
     </div>
     <div class="row" style="margin-top: 6px">
       <label for="uMode">圧縮方法</label>
-      <select id="uMode"><option value="size">目標サイズ以下で圧縮</option><option value="quality">なるべく圧縮</option></select>
+      <select id="uMode"><option value="size">目標サイズ以内に圧縮</option><option value="quality">なるべく圧縮</option></select>
     </div>
     <div class="row" style="margin-top: 6px">
       <label for="uTarget">目標サイズ</label>

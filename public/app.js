@@ -8,7 +8,7 @@
  *
  * 圧縮の方針（解像度は選んだ720p/1080pで固定し、ビットレートだけで容量を調整する）:
  *   なるべく圧縮 … 解像度ごとの「下限ビットレート」で圧縮する
- *   ◯MB以下で圧縮 … 下限を下回らない範囲で、目標サイズに収まるなるべく高いビットレートにする。
+ *   ◯MB以内に圧縮 … 下限を下回らない範囲で、目標サイズに収まるなるべく高いビットレートにする。
  *                   超えたら実サイズからビットレートを直し、最大2回まで再圧縮
  *
  * すべて端末内で完結し、外部にデータは送信しない。
@@ -38,7 +38,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-24f';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-24g';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、別の方式に切り替える
@@ -447,7 +447,7 @@
       // 再圧縮: 実サイズから求め直した値（下限は下回らない）
       videoBps = Math.max(floorBps, Math.floor(forcedVideoBitrate));
     } else {
-      // ◯MB以下で圧縮: 目標サイズに収まるなるべく高いビットレート。下限を下回るなら圧縮できない
+      // ◯MB以内に圧縮: 目標サイズに収まるなるべく高いビットレート。下限を下回るなら圧縮できない
       videoBps = Math.floor(settings.targetBytes * 8 * SIZE_SAFETY / duration - audioBps);
       if (videoBps < floorBps) { unreachable = true; videoBps = floorBps; }
     }
@@ -468,7 +468,7 @@
       width: width, height: height, videoBitrate: videoBps, floorBitrate: floorBps,
       audio: audio, audioBitrate: audioBps,
       estBytes: estBytes,
-      unreachable: unreachable,                        // 目標サイズに収められない（◯MB以下で圧縮のとき）
+      unreachable: unreachable,                        // 目標サイズに収められない（◯MB以内に圧縮のとき）
       overDiscord: estBytes > DISCORD_FREE_BYTES       // Discord無料アカウントの上限を超える見込み
     };
   }
@@ -713,7 +713,7 @@
   }
 
   // ---------------------------------------------------------------- トリミングのみ（再エンコードしない）
-  // 「◯MB以下で圧縮」で、解像度もfpsも元のまま、トリミングした元動画が目標サイズに収まる見込みなら、
+  // 「◯MB以内に圧縮」で、解像度もfpsも元のまま、トリミングした元動画が目標サイズに収まる見込みなら、
   // 再エンコードせずに切り出すだけにする（画質は元のまま）。見込みのサイズを返し、対象外なら 0
   function trimOnlyEstimate(plan) {
     if (!state.meta || !state.file || state.engine !== 'fast' || plan.mode !== 'size') return 0;
