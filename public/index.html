@@ -160,6 +160,8 @@
   }
   details.settings .hint { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
   footer { font-size: 11px; color: var(--muted); text-align: center; }
+  .contact { font-size: 12px; color: var(--muted); text-align: center; margin: 14px 0 0; }
+  .contact a { color: var(--accent); }
 
   /* URLを作る（画面の下・最初は閉じている） */
   #urlBuilder { margin-top: 14px; }
@@ -343,11 +345,14 @@
   <!-- 8. 診断情報（うまく動かないときの報告用。圧縮を始めるかエラーが出ると表示） -->
   <details class="settings hidden" id="diagBox">
     <summary>診断情報</summary>
-    <p class="hint">うまく圧縮できないときは、これをコピーして作成者に伝えてください。端末の種類や処理の経過だけで、動画やファイル名は含みません。</p>
+    <p class="hint">うまく圧縮できないときは、これをコピーして、下のX（@inkaroma0431）に送ってください。端末の種類や処理の経過だけで、動画やファイル名は含みません。</p>
     <textarea id="diagOut" rows="10" readonly aria-label="診断情報"></textarea>
     <button id="diagCopy" type="button" class="btn btn-sm" style="width: 100%; margin-top: 8px">コピー</button>
     <p id="diagStatus" class="hint" role="status"></p>
   </details>
+
+  <!-- 9. 不具合の報告・要望の連絡先 -->
+  <p class="contact">不具合の報告・ご要望は <a href="https://x.com/inkaroma0431" target="_blank" rel="noopener noreferrer">X（@inkaroma0431）</a> へ</p>
 </main>
 
 <script src="./vendor/mediabunny.min.js"></script>
