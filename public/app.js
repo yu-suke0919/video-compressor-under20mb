@@ -38,7 +38,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-24a';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-23g';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、別の方式に切り替える
@@ -483,47 +483,12 @@
   // ---------------------------------------------------------------- 表示の更新
   // 圧縮前は元動画を大きく、圧縮が終わったら圧縮後の動画を大きく表示する。
   // 元のまま共有できる（圧縮不要）ときや、圧縮し直している間は、元動画を大きくする
-  // 2つの動画枠の比率（0＝元動画が最大、1＝圧縮後の動画が最大）
-  var split = { r: 0, done: null, timer: 0 };
-  function setSplit(r) {
-    split.r = Math.min(1, Math.max(0, r));
-    els.app.style.setProperty('--r', split.r.toFixed(4));
-    var outBig = split.r > 0.5;
-    els.srcBox.classList.toggle('is-large', !outBig);
-    els.srcBox.classList.toggle('is-small', outBig);
-    els.outBox.classList.toggle('is-large', outBig);
-    els.outBox.classList.toggle('is-small', !outBig);
-  }
-  // 圧縮前（と圧縮中）は元動画を、圧縮が終わったら圧縮後の動画を大きくする。
-  // 状態が変わったときだけ切り替え、それ以外はスクロールで調整した大きさを保つ
   function updateMediaLayout() {
     var done = !!(state.out && !state.out.original) && !state.running;
-    if (done === split.done) return;
-    split.done = done;
-    setSplit(done ? 1 : 0);
-  }
-
-  // 上にスクロールすると元動画、下にスクロールすると圧縮後の動画の枠が大きくなる（もう一方は同じだけ小さくなる）。
-  // 圧縮後の枠が最大のときに下へ、またはページが途中までスクロールしているときに上へ動かした場合は、普通にスクロールする
-  function splitRange() {
-    var vh = window.innerHeight / 100;
-    var big = Math.max(150, 25 * vh);
-    var small = state.running ? Math.max(46, 7 * vh) : Math.max(64, 12 * vh);
-    return Math.max(1, big - small);
-  }
-  function scrollSplit(delta) {
-    if (!state.file || !delta) return false;
-    if (delta > 0 && split.r >= 1) return false;
-    if (delta < 0 && (split.r <= 0 || (window.scrollY || document.documentElement.scrollTop) > 0)) return false;
-    setSplit(split.r + delta / splitRange());
-    els.app.classList.add('is-resizing');
-    clearTimeout(split.timer);
-    split.timer = setTimeout(function () { els.app.classList.remove('is-resizing'); }, 150);
-    return true;
-  }
-  // トリミングのバーや入力欄、詳細設定などの上で始めた操作は対象外
-  function isSplitExcluded(target) {
-    return !!(target && target.closest && target.closest('.trim, input, textarea, select, details'));
+    els.srcBox.classList.toggle('is-large', !done);
+    els.srcBox.classList.toggle('is-small', done);
+    els.outBox.classList.toggle('is-large', done);
+    els.outBox.classList.toggle('is-small', !done);
   }
 
   function refresh() {
@@ -1475,26 +1440,6 @@
   });
   els.shareBtn.addEventListener('click', share);
   els.saveBtn.addEventListener('click', download);
-
-  // スクロール（指のスワイプ・マウスホイール）で動画枠の大きさを変える
-  var touchY = null;
-  document.addEventListener('touchstart', function (e) {
-    touchY = (e.touches.length === 1 && !isSplitExcluded(e.target)) ? e.touches[0].clientY : null;
-  }, { passive: true });
-  document.addEventListener('touchmove', function (e) {
-    if (touchY === null || e.touches.length !== 1) return;
-    var y = e.touches[0].clientY;
-    var delta = touchY - y;   // 指を上に動かす（＝下にスクロール）と正
-    touchY = y;
-    if (scrollSplit(delta) && e.cancelable) e.preventDefault();
-  }, { passive: false });
-  document.addEventListener('touchend', function () { touchY = null; }, { passive: true });
-  document.addEventListener('touchcancel', function () { touchY = null; }, { passive: true });
-  window.addEventListener('wheel', function (e) {
-    if (e.ctrlKey || isSplitExcluded(e.target)) return;
-    var delta = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1);
-    if (scrollSplit(delta)) e.preventDefault();
-  }, { passive: false });
 
   window.addEventListener('beforeunload', function (e) {
     if (state.running) { e.preventDefault(); e.returnValue = ''; }
