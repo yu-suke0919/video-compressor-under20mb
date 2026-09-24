@@ -282,6 +282,7 @@ npm run build:vendor
 | `public/app.js` | 圧縮処理の本体 |
 | `public/vendor/mediabunny.min.js` | Mediabunny の必要部分（MPL-2.0） |
 | `public/sw.js` | Service Worker（本番はキャッシュ優先、プレビューはネット優先。全アセットをキャッシュしてオフラインでも起動） |
+| `public/_headers` | Cloudflare Pages が付けるセキュリティ用のHTTPヘッダー（CSP など。読み込めるのはこのサイトのファイルだけ、他サイトへの埋め込みは禁止） |
 | `public/manifest.json` | PWAの定義（名前「アップロード不要の動画圧縮」、ホーム画面のアイコン名「20MB圧縮」、スタンドアロン表示） |
 | `public/icons/` | アイコン（PNG） |
 | `package.json` / `tools/` | 同梱ライブラリを作り直すときだけ使う設定（公開はされない） |

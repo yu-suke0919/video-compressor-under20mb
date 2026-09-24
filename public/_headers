@@ -1,0 +1,11 @@
+# Cloudflare Pages が全ページに付けるHTTPヘッダー（セキュリティ用）
+#   CSP: 読み込めるのはこのサイトのファイルだけ。動画の表示と Mediabunny の Worker に blob: を使う。
+#        スタイルは index.html に埋め込んでいるので 'unsafe-inline' を許可する（スクリプトは許可しない）
+#   Permissions-Policy: 使わない機能を止める（カメラ・マイクは「ビデオを撮る」に影響しないよう止めない）
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin
