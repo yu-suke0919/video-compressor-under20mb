@@ -32,13 +32,15 @@
   var MIN_KBPS_LIMITS = [100, 50000];
   var MSG_UNREACHABLE = '目標サイズに圧縮できません。解像度を下げるか、詳細設定にて下限ビットレートを引き下げてください。';
   var MSG_OVER_DISCORD = '20MBを超える為、Discord(無料垢)では送信できません。';
+  var MSG_LOCATION = '位置情報が含まれている動画です。この情報はアップロードされず、圧縮後の動画には位置情報を含めません。';
+  var SETTINGS_KEY = 'video-compressor-under20mb:settings';   // 画面で変えた設定を覚えておく場所（この端末のブラウザ内だけ）
   var DEFAULT_FPS = 30;
   var MAX_FPS = 60;
   var MAX_ATTEMPTS = 3;                  // 初回 + 最大2回の再圧縮
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-24u';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-24v';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -228,6 +230,48 @@
     };
   }
 
+  // ---------------------------------------------------------------- 設定を覚える
+  // 画面で設定を変えたらこの端末のブラウザ内に保存し、次に開いたときに戻す。
+  // URL パラメータで開いたときの値は保存しない（画面で変えたときだけ保存する）
+  var SAVED_FIELDS = ['res720', 'res1080', 'modeQuality', 'modeSize', 'targetSize', 'minRate720', 'minRate1080',
+    'vbrOn', 'halfFps', 'autoRun', 'audioOn'];
+  function saveSettings() {
+    var s = readSettings();
+    var data = {
+      res: s.res, mode: s.mode, target: s.targetMB, min720: s.minBitrate['720'] / 1000, min1080: s.minBitrate['1080'] / 1000,
+      vbr: s.vbr, halfFps: s.halfFps, auto: s.autoRun, audio: s.audio
+    };
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(data)); } catch (e) { /* 保存できない環境では覚えない */ }
+  }
+  function loadSavedSettings() {
+    var d = null;
+    try { d = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null'); } catch (e) { d = null; }
+    if (!d || typeof d !== 'object') return;
+    if (d.res === '1080') els.res1080.checked = true; else if (d.res === '720') els.res720.checked = true;
+    if (d.mode === 'quality') els.modeQuality.checked = true; else if (d.mode === 'size') els.modeSize.checked = true;
+    if (isFinite(d.target) && d.target >= MIN_TARGET_MB && d.target <= MAX_TARGET_MB) els.targetSize.value = String(d.target);
+    [['min720', els.minRate720], ['min1080', els.minRate1080]].forEach(function (pair) {
+      var v = d[pair[0]];
+      if (isFinite(v) && v >= MIN_KBPS_LIMITS[0] && v <= MIN_KBPS_LIMITS[1]) pair[1].value = String(Math.round(v));
+    });
+    [['vbr', els.vbrOn], ['halfFps', els.halfFps], ['auto', els.autoRun], ['audio', els.audioOn]].forEach(function (pair) {
+      if (typeof d[pair[0]] === 'boolean') pair[1].checked = d[pair[0]];
+    });
+  }
+  function resetSettings() {
+    try { localStorage.removeItem(SETTINGS_KEY); } catch (e) { /* noop */ }
+    els.res720.checked = true;
+    els.modeSize.checked = true;
+    els.targetSize.value = String(DEFAULT_TARGET_MB);
+    els.minRate720.value = String(DEFAULT_MIN_KBPS['720']);
+    els.minRate1080.value = String(DEFAULT_MIN_KBPS['1080']);
+    els.vbrOn.checked = true;
+    els.halfFps.checked = true;
+    els.autoRun.checked = false;
+    els.audioOn.checked = true;
+    refresh();
+  }
+
   // ショートカットなどから URL で初期値を渡せる（詳細設定の項目も含む）
   //   res=720|1080  mode=size|quality  target=MB  fps=30|source  audio=on|off  min720=kbps  min1080=kbps  auto=on|off  vbr=on|off
   function applyUrlParams() {
@@ -291,6 +335,19 @@
   }
 
   // 高速モード: Mediabunny でコンテナを読んで情報を得る
+  // 撮影場所（GPS）の情報が入っているか。Android は ©xyz、iPhone は com.apple.quicktime.location.ISO6709 などに入る
+  function hasLocationTag(tags) {
+    var raw = tags && tags.raw;
+    if (!raw) return false;
+    return Object.keys(raw).some(function (k) { return /xyz|location|gps/i.test(k); });
+  }
+  // 書き出す動画のメタデータ。位置情報などが入る生のデータ（raw）はすべて除き、題名や日付などだけ残す
+  function outputTags(tags) {
+    var out = {};
+    Object.keys(tags || {}).forEach(function (k) { if (k !== 'raw') out[k] = tags[k]; });
+    return out;
+  }
+
   function loadMetaFast(file) {
     var input = new M.Input({ source: new M.BlobSource(file), formats: INPUT_FORMATS });
     var meta = {};
@@ -301,10 +358,12 @@
       meta.videoCodec = vt.codec;
       return Promise.all([input.computeDuration(), vt.computePacketStats(120), vt.canDecode(), input.getPrimaryAudioTrack(),
         vt.getCodecParameterString().catch(function () { return null; }),
-        vt.hasHighDynamicRange().catch(function () { return null; })]);
+        vt.hasHighDynamicRange().catch(function () { return null; }),
+        input.getMetadataTags().catch(function () { return null; })]);
     }).then(function (r) {
       meta.codecString = r[4];
       meta.hdr = r[5];
+      meta.hasLocation = hasLocationTag(r[6]);
       meta.duration = r[0];
       meta.fps = snapFps(r[1].averagePacketRate);
       meta.fpsMeasured = !!meta.fps;
@@ -538,13 +597,19 @@
     els.audioLabel.textContent = '音声を残す（' + plan.audio.label + '）';
     var trimEst = trimOnlyEstimate(plan);
     els.planInfo.textContent = trimEst
-      ? '→ トリミングのみ（再圧縮なし）・' + plan.width + '×' + plan.height + '・予想' + fmtBytes(trimEst)
+      ? '→ ' + (isFullTrimOf(plan) ? '位置情報だけ除いて元のまま' : 'トリミングのみ') + '（再圧縮なし）・' +
+        plan.width + '×' + plan.height + '・予想' + fmtBytes(trimEst)
       : '→ ' + plan.width + '×' + plan.height + '・' + fmtFps(plan.outFps) + '・' +
         fmtRate(plan.videoBitrate) + '・予想' + fmtBytes(plan.estBytes);
 
-    // 注意文は2種類だけ
     var warns = [];
-    if (plan.mode === 'size' && plan.unreachable && !trimEst) warns.push(MSG_UNREACHABLE);
+    if (plan.mode === 'size' && plan.unreachable && !trimEst) {
+      warns.push(MSG_UNREACHABLE);
+      // 今の解像度と下限ビットレートで、目標サイズに収まる長さの目安
+      var fitSec = Math.floor(plan.targetBytes * 8 * SIZE_SAFETY / (plan.floorBitrate + plan.audioBitrate));
+      warns.push(plan.res + 'pなら' + fmtDuration(fitSec) + 'までなら' + plan.targetMB + 'MBに収められます。');
+    }
+    if (state.meta.hasLocation) warns.push(MSG_LOCATION);
     if (trimEst ? trimEst > DISCORD_FREE_BYTES : plan.overDiscord) warns.push(MSG_OVER_DISCORD);
     setAlert(els.planWarn, warns);
 
@@ -557,7 +622,9 @@
   // すでに目標サイズ以下なら、圧縮せずそのまま共有・保存できるようにする
   function updatePassthrough(settings) {
     if (state.running) return;
-    var canPass = settings.mode === 'size' && isFullTrim() && state.file.size < settings.targetBytes;
+    // 位置情報が入っている動画は、元の動画をそのまま渡さない（「圧縮する」で位置情報を除いて書き出す）
+    var canPass = settings.mode === 'size' && isFullTrim() && state.file.size < settings.targetBytes &&
+      !(state.meta && state.meta.hasLocation);
     if (canPass && (!state.out || state.out.original)) {
       if (!state.out) {
         setOutput({ blob: state.file, name: state.file.name || 'video.mp4', type: state.file.type || 'video/mp4', original: true });
@@ -748,7 +815,7 @@
       } else {
         audio = { discard: true };
       }
-      var options = { input: input, output: output, video: video, audio: audio, showWarnings: false };
+      var options = { input: input, output: output, video: video, audio: audio, tags: outputTags, showWarnings: false };
       if (!isFullTrimOf(plan)) options.trim = { start: plan.trimStart, end: plan.trimEnd };
       return M.Conversion.init(options);
     }).then(function (conv) {
@@ -791,7 +858,8 @@
   // 再エンコードせずに切り出すだけにする（画質は元のまま）。見込みのサイズを返し、対象外なら 0
   function trimOnlyEstimate(plan) {
     if (!state.meta || !state.file || state.engine !== 'fast' || plan.mode !== 'size') return 0;
-    if (isFullTrimOf(plan)) return 0;   // 全体のときは「元の動画のまま」で扱う
+    // 全体のときは「元の動画のまま」で扱う。ただし位置情報があるときは、位置情報だけ除いてそのまま書き出す
+    if (isFullTrimOf(plan) && !state.meta.hasLocation) return 0;
     if (plan.width !== state.meta.width || plan.height !== state.meta.height || plan.fpsChanged) return 0;
     if (!(state.meta.duration > 0)) return 0;
     var est = Math.round(state.file.size * plan.duration / state.meta.duration);
@@ -813,6 +881,7 @@
       trim: { start: plan.trimStart, end: plan.trimEnd },
       // 再エンコードせずにそのまま写す。区切りはキーフレームに合わせて広げる（開始が少し早まることがある）
       copy: { mode: 'forced', boundaryPolicy: 'expand', shiftTolerance: Infinity },
+      tags: outputTags,
       showWarnings: false
     }).then(function (conv) {
       conversion = conv;
@@ -1372,13 +1441,15 @@
 
   function showResult(res, plan, engine, elapsed) {
     var base = String(state.file.name || 'video').replace(/\.[^.]+$/, '') || 'video';
-    setOutput({ blob: res.blob, name: base + (res.trimOnly ? '_trimmed.mp4' : '_compressed.mp4'), type: 'video/mp4', original: false });
+    var suffix = !res.trimOnly ? '_compressed' : isFullTrimOf(plan) ? '' : '_trimmed';
+    setOutput({ blob: res.blob, name: base + suffix + '.mp4', type: 'video/mp4', original: false });
 
     var size = res.blob.size;
     var ratio = state.file.size > 0 ? Math.round((1 - size / state.file.size) * 100) : 0;
     if (res.trimOnly) {
       els.outInfo.textContent = fmtBytes(state.file.size) + ' → ' + fmtBytes(size) + '（-' + Math.max(0, ratio) + '%）・' +
-        plan.width + '×' + plan.height + '・トリミングのみ（再圧縮なし）・' + fmtDuration(elapsed) +
+        plan.width + '×' + plan.height + '・' + (isFullTrimOf(plan) ? '位置情報だけ除いて元のまま' : 'トリミングのみ') +
+        '（再圧縮なし）・' + fmtDuration(elapsed) +
         (res.audioDropped ? '・音声なし' : '');
       setAlert(els.outWarn, size > DISCORD_FREE_BYTES ? [MSG_OVER_DISCORD] : []);
       return;
@@ -1614,6 +1685,8 @@
     els.targetSize.value = String(readSettings().targetMB);   // 確定したときだけ値を正規化する
     refresh();
   });
+  SAVED_FIELDS.forEach(function (id) { $(id).addEventListener('change', function () { setTimeout(saveSettings, 0); }); });
+  $('resetSettings').addEventListener('click', resetSettings);
   els.runBtn.addEventListener('click', function () {
     if (state.running) cancelRun(); else if (isCompressed()) redo(); else run();
   });
@@ -1720,6 +1793,7 @@
 
   // ---------------------------------------------------------------- 起動
   setupIOSButtons();
+  loadSavedSettings();   // 前回画面で変えた設定（URLパラメータのほうが優先）
   applyUrlParams();
   loadBuilderFromScreen();
   var missing = checkSupport();
