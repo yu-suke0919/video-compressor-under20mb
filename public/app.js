@@ -38,7 +38,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-24k';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-24l';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、別の方式に切り替える
@@ -426,7 +426,9 @@
     return shortSide > limit ? limit / shortSide : 1;   // 拡大はしない
   }
 
-  function makePlan(meta, trim, settings, audio, fileSize, forcedVideoBitrate) {
+  // videoCapBps: 映像ビットレートの上限を直接指定する（トリミングのみで目標を超えたとき、切り出した部分の実測値を使う）。
+  //   省略時は、ファイル全体の平均ビットレートの80%を上限にする
+  function makePlan(meta, trim, settings, audio, fileSize, forcedVideoBitrate, videoCapBps) {
     var duration = Math.max(0.1, trim.end - trim.start);
     var srcFps = meta.fps || DEFAULT_FPS;
     var outFps = (settings.halfFps && srcFps > 40) ? srcFps / 2 : srcFps;
@@ -454,7 +456,7 @@
 
     // 元動画より高いビットレートで焼き直しても容量が増えるだけなので上限を設ける
     var srcBps = meta.duration > 0 ? fileSize * 8 / meta.duration : Infinity;
-    var srcCap = Math.floor(srcBps * 0.8) - audioBps;
+    var srcCap = videoCapBps ? Math.floor(videoCapBps) : Math.floor(srcBps * 0.8) - audioBps;
     if (isFinite(srcCap) && srcCap > 100000 && videoBps > srcCap) videoBps = srcCap;
     // ビットレートは必ず整数にする（小数だと Mediabunny が例外を出し、0%のまま止まっていた）
     videoBps = Math.floor(videoBps);
@@ -465,7 +467,7 @@
       targetMB: settings.targetMB, targetBytes: settings.targetBytes, minBitrate: settings.minBitrate,
       trimStart: trim.start, trimEnd: trim.end, duration: duration,
       srcFps: srcFps, outFps: outFps, fpsChanged: Math.abs(outFps - srcFps) > 0.05,
-      width: width, height: height, videoBitrate: videoBps, floorBitrate: floorBps,
+      width: width, height: height, videoBitrate: videoBps, floorBitrate: floorBps, videoCapBps: videoCapBps || null,
       audio: audio, audioBitrate: audioBps,
       estBytes: estBytes,
       unreachable: unreachable,                        // 目標サイズに収められない（◯MB以内に圧縮のとき）
@@ -1190,6 +1192,12 @@
           if (res.blob.size >= plan.targetBytes) {
             log('トリミングのみでは目標を超えたため、通常の圧縮に切り替え');
             engine = 'fast';
+            // 予想を超えたのは、切り出した部分がファイル全体の平均より重いから。
+            // 全体の平均の80%で頭打ちにすると必要以上に小さくなるので、切り出した部分の実測値を上限にして計画し直す
+            var copyVideoBps = Math.floor(res.blob.size * 8 / plan.duration) - Math.round(plan.audio.bps || 0);
+            plan = makePlan(state.meta, { start: plan.trimStart, end: plan.trimEnd }, planSettings(plan),
+              plan.audio, state.file.size, null, copyVideoBps);
+            log('計画し直し ' + describePlan(plan));
             return attempt(0, 0, 'トリミングのみでは' + (res.blob.size / MB).toFixed(2) + 'MBで目標超過→圧縮中');
           }
           res.attempts = 1;
@@ -1206,7 +1214,7 @@
           if (next) next = Math.max(next, plan.floorBitrate);
           if (next && next < plan.videoBitrate) {
             plan = makePlan(state.meta, { start: plan.trimStart, end: plan.trimEnd }, planSettings(plan),
-              plan.audio, state.file.size, next);
+              plan.audio, state.file.size, next, plan.videoCapBps);
             return attempt(index + 1, res.blob.size);
           }
         }
@@ -1234,7 +1242,7 @@
           log('互換モードに切り替え');
           engine = 'compat';
           plan = makePlan(state.meta, { start: plan.trimStart, end: plan.trimEnd }, planSettings(plan),
-            audioStrategy(state.meta, readSettings().audio, 'compat'), state.file.size);
+            audioStrategy(state.meta, readSettings().audio, 'compat'), state.file.size, null, plan.videoCapBps);
           return attempt(0, 0, stalled ? '処理が進まないため、互換モードでやり直し中' : null);
         }
         if (stalled) throw new Error('圧縮が進まなくなりました。画面を表示したまま、もう一度お試しください。');
