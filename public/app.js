@@ -38,7 +38,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-24r';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-24s';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1529,6 +1529,34 @@
     });
   }
 
+  // Android の共有メニューから渡された動画を読み込む（Service Worker が一時保存して ?shared=1 で開く）
+  function loadSharedVideo() {
+    if (!/[?&]shared=1\b/.test(location.search) || typeof caches === 'undefined') return;
+    try {
+      var u = new URL(location.href);
+      u.searchParams.delete('shared');
+      history.replaceState(null, '', u.pathname + u.search + u.hash);   // 再読み込みで読み直さないようにする
+    } catch (e) { /* noop */ }
+    var key = new URL('./shared-video', location.href).toString();
+    caches.open('shared-video').then(function (cache) {
+      return cache.match(key).then(function (res) {
+        if (!res) return null;
+        var name = decodeURIComponent(res.headers.get('X-File-Name') || 'video.mp4');
+        var type = res.headers.get('Content-Type') || 'video/mp4';
+        return res.blob().then(function (blob) {
+          cache.delete(key);
+          return new File([blob], name, { type: type });
+        });
+      });
+    }).then(function (file) {
+      if (!file) return;
+      log('共有メニューから動画を受け取った');
+      onFileChosen(file);
+    }, function (err) {
+      log('共有された動画を読み込めなかった ' + errText(err));
+    });
+  }
+
   // 「動画をアップロードしたら即圧縮」がオンなら、選んだ直後に圧縮を始める。
   // 目標サイズに収まらない（ボタンが無効）ときや、元のままで目標以下（圧縮不要）のときは始めない
   function autoRunIfEnabled(file) {
@@ -1708,6 +1736,7 @@
   });
   if (/[?&]debug=(1|on|true)\b/i.test(location.search)) showDiag(false);   // debug=1 なら最初から表示
   refresh();
+  loadSharedVideo();
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
