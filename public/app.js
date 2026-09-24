@@ -38,7 +38,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-24j';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-24k';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、別の方式に切り替える
@@ -625,6 +625,37 @@
     try { els.srcVideo.currentTime = parseFloat(els.trimSeek.value) || 0; } catch (e) { /* noop */ }
   }
   function endSeekDrag() { seekDragging = false; }
+
+  // バーの何もない所を触ったら、その位置へシークする（そのまま指を動かすとシークし続ける）。
+  // つまみや再生位置の線を触ったときは、それぞれの操作を優先する（触った要素が input のとき）
+  var trimBar = document.querySelector('.trim');
+  var barPointer = null;
+  function seekFromX(clientX) {
+    var rect = trimBar.getBoundingClientRect();
+    var thumbW = parseFloat(getComputedStyle(trimBar).getPropertyValue('--thumb-w')) || 44;
+    var a = Math.min(1, Math.max(0, (clientX - rect.left - thumbW / 2) / Math.max(1, rect.width - thumbW)));
+    var t = a * state.meta.duration;
+    seekDragging = true;
+    els.trimSeek.value = String(t);
+    try { els.srcVideo.currentTime = t; } catch (e) { /* noop */ }
+  }
+  trimBar.addEventListener('pointerdown', function (e) {
+    if (e.target.tagName === 'INPUT' || els.trimSeek.disabled || !state.meta || e.button > 0) return;
+    barPointer = e.pointerId;
+    try { trimBar.setPointerCapture(e.pointerId); } catch (err) { /* noop */ }
+    seekFromX(e.clientX);
+    e.preventDefault();
+  });
+  trimBar.addEventListener('pointermove', function (e) {
+    if (barPointer === e.pointerId) seekFromX(e.clientX);
+  });
+  ['pointerup', 'pointercancel'].forEach(function (type) {
+    trimBar.addEventListener(type, function (e) {
+      if (barPointer !== e.pointerId) return;
+      barPointer = null;
+      endSeekDrag();
+    });
+  });
   function followPlayhead() {
     headRaf = 0;
     renderPlayhead();
