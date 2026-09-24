@@ -1,14 +1,20 @@
 /*
  * Service Worker
  * すべてのアセットをキャッシュし、2回目以降はオフラインでも起動できるようにする。
- * 読み込みはネット優先（更新がすぐ反映される）で、つながらないときだけキャッシュを使う。
+ * 本番はキャッシュ優先（速く起動し、更新は裏で取得して次に開いたときに反映）。
+ * ブランチのプレビューと手元の確認環境はネット優先（更新がすぐ反映され、つながらないときだけキャッシュを使う）。
  * ドメイン直下でもサブディレクトリでも動くよう、
  * パスはこのファイルの位置からの相対パスで解決する。
  */
 'use strict';
 
-var CACHE = 'video-compressor-under20mb-v18';
-var NETWORK_TIMEOUT_MS = 3000;   // ネットの応答をこれだけ待ってからキャッシュを使う
+var CACHE = 'video-compressor-under20mb-v19';
+var NETWORK_TIMEOUT_MS = 3000;   // ネット優先のとき、ネットの応答をこれだけ待ってからキャッシュを使う
+
+// Cloudflare Pages のプレビュー（<ブランチ名>.<プロジェクト名>.pages.dev）と手元の確認環境だけネット優先にする
+var HOST = self.location.hostname;
+var NETWORK_FIRST = (/\.pages\.dev$/.test(HOST) && HOST.split('.').length > 3) ||
+  HOST === 'localhost' || HOST === '127.0.0.1';
 
 // registration の scope（= このファイルが置かれたディレクトリ）を基準にする
 var ASSETS = [
@@ -52,40 +58,62 @@ self.addEventListener('fetch', function (event) {
   var url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  // ネット優先（更新したらすぐ新しい版になるように）。取得できたらキャッシュも更新する。
-  // オフラインのときや、一定時間応答がないときはキャッシュから返す（オフラインでも起動できる）
-  event.respondWith(new Promise(function (resolve) {
-    var settled = false;
-    function fromCache() {
-      return caches.match(req, { ignoreSearch: true }).then(function (cached) {
-        if (cached) return cached;
-        // キャッシュにも無い場合、ページ遷移はトップに逃がす
-        if (req.mode === 'navigate') {
-          return caches.match(new URL('./index.html', self.registration.scope).toString());
-        }
-        return null;
-      });
+  event.respondWith(NETWORK_FIRST ? networkFirst(req) : cacheFirst(req));
+});
+
+// キャッシュに無いときの代わり（ページ遷移はトップに逃がす）
+function fromCache(req) {
+  return caches.match(req, { ignoreSearch: true }).then(function (cached) {
+    if (cached) return cached;
+    if (req.mode === 'navigate') {
+      return caches.match(new URL('./index.html', self.registration.scope).toString());
     }
+    return null;
+  });
+}
+function offlineResponse() {
+  return new Response('オフラインです', {
+    status: 503,
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+  });
+}
+// 取得できたらキャッシュも更新する
+function fetchAndStore(req) {
+  return fetch(req).then(function (res) {
+    if (res && res.ok && res.type === 'basic') {
+      var copy = res.clone();
+      caches.open(CACHE).then(function (cache) { cache.put(req, copy); });
+    }
+    return res;
+  });
+}
+
+// キャッシュ優先（本番）: キャッシュがあればすぐ返し、裏でキャッシュを更新する（次に開いたときに反映）
+function cacheFirst(req) {
+  var network = fetchAndStore(req).catch(function () { return null; });
+  return caches.match(req, { ignoreSearch: true }).then(function (cached) {
+    if (cached) return cached;
+    return network.then(function (res) {
+      return res || fromCache(req).then(function (fallback) { return fallback || offlineResponse(); });
+    });
+  });
+}
+
+// ネット優先（プレビュー）: 更新したらすぐ新しい版になる。
+// オフラインのときや、一定時間応答がないときはキャッシュから返す（オフラインでも起動できる）
+function networkFirst(req) {
+  return new Promise(function (resolve) {
+    var settled = false;
     function finish(res) {
       if (settled) return;
       settled = true;
-      resolve(res || new Response('オフラインです', {
-        status: 503,
-        headers: { 'Content-Type': 'text/plain; charset=utf-8' }
-      }));
+      resolve(res || offlineResponse());
     }
-    var network = fetch(req).then(function (res) {
-      if (res && res.ok && res.type === 'basic') {
-        var copy = res.clone();
-        caches.open(CACHE).then(function (cache) { cache.put(req, copy); });
-      }
-      return res;
-    });
-    network.then(finish, function () { fromCache().then(finish); });
+    fetchAndStore(req).then(finish, function () { fromCache(req).then(finish); });
     // 電波が弱いなどで応答が遅いときは、キャッシュがあればそちらで先に表示する
     setTimeout(function () {
       if (settled) return;
-      fromCache().then(function (cached) { if (cached) finish(cached); });
+      fromCache(req).then(function (cached) { if (cached) finish(cached); });
     }, NETWORK_TIMEOUT_MS);
-  }));
-});
+  });
+}
