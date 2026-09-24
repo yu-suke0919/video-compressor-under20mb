@@ -38,7 +38,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-24e';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-24f';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、別の方式に切り替える
@@ -90,6 +90,7 @@
     busy: false,         // 読み込み・解析中
     job: null,           // 実行中の圧縮1回ぶん（キャンセルは実行ごとに管理する）
     attemptJob: null,    // その中の1回の処理（進まなくなったらこれだけ止める）
+    loadError: null,     // 動画を読み込めなかった理由（次の動画を選ぶまで表示する）
     srcUrl: null,
     out: null,           // { blob, name, type, original, url }
     compatAudio: null,   // 互換モードで再圧縮するときに音声を使い回す
@@ -160,7 +161,17 @@
     try { console.log('[診断] ' + msg); } catch (e) { /* noop */ }
   }
   function errText(err) { return err ? ((err.name ? err.name + ': ' : '') + (err.message || String(err))) : String(err); }
+  // 診断情報を普段から表示するか。本番ではエラーや停止のときだけ表示する（記録は常に続ける）
+  //   プレビュー（<ブランチ名>.<プロジェクト名>.pages.dev）・手元の確認環境・URLに debug=1 のときは、圧縮を始めたら表示
+  var DIAG_ALWAYS = (function () {
+    var h = location.hostname;
+    var debug = false;
+    try { debug = /^(1|on|true)$/i.test(new URLSearchParams(location.search).get('debug') || ''); } catch (e) { /* noop */ }
+    return debug || (/\.pages\.dev$/.test(h) && h.split('.').length > 3) || h === 'localhost' || h === '127.0.0.1';
+  })();
+  // open: 開いて表示する（エラーや停止のとき）。false なら普段から表示する環境だけで表示する
   function showDiag(open) {
+    if (!open && !DIAG_ALWAYS) return;
     show(els.diagBox, true);
     if (open) els.diagBox.open = true;
   }
@@ -328,9 +339,11 @@
       }, 20000);
       videoEl.addEventListener('loadedmetadata', ready);
       videoEl.addEventListener('durationchange', ready);
-      videoEl.addEventListener('error', function () {
+      function fail() {
         if (!done) { done = true; clearTimeout(timer); reject(new Error('この動画を読み込めませんでした。mp4またはmovをお試しください。')); }
-      }, { once: true });
+      }
+      videoEl.addEventListener('error', fail, { once: true });
+      if (videoEl.error) fail();   // 待ち受ける前にすでに失敗していた場合
       ready();
     }).then(function (meta) {
       if (!state.caps.compat) return meta;
@@ -511,7 +524,8 @@
     if (!hasFile) {
       els.runBtn.disabled = !state.running;
       els.planInfo.textContent = '';
-      setAlert(els.planWarn, []);
+      // 読み込みに失敗したときは、その理由を出したままにする
+      setAlert(els.planWarn, state.loadError ? [state.loadError] : [], true);
       return;
     }
 
@@ -1104,6 +1118,7 @@
         if (idleMs >= STALL_MS) {
           clearInterval(watchdog);
           log('進捗が' + Math.round(STALL_MS / 1000) + '秒止まったため中断（' + Math.round(Math.max(0, lastVal) * 100) + '%）');
+          showDiag(true);
           stopJob(aj, STALLED);
         }
       }, 1000);
@@ -1184,7 +1199,7 @@
       console.error(err);
       log('エラーで終了 ' + errText(err));
       setAlert(els.outWarn, ['エラー: ' + ((err && err.message) || String(err)),
-        'うまくいかないときは、画面のいちばん下の「診断情報」をコピーして作成者に伝えてください。'], true);
+        'うまくいかないときは、画面のいちばん下の「診断情報」をコピーして、X（@inkaroma0431）に送ってください。'], true);
       showDiag(true);
     });
   }
@@ -1354,6 +1369,7 @@
   function onFileChosen(file) {
     if (!file || state.running) return;
     state.busy = true;
+    state.loadError = null;
     state.file = file;
     state.meta = null;
     state.compatAudio = null;
@@ -1394,10 +1410,11 @@
         (meta.fps ? fmtFps(meta.fps) : 'fps不明') + '・' + fmtDuration(meta.duration) + '・' + fmtBytes(file.size);
     }).catch(function (err) {
       log('読み込みに失敗 ' + errText(err));
-      showDiag(false);
+      showDiag(true);
       state.file = null;
       els.srcInfo.textContent = '';
-      setAlert(els.planWarn, [(err && err.message) || String(err)], true);
+      state.loadError = (err && err.message) || String(err);
+      setAlert(els.planWarn, [state.loadError], true);
     }).then(function () {
       state.busy = false;
       refresh();
@@ -1564,7 +1581,7 @@
       ' AAC=' + state.caps.aac + ' 互換モード=' + state.caps.compat + ' iOS=' + isIOS() + ' Brave=' + !!navigator.brave + ' ver=' + APP_VERSION);
     refresh();
   });
-  if (/^(1|on|true)$/i.test(new URLSearchParams(location.search).get('debug') || '')) showDiag(false);
+  if (/[?&]debug=(1|on|true)\b/i.test(location.search)) showDiag(false);   // debug=1 なら最初から表示
   refresh();
 
   if ('serviceWorker' in navigator) {
