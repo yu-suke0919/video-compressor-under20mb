@@ -209,6 +209,7 @@ Nintendo Switchアプリで録画した動画をDiscordに投稿するまでの�
 | iOS 17以降のSafari | 対応（音声の再エンコードはiOS 17.4以降が目安） |
 | iOS 16のSafari | WebCodecsの対応状況によっては動きません |
 | macOS Safari 17以降 / Chrome / Edge（デスクトップ） | 対応 |
+| Android の Chrome | 対応（選んだ動画は、時間が経つと読めなくなることがあるため、600MBまではすぐにブラウザ内に写し取って使います） |
 | Firefox | H.264のエンコードに対応していない環境では利用できません |
 
 必要な機能（WebCodecs の `VideoEncoder`）は起動時に判定し、非対応なら画面に表示します。
