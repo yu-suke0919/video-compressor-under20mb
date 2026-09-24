@@ -113,6 +113,11 @@
   .trim-fill { background: var(--accent); opacity: .4; }
   /* 目盛り（5秒・10秒などの間隔で縦線を引く） */
   .trim-ticks { position: absolute; left: calc(var(--thumb-w) / 2); right: calc(var(--thumb-w) / 2); top: 0; bottom: 0; pointer-events: none; }
+  /* 元動画の再生位置（つまみと区別できるよう、文字色の細い線にする） */
+  .trim-head {
+    position: absolute; top: 9px; width: 2px; height: 22px; margin-left: -1px; border-radius: 1px;
+    background: var(--text); opacity: .85; pointer-events: none;
+  }
   .trim-ticks i { position: absolute; top: 13px; width: 1px; height: 14px; margin-left: -0.5px; background: var(--muted); opacity: .55; }
   .trim input[type="range"] {
     position: absolute; inset: 0; width: 100%; height: var(--trim-h); margin: 0; background: none;
@@ -205,6 +210,7 @@
       <div class="trim-track"></div>
       <div class="trim-ticks" id="trimTicks"></div>
       <div class="trim-fill" id="trimFill"></div>
+      <div class="trim-head hidden" id="trimHead"></div>
       <input type="range" id="trimStart" min="0" max="1" step="0.1" value="0" aria-label="開始位置" disabled>
       <input type="range" id="trimEnd" min="0" max="1" step="0.1" value="1" aria-label="終了位置" disabled>
     </div>

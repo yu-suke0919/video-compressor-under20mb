@@ -38,7 +38,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-24g';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-24h';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、別の方式に切り替える
@@ -65,7 +65,7 @@
     app: document.querySelector('.app'),
     srcVideo: $('srcVideo'), srcInfo: $('srcInfo'), srcBox: $('srcBox'), outBox: $('outBox'),
     trimStart: $('trimStart'), trimEnd: $('trimEnd'), trimFill: $('trimFill'), trimLabel: $('trimLabel'),
-    trimTicks: $('trimTicks'),
+    trimTicks: $('trimTicks'), trimHead: $('trimHead'),
     res720: $('res720'), res1080: $('res1080'), modeQuality: $('modeQuality'), modeSize: $('modeSize'),
     sizeLabel: $('sizeLabel'), planInfo: $('planInfo'), planWarn: $('planWarn'),
     targetSize: $('targetSize'), halfFps: $('halfFps'), audioOn: $('audioOn'), audioLabel: $('audioLabel'),
@@ -606,6 +606,21 @@
     if (!state.meta) { els.trimLabel.textContent = 'トリミング'; return; }
     els.trimLabel.textContent = fmtClock(state.trim.start) + '–' + fmtClock(state.trim.end) +
       '（' + (state.trim.end - state.trim.start).toFixed(1) + '秒・目盛' + state.tickInterval + '秒）';
+  }
+
+  // 元動画の再生位置をトリミングのバーに表示する（再生中は画面の書き換えに合わせてなめらかに動かす）
+  var headRaf = 0;
+  function renderPlayhead() {
+    var dur = state.meta ? state.meta.duration : 0;
+    if (!(dur > 0) || !state.file) { show(els.trimHead, false); return; }
+    var a = Math.min(1, Math.max(0, (els.srcVideo.currentTime || 0) / dur));
+    els.trimHead.style.left = 'calc(var(--thumb-w) / 2 + (100% - var(--thumb-w)) * ' + a.toFixed(5) + ')';
+    show(els.trimHead, true);
+  }
+  function followPlayhead() {
+    headRaf = 0;
+    renderPlayhead();
+    if (!els.srcVideo.paused && !els.srcVideo.ended) headRaf = requestAnimationFrame(followPlayhead);
   }
 
   function onTrimInput(which) {
@@ -1406,6 +1421,7 @@
       if (state.file !== file) return;
       state.meta = meta;
       setupTrim(meta.duration);
+      renderPlayhead();
       els.srcInfo.textContent = meta.width + '×' + meta.height + '・' +
         (meta.fps ? fmtFps(meta.fps) : 'fps不明') + '・' + fmtDuration(meta.duration) + '・' + fmtBytes(file.size);
     }).catch(function (err) {
@@ -1445,6 +1461,12 @@
     if (state.running || state.busy || !state.meta) return;
     var t = els.srcVideo.currentTime;
     if (t < state.trim.start - 0.05 || t >= state.trim.end - 0.05) els.srcVideo.currentTime = state.trim.start;
+  });
+  els.srcVideo.addEventListener('playing', function () {
+    if (!headRaf) headRaf = requestAnimationFrame(followPlayhead);
+  });
+  ['timeupdate', 'seeked', 'loadedmetadata', 'pause', 'ended', 'emptied'].forEach(function (type) {
+    els.srcVideo.addEventListener(type, renderPlayhead);
   });
   els.srcVideo.addEventListener('timeupdate', function () {
     if (state.running || state.busy || !state.meta || els.srcVideo.paused) return;
