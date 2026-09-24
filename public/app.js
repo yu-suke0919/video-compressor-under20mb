@@ -38,8 +38,9 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-24m';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-24n';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
+  var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、別の方式に切り替える
   var MAX_STALL_RETRIES = 2;             // 高速モードで別のエンコード設定を試す回数
@@ -1430,8 +1431,33 @@
   }
 
   // ---------------------------------------------------------------- 動画の読み込み
-  function onFileChosen(file) {
-    if (!file || state.running) return;
+  // Android では、ファイル選択で渡された動画が時間が経つと読めなくなることがある（TypeError: network error）。
+  // 読めるうちに中身をブラウザ内に写し取り、以降はその写しを使う（大きすぎる動画は写さない）
+  function snapshotFile(file) {
+    if (!/Android/i.test(navigator.userAgent || '') || file.size > SNAPSHOT_MAX_BYTES) return Promise.resolve(file);
+    var t0 = Date.now();
+    return file.arrayBuffer().then(function (buf) {
+      log('動画をブラウザ内に写した（Android・' + ((Date.now() - t0) / 1000).toFixed(1) + '秒）');
+      return new File([buf], file.name || 'video.mp4', { type: file.type || 'video/mp4', lastModified: file.lastModified });
+    }, function (err) {
+      log('動画をブラウザ内に写せなかった ' + errText(err));
+      return file;
+    });
+  }
+
+  function onFileChosen(picked) {
+    if (!picked || state.running) return;
+    state.picking = picked;
+    state.busy = true;
+    els.srcInfo.textContent = '読み込み中…';
+    refresh();
+    snapshotFile(picked).then(function (file) {
+      if (state.picking !== picked || state.running) return;   // 写している間に別の動画が選ばれた
+      loadChosenFile(file);
+    });
+  }
+
+  function loadChosenFile(file) {
     state.busy = true;
     state.loadError = null;
     state.file = file;
