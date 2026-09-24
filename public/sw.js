@@ -8,7 +8,7 @@
  */
 'use strict';
 
-var CACHE = 'video-compressor-under20mb-v38';
+var CACHE = 'video-compressor-under20mb-v39';
 var SHARE_CACHE = 'shared-video';   // 共有メニューから受け取った動画を、アプリが読み込むまで置いておく場所
 var NETWORK_TIMEOUT_MS = 3000;   // ネット優先のとき、ネットの応答をこれだけ待ってからキャッシュを使う
 
@@ -76,13 +76,17 @@ function receiveShare(req) {
   return req.formData().then(function (form) {
     var fields = [], file = null;
     form.forEach(function (v, k) {
-      fields.push(k + '=' + (typeof v === 'string' ? '文字' : (v.type || '種類不明') + '/' + v.size + 'B'));
+      // 文字（リンクなど）は、何が届いたか分かるよう先頭だけ記録する（診断情報はこの端末の中だけに残る）
+      fields.push(k + '=' + (typeof v === 'string' ? '文字「' + v.slice(0, 80) + '」' : (v.type || '種類不明') + '/' + v.size + 'B'));
     });
     status.fields = fields.join(', ');
     file = form.getAll('video').filter(function (f) { return f && typeof f !== 'string'; })[0] || null;
     // 共有元によって項目名が違っても、最初のファイルを使う
     if (!file) form.forEach(function (v) { if (!file && v && typeof v !== 'string') file = v; });
-    if (!file) throw new Error('動画が含まれていない');
+    if (!file) {
+      var hasText = ['title', 'text', 'url'].some(function (k) { return !!form.get(k); });
+      throw new Error(hasText ? '動画ファイルではなく、リンクや文字が共有された' : '動画が含まれていない');
+    }
     status.name = file.name; status.type = file.type; status.size = file.size;
     return caches.open(SHARE_CACHE).then(function (cache) {
       return cache.put(new URL('./shared-video', scope).toString(), new Response(file, {
