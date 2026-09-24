@@ -38,7 +38,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-24h';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-24i';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、別の方式に切り替える
@@ -65,7 +65,7 @@
     app: document.querySelector('.app'),
     srcVideo: $('srcVideo'), srcInfo: $('srcInfo'), srcBox: $('srcBox'), outBox: $('outBox'),
     trimStart: $('trimStart'), trimEnd: $('trimEnd'), trimFill: $('trimFill'), trimLabel: $('trimLabel'),
-    trimTicks: $('trimTicks'), trimHead: $('trimHead'),
+    trimTicks: $('trimTicks'), trimSeek: $('trimSeek'),
     res720: $('res720'), res1080: $('res1080'), modeQuality: $('modeQuality'), modeSize: $('modeSize'),
     sizeLabel: $('sizeLabel'), planInfo: $('planInfo'), planWarn: $('planWarn'),
     targetSize: $('targetSize'), halfFps: $('halfFps'), audioOn: $('audioOn'), audioLabel: $('audioLabel'),
@@ -516,6 +516,8 @@
     var done = isCompressed();
 
     [els.trimStart, els.trimEnd].forEach(function (el) { el.disabled = !hasFile || locked || done; });
+    // シークバーは圧縮後も元動画の確認に使えるようにする（圧縮中だけ止める）
+    els.trimSeek.disabled = !hasFile || locked;
     [els.res720, els.res1080, els.modeQuality, els.modeSize, els.targetSize, els.halfFps, els.audioOn,
       els.minRate720, els.minRate1080, els.autoRun, els.vbrOn].forEach(function (el) { el.disabled = state.running || done; });
     els.repickBtn.disabled = locked;
@@ -608,15 +610,21 @@
       '（' + (state.trim.end - state.trim.start).toFixed(1) + '秒・目盛' + state.tickInterval + '秒）';
   }
 
-  // 元動画の再生位置をトリミングのバーに表示する（再生中は画面の書き換えに合わせてなめらかに動かす）
-  var headRaf = 0;
+  // 元動画の再生位置をトリミングのバー（シークバー）に表示する（再生中は画面の書き換えに合わせてなめらかに動かす）
+  var headRaf = 0, seekDragging = false;
   function renderPlayhead() {
     var dur = state.meta ? state.meta.duration : 0;
-    if (!(dur > 0) || !state.file) { show(els.trimHead, false); return; }
-    var a = Math.min(1, Math.max(0, (els.srcVideo.currentTime || 0) / dur));
-    els.trimHead.style.left = 'calc(var(--thumb-w) / 2 + (100% - var(--thumb-w)) * ' + a.toFixed(5) + ')';
-    show(els.trimHead, true);
+    if (!(dur > 0) || !state.file) { show(els.trimSeek, false); return; }
+    if (els.trimSeek.max !== String(dur)) els.trimSeek.max = String(dur);
+    // 指で動かしている間は、指の位置を優先する
+    if (!seekDragging) els.trimSeek.value = String(Math.min(dur, Math.max(0, els.srcVideo.currentTime || 0)));
+    show(els.trimSeek, true);
   }
+  function onSeekInput() {
+    seekDragging = true;
+    try { els.srcVideo.currentTime = parseFloat(els.trimSeek.value) || 0; } catch (e) { /* noop */ }
+  }
+  function endSeekDrag() { seekDragging = false; }
   function followPlayhead() {
     headRaf = 0;
     renderPlayhead();
@@ -1462,10 +1470,16 @@
     var t = els.srcVideo.currentTime;
     if (t < state.trim.start - 0.05 || t >= state.trim.end - 0.05) els.srcVideo.currentTime = state.trim.start;
   });
+  els.trimSeek.addEventListener('input', onSeekInput);
+  els.trimSeek.addEventListener('change', endSeekDrag);
+  ['pointerup', 'pointercancel', 'touchend', 'touchcancel'].forEach(function (type) {
+    window.addEventListener(type, endSeekDrag, { passive: true });
+  });
   els.srcVideo.addEventListener('playing', function () {
     if (!headRaf) headRaf = requestAnimationFrame(followPlayhead);
   });
-  ['timeupdate', 'seeked', 'loadedmetadata', 'pause', 'ended', 'emptied'].forEach(function (type) {
+  // seeking: シークの完了を待たずに（大きな動画は時間がかかる）、移動先を表示する
+  ['timeupdate', 'seeking', 'seeked', 'loadedmetadata', 'pause', 'ended', 'emptied'].forEach(function (type) {
     els.srcVideo.addEventListener(type, renderPlayhead);
   });
   els.srcVideo.addEventListener('timeupdate', function () {
