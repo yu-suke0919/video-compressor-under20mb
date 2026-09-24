@@ -38,7 +38,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-24p';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-24q';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -623,9 +623,26 @@
     if (!seekDragging) els.trimSeek.value = String(Math.min(dur, Math.max(0, els.srcVideo.currentTime || 0)));
     show(els.trimSeek, true);
   }
+  // 指の操作に合わせて動画を移動する。移動が終わるまで次の移動は出さず、最新の位置だけ覚えておく
+  // （Android の Chrome は、移動の途中で次の移動が来ると取りやめるため、動かしている間は映像が変わらなかった）
+  var seekQueue = { pending: null, at: 0 };
+  function seekVideo(t) {
+    var v = els.srcVideo;
+    if (v.seeking && Date.now() - seekQueue.at < 1000) { seekQueue.pending = t; return; }
+    seekQueue.pending = null;
+    seekQueue.at = Date.now();
+    try { v.currentTime = t; } catch (e) { /* noop */ }
+  }
+  function onSeeked() {
+    if (seekQueue.pending === null) return;
+    var t = seekQueue.pending;
+    seekQueue.pending = null;
+    seekVideo(t);
+  }
+
   function onSeekInput() {
     seekDragging = true;
-    try { els.srcVideo.currentTime = parseFloat(els.trimSeek.value) || 0; } catch (e) { /* noop */ }
+    seekVideo(parseFloat(els.trimSeek.value) || 0);
   }
   function endSeekDrag() { seekDragging = false; }
 
@@ -640,7 +657,7 @@
     var t = a * state.meta.duration;
     seekDragging = true;
     els.trimSeek.value = String(t);
-    try { els.srcVideo.currentTime = t; } catch (e) { /* noop */ }
+    seekVideo(t);
   }
   trimBar.addEventListener('pointerdown', function (e) {
     if (e.target.tagName === 'INPUT' || els.trimSeek.disabled || !state.meta || e.button > 0) return;
@@ -672,7 +689,7 @@
     if (which === 'start' && s > e - minLen) { s = Math.max(0, e - minLen); els.trimStart.value = String(s); }
     if (which === 'end' && e < s + minLen) { e = Math.min(dur, s + minLen); els.trimEnd.value = String(e); }
     state.trim = { start: s, end: e };
-    try { els.srcVideo.currentTime = which === 'start' ? s : e; } catch (err) { /* noop */ }
+    seekVideo(which === 'start' ? s : e);
     renderTrim();
     refresh();
   }
@@ -1537,6 +1554,7 @@
     if (t < state.trim.start - 0.05 || t >= state.trim.end - 0.05) els.srcVideo.currentTime = state.trim.start;
   });
   els.trimSeek.addEventListener('input', onSeekInput);
+  els.srcVideo.addEventListener('seeked', onSeeked);
   els.trimSeek.addEventListener('change', endSeekDrag);
   ['pointerup', 'pointercancel', 'touchend', 'touchcancel'].forEach(function (type) {
     window.addEventListener(type, endSeekDrag, { passive: true });
