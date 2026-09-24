@@ -8,7 +8,7 @@
  */
 'use strict';
 
-var CACHE = 'video-compressor-under20mb-v37';
+var CACHE = 'video-compressor-under20mb-v38';
 var SHARE_CACHE = 'shared-video';   // 共有メニューから受け取った動画を、アプリが読み込むまで置いておく場所
 var NETWORK_TIMEOUT_MS = 3000;   // ネット優先のとき、ネットの応答をこれだけ待ってからキャッシュを使う
 
@@ -67,21 +67,41 @@ self.addEventListener('fetch', function (event) {
   event.respondWith(NETWORK_FIRST ? networkFirst(req) : cacheFirst(req));
 });
 
-// 共有された動画を一時保存して、アプリの画面を開く（アプリが読み込んだら消す）
+// 共有された動画を一時保存して、アプリの画面を開く（アプリが読み込んだら消す）。
+// うまくいったか・届いた中身を記録しておき、アプリが診断情報に書き出す
 function receiveShare(req) {
-  var home = new URL('./', self.registration.scope);
+  var scope = self.registration.scope;
+  var home = new URL('./', scope);
+  var status = { at: Date.now(), sw: CACHE };
   return req.formData().then(function (form) {
-    var file = form.getAll('video').filter(function (f) { return f && typeof f !== 'string'; })[0];
-    if (!file) return null;
+    var fields = [], file = null;
+    form.forEach(function (v, k) {
+      fields.push(k + '=' + (typeof v === 'string' ? '文字' : (v.type || '種類不明') + '/' + v.size + 'B'));
+    });
+    status.fields = fields.join(', ');
+    file = form.getAll('video').filter(function (f) { return f && typeof f !== 'string'; })[0] || null;
+    // 共有元によって項目名が違っても、最初のファイルを使う
+    if (!file) form.forEach(function (v) { if (!file && v && typeof v !== 'string') file = v; });
+    if (!file) throw new Error('動画が含まれていない');
+    status.name = file.name; status.type = file.type; status.size = file.size;
     return caches.open(SHARE_CACHE).then(function (cache) {
-      return cache.put(new URL('./shared-video', self.registration.scope).toString(), new Response(file, {
+      return cache.put(new URL('./shared-video', scope).toString(), new Response(file, {
         headers: { 'Content-Type': file.type || 'video/mp4', 'X-File-Name': encodeURIComponent(file.name || 'video.mp4') }
       }));
-    }).then(function () { return file; });
-  }).then(function (file) {
-    if (file) home.searchParams.set('shared', '1');
-    return Response.redirect(home.toString(), 303);
-  }, function () {
+    });
+  }).then(function () {
+    status.ok = true;
+  }, function (err) {
+    status.ok = false;
+    status.error = String((err && err.message) || err);
+  }).then(function () {
+    return caches.open(SHARE_CACHE).then(function (cache) {
+      return cache.put(new URL('./share-status', scope).toString(), new Response(JSON.stringify(status), {
+        headers: { 'Content-Type': 'application/json' }
+      }));
+    }).catch(function () { /* 記録できなくても続ける */ });
+  }).then(function () {
+    home.searchParams.set('shared', status.ok ? '1' : '0');
     return Response.redirect(home.toString(), 303);
   });
 }
