@@ -8,7 +8,8 @@
  */
 'use strict';
 
-var CACHE = 'video-compressor-under20mb-v33';
+var CACHE = 'video-compressor-under20mb-v34';
+var SHARE_CACHE = 'shared-video';   // 共有メニューから受け取った動画を、アプリが読み込むまで置いておく場所
 var NETWORK_TIMEOUT_MS = 3000;   // ネット優先のとき、ネットの応答をこれだけ待ってからキャッシュを使う
 
 // Cloudflare Pages のプレビュー（<ブランチ名>.<プロジェクト名>.pages.dev）と手元の確認環境だけネット優先にする
@@ -43,7 +44,7 @@ self.addEventListener('activate', function (event) {
   event.waitUntil(
     caches.keys().then(function (keys) {
       return Promise.all(keys.map(function (k) {
-        return k === CACHE ? null : caches.delete(k);
+        return (k === CACHE || k === SHARE_CACHE) ? null : caches.delete(k);
       }));
     }).then(function () {
       return self.clients.claim();
@@ -53,13 +54,37 @@ self.addEventListener('activate', function (event) {
 
 self.addEventListener('fetch', function (event) {
   var req = event.request;
-  if (req.method !== 'GET') return;
-
   var url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
+  // Android の共有メニューから送られてきた動画（manifest.json の share_target）
+  if (req.method === 'POST' && url.pathname === new URL('./share-target', self.registration.scope).pathname) {
+    event.respondWith(receiveShare(req));
+    return;
+  }
+  if (req.method !== 'GET') return;
+
   event.respondWith(NETWORK_FIRST ? networkFirst(req) : cacheFirst(req));
 });
+
+// 共有された動画を一時保存して、アプリの画面を開く（アプリが読み込んだら消す）
+function receiveShare(req) {
+  var home = new URL('./', self.registration.scope);
+  return req.formData().then(function (form) {
+    var file = form.getAll('video').filter(function (f) { return f && typeof f !== 'string'; })[0];
+    if (!file) return null;
+    return caches.open(SHARE_CACHE).then(function (cache) {
+      return cache.put(new URL('./shared-video', self.registration.scope).toString(), new Response(file, {
+        headers: { 'Content-Type': file.type || 'video/mp4', 'X-File-Name': encodeURIComponent(file.name || 'video.mp4') }
+      }));
+    }).then(function () { return file; });
+  }).then(function (file) {
+    if (file) home.searchParams.set('shared', '1');
+    return Response.redirect(home.toString(), 303);
+  }, function () {
+    return Response.redirect(home.toString(), 303);
+  });
+}
 
 // キャッシュに無いときの代わり（ページ遷移はトップに逃がす）
 function fromCache(req) {
