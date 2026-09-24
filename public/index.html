@@ -46,7 +46,30 @@
   .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
-  header h1 { font-size: 16px; margin: 0; }
+  header h1 { font-size: 16px; margin: 0; flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  header.row { gap: 6px; }
+  header .btn-sm { flex: none; padding: 4px 8px; }
+  /* 狭い画面ではタイトルを少し小さくして、ボタン2つと並べても切れないようにする */
+  @media (max-width: 380px) { header h1 { font-size: 15px; } }
+  @media (max-width: 370px) { header h1 { font-size: 14px; } }
+  @media (max-width: 340px) { header h1 { white-space: normal; line-height: 1.25; } }   /* ここまで狭いと1行に入らないので折り返す */
+
+  /* 説明書（画面に重ねて開く） */
+  #helpDlg {
+    width: min(520px, calc(100vw - 32px)); max-height: 82vh; max-height: 82svh; padding: 0;
+    border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--text);
+  }
+  #helpDlg::backdrop { background: rgba(0, 0, 0, .45); }
+  #helpDlg .help-head {
+    position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 10px 14px; background: var(--surface); border-bottom: 1px solid var(--line);
+  }
+  #helpDlg h2 { font-size: 16px; margin: 0; }
+  #helpDlg .help-body { padding: 4px 14px 14px; font-size: 14px; line-height: 1.6; }
+  #helpDlg h3 { font-size: 14px; margin: 14px 0 4px; }
+  #helpDlg ol, #helpDlg ul { margin: 0; padding-left: 1.3em; }
+  #helpDlg li + li { margin-top: 4px; }
+  #helpDlg p { margin: 4px 0 0; }
 
   /* ボタン */
   .btn {
@@ -207,6 +230,7 @@
 
   <header class="row">
     <h1>アップロード不要の動画圧縮</h1>
+    <button id="helpBtn" type="button" class="btn btn-sm" aria-haspopup="dialog">使い方</button>
     <button id="repickBtn" type="button" class="btn btn-sm hidden">別の動画</button>
   </header>
 
@@ -379,6 +403,47 @@
   <!-- 9. 不具合の報告・要望の連絡先 -->
   <p class="contact">不具合の報告・ご要望は <a href="https://x.com/inkaroma0431" target="_blank" rel="noopener noreferrer">X（@inkaroma0431）</a> あるいはDiscordへ</p>
 </main>
+
+<!-- 説明書 -->
+<dialog id="helpDlg" aria-labelledby="helpTitle">
+  <div class="help-head">
+    <h2 id="helpTitle">使い方</h2>
+    <button id="helpClose" type="button" class="btn btn-sm">閉じる</button>
+  </div>
+  <div class="help-body">
+    <p>動画をDiscordに送れるサイズ（20MB以内）に小さくします。動画はネットにアップロードされず、この端末の中だけで処理します。</p>
+
+    <h3>基本の手順</h3>
+    <ol>
+      <li><b>動画を選ぶ</b>：上の枠をタップして、写真ライブラリなどから動画を選びます。</li>
+      <li><b>トリミング</b>（必要なら）：バーの両端にある青い縦線を動かして、使う範囲を決めます。バーを触るか細い線を動かすと、その位置の映像を確認できます。</li>
+      <li><b>解像度</b>を選びます（720p / 1080p）。元の動画より大きくはしません。</li>
+      <li><b>圧縮方法</b>を選びます。
+        <ul>
+          <li>「20MB以内に圧縮」：20MBに収まる範囲で、なるべくきれいに仕上げます。</li>
+          <li>「なるべく圧縮」：画質を落としてでも、できるだけ小さくします。</li>
+        </ul>
+      </li>
+      <li><b>圧縮する</b>を押します。終わったら「Discord等に共有」または「保存」で使えます。設定を変えてやり直すときは「やり直す」を押します。</li>
+    </ol>
+
+    <h3>知っておくと便利なこと</h3>
+    <ul>
+      <li>元の画質のまま20MBに収まるときは、圧縮せずにそのまま使えます（トリミングしたときは切り出すだけで、数秒で終わります）。</li>
+      <li>長すぎて20MBに収まらないときは、「720pなら1分56秒まで」のように収まる長さの目安を表示します。トリミングで短くするか、720pにしてください。</li>
+      <li>撮影場所などの位置情報は、書き出す動画には含めません。</li>
+      <li>「詳細設定」で、目標サイズ（Nitroなら50MBなど）、音声の有無などを変えられます。設定は次に開いたときも覚えています。</li>
+      <li>いちばん下の「設定済みのURLを作る」で、設定を入れたURLを作れます。ブックマークやショートカットに便利です。</li>
+      <li>ブラウザの共有メニューから「ホーム画面に追加」すると、アプリのように使えます（オフラインでも起動できます）。</li>
+    </ul>
+
+    <h3>うまくいかないとき</h3>
+    <ul>
+      <li>圧縮中は、画面を表示したままにしてください。ほかのアプリに切り替えると止まることがあります。</li>
+      <li>エラーが出たときは、いちばん下の「診断情報」をコピーして、X（@inkaroma0431）あるいはDiscordに送ってください。</li>
+    </ul>
+  </div>
+</dialog>
 
 <script src="./vendor/mediabunny.min.js"></script>
 <script src="./app.js"></script>

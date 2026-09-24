@@ -40,7 +40,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-24z';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-25a';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1611,6 +1611,18 @@
   // ---------------------------------------------------------------- 配線
   els.pickBtn.addEventListener('click', function () { els.file.click(); });
   els.repickBtn.addEventListener('click', function () { els.file.click(); });
+
+  // 説明書: 開く・閉じる（外側をタップしても閉じる）
+  var helpDlg = $('helpDlg');
+  $('helpBtn').addEventListener('click', function () {
+    if (helpDlg.showModal) helpDlg.showModal(); else helpDlg.setAttribute('open', '');
+  });
+  $('helpClose').addEventListener('click', function () {
+    if (helpDlg.close) helpDlg.close(); else helpDlg.removeAttribute('open');
+  });
+  helpDlg.addEventListener('click', function (e) {
+    if (e.target === helpDlg && helpDlg.close) helpDlg.close();   // 枠の外（背景）をタップ
+  });
   els.file.addEventListener('change', function (e) {
     onFileChosen(e.target.files && e.target.files[0]);
     els.file.value = '';
