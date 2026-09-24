@@ -36,26 +36,5 @@
       "type": "image/png",
       "purpose": "any"
     }
-  ],
-  "share_target": {
-    "action": "./share-target",
-    "method": "POST",
-    "enctype": "multipart/form-data",
-    "params": {
-      "title": "title",
-      "text": "text",
-      "url": "url",
-      "files": [
-        {
-          "name": "video",
-          "accept": [
-            "video/*",
-            ".mp4",
-            ".mov",
-            "*/*"
-          ]
-        }
-      ]
-    }
-  }
+  ]
 }
