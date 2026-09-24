@@ -113,11 +113,6 @@
   .trim-fill { background: var(--accent); opacity: .4; }
   /* 目盛り（5秒・10秒などの間隔で縦線を引く） */
   .trim-ticks { position: absolute; left: calc(var(--thumb-w) / 2); right: calc(var(--thumb-w) / 2); top: 0; bottom: 0; pointer-events: none; }
-  /* 元動画の再生位置（つまみと区別できるよう、文字色の細い線にする） */
-  .trim-head {
-    position: absolute; top: 9px; width: 2px; height: 22px; margin-left: -1px; border-radius: 1px;
-    background: var(--text); opacity: .85; pointer-events: none;
-  }
   .trim-ticks i { position: absolute; top: 13px; width: 1px; height: 14px; margin-left: -0.5px; background: var(--muted); opacity: .55; }
   .trim input[type="range"] {
     position: absolute; inset: 0; width: 100%; height: var(--trim-h); margin: 0; background: none;
@@ -138,6 +133,18 @@
   .trim input[type="range"]:disabled::-webkit-slider-thumb {
     background: linear-gradient(90deg, transparent 19px, var(--line) 19px, var(--line) 25px, transparent 25px) center / 100% 30px no-repeat;
     cursor: default;
+  }
+  /* 元動画の再生位置（シークバー）。つまみと区別できるよう文字色の細い線にし、触れる範囲はつまみと同じ幅にする。
+     トリミングのつまみより下に重ねるので、重なった所ではトリミングが優先される */
+  .trim input[type="range"].trim-seek { z-index: 1; }
+  .trim input[type="range"].trim-seek::-webkit-slider-thumb {
+    background: linear-gradient(90deg, transparent 21px, var(--text) 21px, var(--text) 23px, transparent 23px) center / 100% 22px no-repeat;
+  }
+  .trim input[type="range"].trim-seek::-moz-range-thumb {
+    background: linear-gradient(90deg, transparent 21px, var(--text) 21px, var(--text) 23px, transparent 23px) center / 100% 22px no-repeat;
+  }
+  .trim input[type="range"].trim-seek:disabled::-webkit-slider-thumb {
+    background: linear-gradient(90deg, transparent 21px, var(--muted) 21px, var(--muted) 23px, transparent 23px) center / 100% 22px no-repeat;
   }
   .trim-times { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
   #trimLabel { display: block; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -210,7 +217,7 @@
       <div class="trim-track"></div>
       <div class="trim-ticks" id="trimTicks"></div>
       <div class="trim-fill" id="trimFill"></div>
-      <div class="trim-head hidden" id="trimHead"></div>
+      <input type="range" id="trimSeek" class="trim-seek hidden" min="0" max="1" step="any" value="0" aria-label="再生位置" disabled>
       <input type="range" id="trimStart" min="0" max="1" step="0.1" value="0" aria-label="開始位置" disabled>
       <input type="range" id="trimEnd" min="0" max="1" step="0.1" value="1" aria-label="終了位置" disabled>
     </div>
