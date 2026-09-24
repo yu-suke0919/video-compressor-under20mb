@@ -38,7 +38,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-23g';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-24b';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、別の方式に切り替える
@@ -484,7 +484,7 @@
   // 圧縮前は元動画を大きく、圧縮が終わったら圧縮後の動画を大きく表示する。
   // 元のまま共有できる（圧縮不要）ときや、圧縮し直している間は、元動画を大きくする
   function updateMediaLayout() {
-    var done = !!(state.out && !state.out.original) && !state.running;
+    var done = isCompressed();
     els.srcBox.classList.toggle('is-large', !done);
     els.srcBox.classList.toggle('is-small', done);
     els.outBox.classList.toggle('is-large', done);
@@ -499,11 +499,14 @@
     els.capLabel.textContent = String(Math.round(s.targetBytes * SIZE_SAFETY / MB * 100) / 100) + ' MB';
     var hasFile = !!(state.file && state.meta);
     var locked = state.running || state.busy;
+    // 圧縮が終わったら「やり直す」を押すまで、トリミングと設定を変えられないようにする
+    var done = isCompressed();
 
-    [els.trimStart, els.trimEnd].forEach(function (el) { el.disabled = !hasFile || locked; });
+    [els.trimStart, els.trimEnd].forEach(function (el) { el.disabled = !hasFile || locked || done; });
     [els.res720, els.res1080, els.modeQuality, els.modeSize, els.targetSize, els.halfFps, els.audioOn,
-      els.minRate720, els.minRate1080, els.autoRun, els.vbrOn].forEach(function (el) { el.disabled = state.running; });
+      els.minRate720, els.minRate1080, els.autoRun, els.vbrOn].forEach(function (el) { el.disabled = state.running || done; });
     els.repickBtn.disabled = locked;
+    els.runBtn.textContent = state.running ? 'キャンセル' : done ? 'やり直す' : '圧縮する';
 
     if (!hasFile) {
       els.runBtn.disabled = !state.running;
@@ -526,8 +529,8 @@
     if (trimEst ? trimEst > DISCORD_FREE_BYTES : plan.overDiscord) warns.push(MSG_OVER_DISCORD);
     setAlert(els.planWarn, warns);
 
-    // 目標サイズを超えるのが分かっているときは実行させない（処理中はキャンセルボタンなので有効のまま）
-    els.runBtn.disabled = !state.running && (state.busy || (plan.mode === 'size' && plan.unreachable));
+    // 目標サイズを超えるのが分かっているときは実行させない（処理中はキャンセル、圧縮後はやり直すボタンなので有効のまま）
+    els.runBtn.disabled = !state.running && !done && (state.busy || (plan.mode === 'size' && plan.unreachable));
 
     updatePassthrough(s);
   }
@@ -1174,6 +1177,7 @@
       setProgress(1, '完了');
       finishRun();
       showResult(res, plan, engine, (Date.now() - started) / 1000);
+      refresh();   // 結果が入ってから、ボタンを「やり直す」にして設定を無効にする
     }, function (err) {
       finishRun();
       if (isCancel(job, err)) { log('キャンセル'); return; }
@@ -1211,7 +1215,6 @@
   function setRunningUi(running) {
     els.app.classList.toggle('is-running', running);
     show(els.progressWrap, running);
-    els.runBtn.textContent = running ? 'キャンセル' : '圧縮する';
     els.runBtn.classList.toggle('is-cancel', running);
     els.runBtn.disabled = false;
     if (running) {
@@ -1245,6 +1248,17 @@
     els.shareBtn.disabled = state.running;
     els.saveBtn.disabled = state.running;
     updateMediaLayout();
+  }
+
+  // 圧縮した動画ができている（「元の動画のまま」は含めない）
+  function isCompressed() {
+    return !!(state.out && !state.out.original) && !state.running;
+  }
+  // やり直す: 圧縮した動画を消して、トリミングと設定を変えられる状態に戻す
+  function redo() {
+    log('やり直す');
+    clearOutput();
+    refresh();
   }
 
   function clearOutput() {
@@ -1436,7 +1450,7 @@
     refresh();
   });
   els.runBtn.addEventListener('click', function () {
-    if (state.running) cancelRun(); else run();
+    if (state.running) cancelRun(); else if (isCompressed()) redo(); else run();
   });
   els.shareBtn.addEventListener('click', share);
   els.saveBtn.addEventListener('click', download);
