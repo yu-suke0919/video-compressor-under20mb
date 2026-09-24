@@ -40,7 +40,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-24y';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-24z';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1600,61 +1600,6 @@
     });
   }
 
-  // Android の共有メニューから渡された動画を読み込む（Service Worker が一時保存して ?shared=1 で開く）
-  var MSG_SHARE_NOT_RECEIVED = '共有された動画を受け取れませんでした。いったんこのアプリを開いて閉じてから、もう一度共有してください。';
-  function loadSharedVideo() {
-    // 共有の受け取り先のアドレスのまま開いた = Service Worker が受け取らず、サーバーがページを返した
-    // （端末の Service Worker が古い、または登録されていない）
-    if (/\/share-target\/?$/.test(location.pathname)) {
-      log('共有を Service Worker が受け取らなかった（' + (navigator.serviceWorker && navigator.serviceWorker.controller ? 'SWあり' : 'SWなし') + '）');
-      try { history.replaceState(null, '', new URL('./', location.href).pathname); } catch (e) { /* noop */ }
-      state.loadError = MSG_SHARE_NOT_RECEIVED;
-      showDiag(true);
-      refresh();
-      return;
-    }
-    var m = /[?&]shared=([01])\b/.exec(location.search);
-    if (!m || typeof caches === 'undefined') return;
-    try {
-      var u = new URL(location.href);
-      u.searchParams.delete('shared');
-      history.replaceState(null, '', u.pathname + u.search + u.hash);   // 再読み込みで読み直さないようにする
-    } catch (e) { /* noop */ }
-    var videoKey = new URL('./shared-video', location.href).toString();
-    var statusKey = new URL('./share-status', location.href).toString();
-    var fail = function (reason) {
-      log('共有された動画を読み込めなかった ' + reason);
-      state.loadError = /リンクや文字/.test(reason)
-        ? '共有されたのは動画ファイルではなく、リンクや文字でした。動画ファイルを共有するか、「動画を選ぶ」から選んでください。'
-        : '共有された動画を受け取れませんでした（' + reason + '）。「動画を選ぶ」から選んでください。';
-      showDiag(true);
-      refresh();
-    };
-    caches.open('shared-video').then(function (cache) {
-      return cache.match(statusKey).then(function (res) {
-        return res ? res.json().catch(function () { return null; }) : null;
-      }).then(function (st) {
-        cache.delete(statusKey);
-        log('共有の受け取り ' + (st ? JSON.stringify(st) : '記録なし'));
-        return cache.match(videoKey).then(function (res) {
-          if (!res) return { st: st, file: null };
-          var name = decodeURIComponent(res.headers.get('X-File-Name') || 'video.mp4');
-          var type = res.headers.get('Content-Type') || 'video/mp4';
-          return res.blob().then(function (blob) {
-            cache.delete(videoKey);
-            return { st: st, file: new File([blob], name, { type: type }) };
-          });
-        });
-      });
-    }).then(function (r) {
-      if (!r.file) return fail(r.st && r.st.error ? r.st.error : '動画が見つからない');
-      log('共有メニューから動画を受け取った');
-      onFileChosen(r.file);
-    }, function (err) {
-      fail(errText(err));
-    });
-  }
-
   // 「動画をアップロードしたら即圧縮」がオンなら、選んだ直後に圧縮を始める。
   // 目標サイズに収まらない（ボタンが無効）ときや、元のままで目標以下（圧縮不要）のときは始めない
   function autoRunIfEnabled(file) {
@@ -1837,7 +1782,6 @@
   });
   if (/[?&]debug=(1|on|true)\b/i.test(location.search)) showDiag(false);   // debug=1 なら最初から表示
   refresh();
-  loadSharedVideo();
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
