@@ -65,16 +65,28 @@
   .app.is-ios #shareBtn { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 11px 12px; }
   .app.is-ios #shareBtn svg { flex: none; }
 
-  /* 2×2 の択一ボタン */
-  .toggle-input { position: absolute; opacity: 0; pointer-events: none; }
-  .toggle {
-    display: block; text-align: center; font-weight: 600; cursor: pointer; user-select: none;
-    padding: 7px 6px; border-radius: 12px; border: 1px solid var(--accent); color: var(--accent);
-    background: var(--surface);
+  /* 二択のセグメント切り替え（上段: 解像度、下段: 圧縮方法）。
+     1つの枠の中に2つの選択肢を並べ、選ばれた側に色の付いたつまみを置く（切り替えるとつまみが滑る） */
+  .segs { display: grid; gap: 8px; }
+  .seg {
+    position: relative; display: grid; grid-template-columns: 1fr 1fr;
+    padding: 3px; border-radius: 12px; background: var(--surface-2);
   }
-  .toggle-input:checked + .toggle { background: var(--accent); color: var(--on-accent); }
-  .toggle-input:focus-visible + .toggle { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .toggle-input:disabled + .toggle { opacity: .45; cursor: default; }
+  .seg-input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg-opt {
+    position: relative; z-index: 1; display: block; text-align: center; font-weight: 600; cursor: pointer; user-select: none;
+    padding: 5px 6px; border-radius: 9px; color: var(--text); transition: color .25s ease;
+  }
+  .seg-thumb {
+    position: absolute; z-index: 0; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px);
+    border-radius: 9px; background: var(--accent); box-shadow: 0 1px 3px rgba(0, 0, 0, .18);
+    transition: transform .25s ease;
+  }
+  .seg-input:nth-of-type(2):checked ~ .seg-thumb { transform: translateX(100%); }
+  .seg-input:checked + .seg-opt { color: var(--on-accent); }
+  .seg-input:focus-visible + .seg-opt { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .seg-input:disabled + .seg-opt { cursor: default; }
+  .seg:has(.seg-input:disabled) { opacity: .45; }
 
   /* 動画の表示枠（縦画面で1画面に収まるよう高さを抑える） */
   .media-box {
@@ -224,23 +236,21 @@
     <div class="trim-times"><span id="trimLabel">トリミング</span></div>
   </section>
 
-  <!-- 3. 2×2 の設定ボタン（上段: 解像度、下段: 圧縮方法。どちらも択一） -->
-  <div class="grid2">
-    <div>
-      <input type="radio" class="toggle-input" name="res" id="res720" value="720" checked>
-      <label class="toggle" for="res720">720p</label>
+  <!-- 3. 二択のセグメント切り替え（上段: 解像度、下段: 圧縮方法） -->
+  <div class="segs">
+    <div class="seg" role="radiogroup" aria-label="解像度">
+      <input type="radio" class="seg-input" name="res" id="res720" value="720" checked>
+      <label class="seg-opt" for="res720">720p</label>
+      <input type="radio" class="seg-input" name="res" id="res1080" value="1080">
+      <label class="seg-opt" for="res1080">1080p</label>
+      <span class="seg-thumb" aria-hidden="true"></span>
     </div>
-    <div>
-      <input type="radio" class="toggle-input" name="res" id="res1080" value="1080">
-      <label class="toggle" for="res1080">1080p</label>
-    </div>
-    <div>
-      <input type="radio" class="toggle-input" name="mode" id="modeQuality" value="quality">
-      <label class="toggle" for="modeQuality">なるべく圧縮</label>
-    </div>
-    <div>
-      <input type="radio" class="toggle-input" name="mode" id="modeSize" value="size" checked>
-      <label class="toggle" for="modeSize"><span id="sizeLabel">20</span>MB以内に圧縮</label>
+    <div class="seg" role="radiogroup" aria-label="圧縮方法">
+      <input type="radio" class="seg-input" name="mode" id="modeQuality" value="quality">
+      <label class="seg-opt" for="modeQuality">なるべく圧縮</label>
+      <input type="radio" class="seg-input" name="mode" id="modeSize" value="size" checked>
+      <label class="seg-opt" for="modeSize"><span id="sizeLabel">20</span>MB以内に圧縮</label>
+      <span class="seg-thumb" aria-hidden="true"></span>
     </div>
   </div>
   <div id="planInfo" class="meta-line"></div>
