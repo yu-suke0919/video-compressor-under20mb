@@ -38,7 +38,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-24d';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-24e';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、別の方式に切り替える
@@ -609,8 +609,8 @@
   // ---------------------------------------------------------------- 高速モード（Mediabunny Conversion）
   function encKey(c) { return c.codec + '/' + c.hw + '/' + c.bitrateMode; }
   function pickFastEncoding(plan, avoid) {
-    // 既定は、指定したビットレートに素直に従う固定ビットレート（CBR）を優先する。
-    // 可変ビットレート（VBR）を選んだときは VBR を優先し、使えなければ CBR にする
+    // 既定は可変ビットレート（VBR）を優先し、使えなければ固定ビットレート（CBR）にする。
+    // VBR をオフにしたときは、指定したビットレートに素直に従う CBR を優先する
     var modes = plan.vbr ? ['variable', 'constant'] : ['constant', 'variable'];
     var cands = [];
     FAST_VIDEO_CODECS.forEach(function (codec) {
@@ -1496,7 +1496,7 @@
     if (mb !== DEFAULT_TARGET_MB) q.push('target=' + mb);
     if (k720 !== DEFAULT_MIN_KBPS['720']) q.push('min720=' + k720);
     if (k1080 !== DEFAULT_MIN_KBPS['1080']) q.push('min1080=' + k1080);
-    if (ub.vbr.checked) q.push('vbr=on');
+    if (!ub.vbr.checked) q.push('vbr=off');
     if (!ub.fps.checked) q.push('fps=source');
     if (ub.auto.checked) q.push('auto=on');
     if (!ub.audio.checked) q.push('audio=off');
