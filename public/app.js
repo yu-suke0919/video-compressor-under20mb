@@ -38,7 +38,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-24o';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-24p';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1369,7 +1369,8 @@
     els.outInfo.textContent = fmtBytes(state.file.size) + ' → ' + fmtBytes(size) + '（' + (ratio >= 0 ? '-' : '+') +
       Math.abs(ratio) + '%）・' + plan.width + '×' + plan.height + '・' + fmtRate(plan.videoBitrate) + '・' +
       fmtDuration(elapsed) + (res.attempts > 1 ? '・' + res.attempts + '回で調整' : '') +
-      (res.rateMode ? (res.rateMode === 'variable' ? '・VBR' : '・CBR') : '') +
+      // Safari（WebKit）は CBR/VBR の指定をエンコーダに渡さないので、表示しない
+      (res.rateMode && !isWebKit() ? (res.rateMode === 'variable' ? '・VBR' : '・CBR') : '') +
       (plan.audio.mode === 'none' && readSettings().audio ? '・音声なし' : '') + (engine === 'compat' ? '・互換モード' : '');
 
     var warns = [];
@@ -1579,6 +1580,11 @@
 
   // ---------------------------------------------------------------- iOS向けの表示
   // iPhone / iPad（iPadOS はMacとして名乗るので、タッチ対応かどうかで見分ける）
+  // Safari（WebKit）。iPhone・iPad はどのブラウザも中身は Safari
+  function isWebKit() {
+    var ua = navigator.userAgent || '';
+    return isIOS() || (/AppleWebKit/.test(ua) && /Safari/.test(ua) && !/Chrome|Chromium|CriOS|Edg|OPR|Android/.test(ua));
+  }
   function isIOS() {
     var ua = navigator.userAgent || '';
     return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 0);
