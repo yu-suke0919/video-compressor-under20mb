@@ -38,7 +38,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-24n';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-24o';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -722,9 +722,7 @@
         hardwareAcceleration: enc.hw, keyFrameInterval: KEYFRAME_INTERVAL,
         forceTranscode: true, allowTransformationMetadata: false
       };
-      // フレームレートは変えないときも必ず指定する。指定しないとエンコーダの設定にフレームレートが入らず、
-      // iPhone（WebKit）ではビットレートの指定が効かずに、狙いの約6割のサイズにしかならなかったため
-      video.frameRate = plan.outFps;
+      if (plan.fpsChanged) video.frameRate = plan.outFps;
       var audio;
       if (plan.audio.mode === 'aac') {
         audio = { codec: FAST_AUDIO_CODEC, quality: new M.Quality({ bitrate: AUDIO_BITRATE }), forceTranscode: true };
