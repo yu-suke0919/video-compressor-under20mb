@@ -76,25 +76,23 @@
   .toggle-input:focus-visible + .toggle { outline: 2px solid var(--accent); outline-offset: 2px; }
   .toggle-input:disabled + .toggle { opacity: .45; cursor: default; }
 
-  /* 動画の表示枠（縦画面で1画面に収まるよう高さを抑える）
-     2つの枠の大きさは比率 --r（0＝元動画が最大、1＝圧縮後の動画が最大）で決まり、合計の高さは変わらない。
-     圧縮前は元動画を幅いっぱいに大きく、圧縮が終わったら圧縮後の動画を大きくし、上下のスクロールでも調整できる。
-     小さいほうは16:9の小窓にして中央に置く */
-  .app { --vh: 1vh; --r: 0; --big-h: max(150px, calc(25 * var(--vh))); --small-h: max(64px, calc(12 * var(--vh))); }
-  @supports (height: 1svh) { .app { --vh: 1svh; } }
-  /* 圧縮中は進捗バーの分だけ、小さいほうの枠をさらに小さくする */
-  .app.is-running { --small-h: max(46px, calc(7 * var(--vh))); }
+  /* 動画の表示枠（縦画面で1画面に収まるよう高さを抑える） */
   .media-box {
-    --small-w: min(100%, calc(var(--small-h) * 16 / 9));
     position: relative; background: #000; border-radius: 12px; overflow: hidden;
     margin-left: auto; margin-right: auto; transition: height .25s ease, width .25s ease;
-    height: calc(var(--small-h) + (var(--big-h) - var(--small-h)) * var(--t));
-    width: calc(var(--small-w) + (100% - var(--small-w)) * var(--t));
   }
-  #srcBox { --t: calc(1 - var(--r)); }
-  #outBox { --t: var(--r); }
-  /* スクロールで大きさを変えている間は、指に遅れないようアニメーションを止める */
-  .app.is-resizing .media-box { transition: none; }
+  /* 圧縮前は元動画を幅いっぱいに大きく、圧縮が終わったら圧縮後の動画を幅いっぱいに大きく（2つの合計の高さは変えない）。
+     小さいほうは16:9の小窓にして中央に置く */
+  .media-box.is-large { width: 100%; height: 25vh; height: 25svh; min-height: 150px; }
+  .media-box.is-small {
+    height: 12vh; height: 12svh; min-height: 64px;
+    width: min(100%, max(114px, 12vh * 16 / 9)); width: min(100%, max(114px, 12svh * 16 / 9));
+  }
+  /* 圧縮中は進捗バーの分だけ、小さいほうの枠をさらに小さくする */
+  .app.is-running .media-box.is-small {
+    height: 7vh; height: 7svh; min-height: 46px;
+    width: min(100%, max(82px, 7vh * 16 / 9)); width: min(100%, max(82px, 7svh * 16 / 9));
+  }
   .media-box.is-small .media-empty { font-size: 12px; padding: 4px; text-align: center; }
   .media-box video { width: 100%; height: 100%; object-fit: contain; display: block; }
   .media-empty {
