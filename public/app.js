@@ -40,7 +40,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-25d';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-25e';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1596,9 +1596,35 @@
   els.repickBtn.addEventListener('click', function () { els.file.click(); });
 
   // 説明書: 開く・閉じる（外側をタップしても閉じる）
-  var helpDlg = $('helpDlg');
+  var helpDlg = $('helpDlg'), helpSlides = $('helpSlides'), helpHint = $('helpHint');
+  var helpDots = Array.prototype.slice.call($('helpDots').children);
+  var helpOpened = false;
   $('helpBtn').addEventListener('click', function () {
+    if (!helpOpened) {
+      helpOpened = true;
+      // 画像は初めて開いたときに読み込む（アプリの起動を軽くするため）
+      helpSlides.querySelectorAll('img[data-src]').forEach(function (img) { img.src = img.getAttribute('data-src'); });
+      helpSlides.classList.add('is-nudge');   // 少し横に揺らして、スワイプできることを知らせる
+    }
     if (helpDlg.showModal) helpDlg.showModal(); else helpDlg.setAttribute('open', '');
+  });
+  // 今見ている画像に合わせて下の点を切り替える。一度スワイプしたら案内を消す
+  function helpSlideStep() {
+    var imgs = helpSlides.children;
+    return imgs.length > 1 ? imgs[1].offsetLeft - imgs[0].offsetLeft : 1;
+  }
+  helpSlides.addEventListener('scroll', function () {
+    var maxLeft = helpSlides.scrollWidth - helpSlides.clientWidth;
+    // 最後の画像は左端まで寄せられないので、いちばん右まで来たら最後とみなす
+    var i = helpSlides.scrollLeft >= maxLeft - 4 ? helpDots.length - 1 : Math.round(helpSlides.scrollLeft / helpSlideStep());
+    helpDots.forEach(function (d, k) { d.setAttribute('aria-current', k === i ? 'true' : 'false'); });
+    if (helpSlides.scrollLeft > 20) {
+      helpHint.classList.add('is-done');
+      helpSlides.classList.remove('is-nudge');
+    }
+  }, { passive: true });
+  helpDots.forEach(function (d, k) {
+    d.addEventListener('click', function () { helpSlides.scrollTo({ left: k * helpSlideStep(), behavior: 'smooth' }); });
   });
   $('helpClose').addEventListener('click', function () {
     if (helpDlg.close) helpDlg.close(); else helpDlg.removeAttribute('open');
