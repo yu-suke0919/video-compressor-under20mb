@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>iPhoneのショートカットを併用した使い方｜アップロード不要の動画圧縮</title>
+<meta name="description" content="iPhoneのショートカットを使って、共有メニューから動画の保存と動画圧縮サイトを開くまでを1回で行う方法です。">
+<link rel="icon" href="./icons/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<!-- このページは説明書のカードから開いたときだけ読み込む（アプリの起動時には読まない）。
+     動画は再生ボタンを押すまで読み込まない（preload="none"） -->
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f2f2f7;
+    --surface: #ffffff;
+    --surface-2: #e9e9f0;
+    --text: #12141a;
+    --muted: #636779;
+    --line: #d9dae3;
+    --accent: #007aff;
+    --on-accent: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0d12;
+      --surface: #171a22;
+      --surface-2: #232838;
+      --text: #f2f3f7;
+      --muted: #9ba0b4;
+      --line: #2e3446;
+      --accent: #0a84ff;
+      --on-accent: #ffffff;
+    }
+  }
+  * {
+    box-sizing: border-box;
+  }
+  html, body {
+    margin: 0;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.6;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  main {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: max(12px, env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
+  }
+  .back {
+    display: inline-block;
+    margin-bottom: 8px;
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 14px;
+  }
+  h1 {
+    font-size: 20px;
+    line-height: 1.4;
+    margin: 0 0 8px;
+  }
+  h2 {
+    font-size: 16px;
+    margin: 24px 0 8px;
+  }
+  p {
+    margin: 0 0 8px;
+  }
+  .lead {
+    color: var(--muted);
+  }
+  .box {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px;
+  }
+  .get {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    border-radius: 12px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-weight: 700;
+    text-align: center;
+    text-decoration: none;
+  }
+  .get[aria-disabled="true"] {
+    opacity: .45;
+    pointer-events: none;
+  }
+  .note {
+    font-size: 13px;
+    color: var(--muted);
+    margin: 8px 0 0;
+  }
+  video, .video-placeholder {
+    display: block;
+    width: 100%;
+    max-height: 70svh;
+    border-radius: 12px;
+    background: #000;
+  }
+  .video-placeholder {
+    aspect-ratio: 9 / 16;
+    max-width: 280px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--surface-2);
+    color: var(--muted);
+    font-size: 14px;
+    border: 2px dashed var(--line);
+  }
+  ol {
+    margin: 0;
+    padding-left: 1.4em;
+  }
+  li + li {
+    margin-top: 6px;
+  }
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="./">‹ アプリに戻る</a>
+  <h1>iPhoneのショートカットを併用した使い方</h1>
+  <p class="lead">写真アプリなどの共有メニューからショートカットを実行すると、動画を保存して、このサイトを開くところまでを1回で行えます。</p>
+
+  <h2>1. ショートカットを入手する</h2>
+  <div class="box">
+    <!-- iCloud の共有リンクをもらったら、href に入れて aria-disabled を外す -->
+    <a class="get" href="#" aria-disabled="true" target="_blank" rel="noopener">ショートカットを入手（準備中）</a>
+    <p class="note">リンクを開くと「ショートカット」アプリが開きます。「ショートカットを追加」を押すと使えるようになります。</p>
+  </div>
+
+  <h2>2. 使い方の流れ（動画）</h2>
+  <!-- 動画をもらったら差し替える:
+       <video src="./help/shortcut.mp4" poster="./help/shortcut-poster.webp" controls playsinline preload="none"></video> -->
+  <div class="video-placeholder">操作の動画（準備中）</div>
+
+  <h2>3. 手順</h2>
+  <div class="box">
+    <ol>
+      <li>写真アプリ（またはSwitchアプリなど）で動画を開き、共有ボタンから、追加したショートカットを選びます。</li>
+      <li>動画が写真アプリに保存され、このサイトが開きます。</li>
+      <li>「動画を選択」を押して、いま保存した動画を選びます。</li>
+      <li>「圧縮する」を押し、終わったら「Discord等に共有・動画保存」で送ります。</li>
+    </ol>
+  </div>
+</main>
+</body>
+</html>
