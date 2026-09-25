@@ -234,7 +234,7 @@
   .help-slides::-webkit-scrollbar {
     display: none;
   }
-  .help-slides img {
+  .help-slides > * {
     flex: 0 0 auto;
     width: min(70vw, 32svh, 320px);
     height: auto;
@@ -245,8 +245,50 @@
     background: var(--surface-2);
     box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
   }
+  /* 最後のカード（別のページへのリンク）。画像と同じ大きさにそろえる */
+  .help-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 20px 18px;
+    text-align: center;
+    text-decoration: none;
+    color: var(--text);
+  }
+  .help-card .card-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #ff5f6d, #7b4dff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .help-card .card-title {
+    font-size: 17px;
+    font-weight: 700;
+    line-height: 1.45;
+  }
+  .help-card .card-text {
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .help-card .card-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 16px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 14px;
+    font-weight: 700;
+  }
   /* 初めて開いたときに、画像を少し横に揺らしてスワイプできることを知らせる */
-  .help-slides.is-nudge img {
+  .help-slides.is-nudge > * {
     animation: helpNudge 1.1s ease-in-out .6s 2;
   }
   @keyframes helpNudge {
@@ -278,7 +320,7 @@
     background: var(--accent);
   }
   @media (prefers-reduced-motion: reduce) {
-    .help-hint .hint-arrow, .help-slides.is-nudge img {
+    .help-hint .hint-arrow, .help-slides.is-nudge > * {
       animation: none;
     }
   }
@@ -866,16 +908,28 @@
 
     <h3>基本の手順</h3>
     <!-- 画像は説明書を開いたときに読み込む（data-src → src）。アプリの起動時には読まない -->
-    <p class="help-hint" id="helpHint" aria-hidden="true"><span class="hint-arrow">‹</span><span>左右にスワイプ（全3枚）</span><span class="hint-arrow">›</span></p>
+    <p class="help-hint" id="helpHint" aria-hidden="true"><span class="hint-arrow">‹</span><span>左右にスワイプ（全4枚）</span><span class="hint-arrow">›</span></p>
     <div class="help-dots" id="helpDots">
       <button type="button" aria-label="1枚目" aria-current="true"></button>
       <button type="button" aria-label="2枚目"></button>
       <button type="button" aria-label="3枚目"></button>
+      <button type="button" aria-label="4枚目"></button>
     </div>
     <div class="help-slides" id="helpSlides" tabindex="0" aria-label="手順の画像（横にスワイプで次の画像）">
       <img data-src="./help/help-1.webp" width="390" height="780" alt="①「動画を選択」をタップして動画を選ぶ">
       <img data-src="./help/help-2.webp" width="390" height="780" alt="②青い線で使う範囲を決める、③画質と圧縮方法を選ぶ、④「圧縮する」を押す">
       <img data-src="./help/help-3.webp" width="390" height="780" alt="小さくなった動画ができたら、⑤「Discord等に共有・動画保存」でDiscordに送るか写真に保存する">
+      <!-- 別のページ（開いたときに初めて読み込む）。アプリの画面はそのまま残るよう、新しいタブで開く -->
+      <a class="help-card" href="./shortcut.html" target="_blank" rel="noopener">
+        <span class="card-icon" aria-hidden="true">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/></svg>
+        </span>
+        <span class="card-title">iPhoneのショートカットを<br>併用した使い方</span>
+        <span class="card-text">写真アプリなどの共有メニューから、動画の保存とこのサイトを開くまでを1回で。ショートカットの入手方法と操作の動画を載せています。</span>
+        <span class="card-link">別のページで開く
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg>
+        </span>
+      </a>
     </div>
   </div>
 </dialog>

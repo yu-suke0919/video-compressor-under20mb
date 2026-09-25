@@ -8,7 +8,7 @@
  */
 'use strict';
 
-var CACHE = 'video-compressor-under20mb-v49';
+var CACHE = 'video-compressor-under20mb-v50';
 var NETWORK_TIMEOUT_MS = 3000;   // ネット優先のとき、ネットの応答をこれだけ待ってからキャッシュを使う
 
 // Cloudflare Pages のプレビュー（<ブランチ名>.<プロジェクト名>.pages.dev）と手元の確認環境だけネット優先にする
@@ -57,6 +57,9 @@ self.addEventListener('fetch', function (event) {
 
   var url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+  // 動画は範囲指定（Range）で少しずつ読まれる。キャッシュから丸ごと返すと Safari で再生できないので、
+  // Service Worker を通さずネットから直接読む（動画はキャッシュしないので、オフラインでは再生できない）
+  if (req.headers.has('range') || /\.mp4$/i.test(url.pathname)) return;
 
   event.respondWith(NETWORK_FIRST ? networkFirst(req) : cacheFirst(req));
 });
@@ -80,7 +83,7 @@ function offlineResponse() {
 // 取得できたらキャッシュも更新する
 function fetchAndStore(req) {
   return fetch(req).then(function (res) {
-    if (res && res.ok && res.type === 'basic') {
+    if (res && res.status === 200 && res.type === 'basic') {   // 一部だけの応答（206）はキャッシュできない
       var copy = res.clone();
       caches.open(CACHE).then(function (cache) { cache.put(req, copy); });
     }
