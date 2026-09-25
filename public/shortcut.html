@@ -72,16 +72,26 @@
   p {
     margin: 0 0 8px;
   }
-  .get {
-    display: block;
-    width: 100%;
-    padding: 12px;
+  /* URL はそのまま見せる（どこへ飛ぶか分かるように）。長いので途中で折り返す */
+  .url {
+    color: var(--accent);
+    word-break: break-all;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 14px;
+  }
+  .example {
+    margin-top: 10px;
+    padding: 10px 12px;
     border-radius: 12px;
-    background: var(--accent);
-    color: var(--on-accent);
+    background: var(--surface);
+    border: 1px solid var(--line);
+  }
+  .example p {
+    margin: 0;
+  }
+  .example-title {
     font-weight: 700;
-    text-align: center;
-    text-decoration: none;
+    margin-bottom: 4px !important;
   }
   /* 操作の流れの画像（横にスワイプして見る）。次の画像の端を見せて、横に続いていることが分かるようにする */
   .hint {
@@ -224,7 +234,7 @@
 
   <h2>① iCloudにアップロードしたショートカットを取り込む</h2>
   <p>下のリンクを押すと取り込めます。</p>
-  <a class="get" href="https://www.icloud.com/shortcuts/7386207ca3c140a4b3d74bafb5e07e1b" target="_blank" rel="noopener noreferrer">ショートカットを取り込む（iCloud）</a>
+  <p><a class="url" href="https://www.icloud.com/shortcuts/7386207ca3c140a4b3d74bafb5e07e1b" target="_blank" rel="noopener noreferrer">https://www.icloud.com/shortcuts/7386207ca3c140a4b3d74bafb5e07e1b</a></p>
 
   <h2>② ショートカットを写す</h2>
   <p>アップロードしたショートカットと同一のものです。リンクを踏むのが不安であればこちらで。</p>
@@ -237,6 +247,16 @@
 
   <p class="section-lead">また、ショートカット内のURLにパラメータを付与することで、予め項目を選択した状態にすることができます。</p>
   <img class="shot" src="./help/sc-url.webp" width="390" height="844" loading="lazy" alt="詳細設定の「現在の設定を記憶したURLを生成してコピー」を押すと、今の設定を入れたURLがコピーされる">
+
+  <p class="section-lead">例えば、ショートカットの「URLを開く」に次のURLを入れます。</p>
+  <div class="example">
+    <p class="example-title">なるべくサイズを軽くしたいなら（720p・なるべく圧縮）</p>
+    <p><a class="url" href="./?res=720&amp;mode=quality">https://maka-u20mb.pages.dev/?res=720&amp;mode=quality</a></p>
+  </div>
+  <div class="example">
+    <p class="example-title">Discordの上限ギリギリで高画質、さらに動画を選択した後、自動で圧縮を開始したいなら（1080p・20MB以内に圧縮・即圧縮）</p>
+    <p><a class="url" href="./?res=1080&amp;mode=size&amp;target=20&amp;auto=on">https://maka-u20mb.pages.dev/?res=1080&amp;mode=size&amp;target=20&amp;auto=on</a></p>
+  </div>
 </main>
 </body>
 </html>
