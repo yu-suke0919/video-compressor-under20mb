@@ -161,6 +161,29 @@
     padding: 0 0 0 .5em;
     font-weight: 700;
   }
+  /* 初めて実行したときの注意 */
+  .caution {
+    margin-top: 16px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: #fff4e0;
+    color: #74480a;
+    border: 1px solid #f5d49a;
+    font-size: 14px;
+  }
+  .caution p {
+    margin: 0;
+  }
+  .caution p + p {
+    margin-top: 4px;
+  }
+  @media (prefers-color-scheme: dark) {
+    .caution {
+      background: #3a2c12;
+      color: #ffd79a;
+      border-color: #5c4419;
+    }
+  }
   .section-lead {
     margin-top: 24px;
   }
@@ -206,6 +229,11 @@
   <h2>② ショートカットを写す</h2>
   <p>アップロードしたショートカットと同一のものです。リンクを踏むのが不安であればこちらで。</p>
   <img class="shot" src="./help/sc-shortcut.webp" width="390" height="848" loading="lazy" alt="ショートカットの中身：共有シートからメディアを受け取る（入力がない場合は続ける）／ショートカットの入力が任意の値の場合、ショートカットの入力を最近の項目に保存／If文の終了／https://maka-u20mb.pages.dev/ を開く">
+
+  <div class="caution">
+    <p><b>初めて実行したとき</b></p>
+    <p>iPhoneから「写真への保存」と「このサイト（maka-u20mb.pages.dev）を開くこと」の許可を求められます。どちらも「常に許可」（または「許可」）を押してください。「1回だけ許可」を選ぶと、次に実行したときにもまた聞かれます。</p>
+  </div>
 
   <p class="section-lead">また、ショートカット内のURLにパラメータを付与することで、予め項目を選択した状態にすることができます。</p>
   <img class="shot" src="./help/sc-url.webp" width="390" height="844" loading="lazy" alt="詳細設定の「現在の設定を記憶したURLを生成してコピー」を押すと、今の設定を入れたURLがコピーされる">
