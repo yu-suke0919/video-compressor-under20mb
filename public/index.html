@@ -16,153 +16,463 @@
 <style>
   :root {
     color-scheme: light dark;
-    --bg: #f2f2f7; --surface: #ffffff; --surface-2: #e9e9f0; --text: #12141a; --muted: #636779;
-    --line: #d9dae3; --accent: #007aff; --on-accent: #ffffff; --discord: #5865f2; --on-discord: #ffffff;
-    --danger: #c62828; --warn-bg: #fff4e0; --warn-text: #74480a; --warn-line: #f5d49a;
-    --err-bg: #ffeceb; --err-text: #8b1a1a; --err-line: #f5c2c0;
+    --bg: #f2f2f7;
+    --surface: #ffffff;
+    --surface-2: #e9e9f0;
+    --text: #12141a;
+    --muted: #636779;
+    --line: #d9dae3;
+    --accent: #007aff;
+    --on-accent: #ffffff;
+    --discord: #5865f2;
+    --on-discord: #ffffff;
+    --danger: #c62828;
+    --warn-bg: #fff4e0;
+    --warn-text: #74480a;
+    --warn-line: #f5d49a;
+    --err-bg: #ffeceb;
+    --err-text: #8b1a1a;
+    --err-line: #f5c2c0;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #0b0d12; --surface: #171a22; --surface-2: #232838; --text: #f2f3f7; --muted: #9ba0b4;
-      --line: #2e3446; --accent: #0a84ff; --on-accent: #ffffff; --discord: #5865f2; --on-discord: #ffffff;
-      --danger: #ff6b6b; --warn-bg: #3a2c12; --warn-text: #ffd79a; --warn-line: #5c4419;
-      --err-bg: #3a1a1a; --err-text: #ffb4b4; --err-line: #5c2525;
+      --bg: #0b0d12;
+      --surface: #171a22;
+      --surface-2: #232838;
+      --text: #f2f3f7;
+      --muted: #9ba0b4;
+      --line: #2e3446;
+      --accent: #0a84ff;
+      --on-accent: #ffffff;
+      --discord: #5865f2;
+      --on-discord: #ffffff;
+      --danger: #ff6b6b;
+      --warn-bg: #3a2c12;
+      --warn-text: #ffd79a;
+      --warn-line: #5c4419;
+      --err-bg: #3a1a1a;
+      --err-text: #ffb4b4;
+      --err-line: #5c2525;
     }
   }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { margin: 0; }
+  * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html, body {
+    margin: 0;
+  }
   body {
-    background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.5;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.5;
     font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
     -webkit-text-size-adjust: 100%;
   }
   .app {
-    max-width: 560px; margin: 0 auto;
+    max-width: 560px;
+    margin: 0 auto;
     padding: max(8px, env(safe-area-inset-top)) 16px calc(12px + env(safe-area-inset-bottom));
   }
-  .app > * + * { margin-top: 5px; }
-  .hidden { display: none !important; }
-  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .app > * + * {
+    margin-top: 5px;
+  }
+  .hidden {
+    display: none !important;
+  }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .grid2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
 
-  header h1 { font-size: 16px; margin: 0; flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  header.row { gap: 6px; }
-  header .btn-sm { flex: none; padding: 4px 8px; }
+  header h1 {
+    font-size: 16px;
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  header.row {
+    gap: 6px;
+  }
+  header .btn-sm {
+    flex: none;
+    padding: 4px 8px;
+  }
   /* 狭い画面ではタイトルを少し小さくして、ボタン2つと並べても切れないようにする */
-  @media (max-width: 380px) { header h1 { font-size: 15px; } }
-  @media (max-width: 370px) { header h1 { font-size: 14px; } }
-  @media (max-width: 340px) { header h1 { white-space: normal; line-height: 1.25; } }   /* ここまで狭いと1行に入らないので折り返す */
+  @media (max-width: 380px) {
+    header h1 {
+      font-size: 15px;
+    }
+  }
+  @media (max-width: 370px) {
+    header h1 {
+      font-size: 14px;
+    }
+  }
+  /* ここまで狭いと1行に入らないので折り返す */
+  @media (max-width: 340px) {
+    header h1 {
+      white-space: normal;
+      line-height: 1.25;
+    }
+  }
 
   /* 説明書（画面に重ねて開く） */
   #helpDlg {
-    width: min(520px, calc(100vw - 32px)); max-height: 82vh; max-height: 82svh; padding: 0;
-    border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--text);
+    width: min(520px, calc(100vw - 32px));
+    max-height: 82vh;
+    max-height: 82svh;
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--surface);
+    color: var(--text);
   }
-  #helpDlg::backdrop { background: rgba(0, 0, 0, .45); }
+  #helpDlg::backdrop {
+    background: rgba(0, 0, 0, .45);
+  }
   #helpDlg .help-head {
-    position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    padding: 10px 14px; background: var(--surface); border-bottom: 1px solid var(--line);
+    position: sticky;
+    top: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
   }
-  #helpDlg h2 { font-size: 16px; margin: 0; }
-  #helpDlg .help-body { padding: 4px 14px 14px; font-size: 14px; line-height: 1.6; }
-  #helpDlg h3 { font-size: 14px; margin: 14px 0 4px; }
-  #helpDlg ol, #helpDlg ul { margin: 0; padding-left: 1.3em; }
-  #helpDlg li + li { margin-top: 4px; }
-  #helpDlg p { margin: 4px 0 0; }
+  #helpDlg h2 {
+    font-size: 16px;
+    margin: 0;
+  }
+  #helpDlg .help-body {
+    padding: 4px 14px 14px;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  #helpDlg h3 {
+    font-size: 14px;
+    margin: 14px 0 4px;
+  }
+  #helpDlg ol, #helpDlg ul {
+    margin: 0;
+    padding-left: 1.3em;
+  }
+  #helpDlg li + li {
+    margin-top: 4px;
+  }
+  #helpDlg p {
+    margin: 4px 0 0;
+  }
 
   /* ボタン */
   .btn {
-    display: block; width: 100%; font: inherit; font-weight: 600; text-align: center; cursor: pointer;
-    padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line);
-    background: var(--surface); color: var(--text);
+    display: block;
+    width: 100%;
+    font: inherit;
+    font-weight: 600;
+    text-align: center;
+    cursor: pointer;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text);
   }
-  .btn:disabled { opacity: .45; cursor: default; }
-  .btn-sm { width: auto; padding: 4px 10px; font-size: 13px; font-weight: 500; border-radius: 9px; }
-  .btn-primary { background: var(--accent); color: var(--on-accent); border-color: transparent; padding: 11px 12px; font-size: 17px; }
-  .btn-primary.is-cancel { background: transparent; color: var(--danger); border-color: var(--danger); }
-  .btn-discord { background: var(--discord); color: var(--on-discord); border-color: transparent; line-height: 1.25; padding: 7px 12px; }
-  .btn-discord span { display: block; }
+  .btn:disabled {
+    opacity: .45;
+    cursor: default;
+  }
+  .btn-sm {
+    width: auto;
+    padding: 4px 10px;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 9px;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: var(--on-accent);
+    border-color: transparent;
+    padding: 11px 12px;
+    font-size: 17px;
+  }
+  .btn-primary.is-cancel {
+    background: transparent;
+    color: var(--danger);
+    border-color: var(--danger);
+  }
+  .btn-discord {
+    background: var(--discord);
+    color: var(--on-discord);
+    border-color: transparent;
+    line-height: 1.25;
+    padding: 7px 12px;
+  }
+  .btn-discord span {
+    display: block;
+  }
   /* iOS: 共有シートに「ビデオを保存」があるので保存ボタンは出さず、共有ボタンを横いっぱいにする */
-  .app.is-ios #saveBtn { display: none; }
-  .app.is-ios #shareBtn { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 11px 12px; }
-  .app.is-ios #shareBtn svg { flex: none; }
+  .app.is-ios #saveBtn {
+    display: none;
+  }
+  .app.is-ios #shareBtn {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 11px 12px;
+  }
+  .app.is-ios #shareBtn svg {
+    flex: none;
+  }
 
   /* 二択のセグメント切り替え（上段: 解像度、下段: 圧縮方法）。
      1つの枠の中に2つの選択肢を並べ、選ばれた側に色の付いたつまみを置く（切り替えるとつまみが滑る） */
-  .segs { display: grid; gap: 8px; }
-  .seg {
-    position: relative; display: grid; grid-template-columns: 1fr 1fr;
-    padding: 3px; border-radius: 12px; background: var(--surface-2);
+  .segs {
+    display: grid;
+    gap: 8px;
   }
-  .seg-input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 3px;
+    border-radius: 12px;
+    background: var(--surface-2);
+  }
+  .seg-input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
   .seg-opt {
-    position: relative; z-index: 1; display: block; text-align: center; font-weight: 600; cursor: pointer; user-select: none;
-    padding: 5px 6px; border-radius: 9px; color: var(--text); transition: color .25s ease;
+    position: relative;
+    z-index: 1;
+    display: block;
+    text-align: center;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    padding: 5px 6px;
+    border-radius: 9px;
+    color: var(--text);
+    transition: color .25s ease;
   }
   .seg-thumb {
-    position: absolute; z-index: 0; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px);
-    border-radius: 9px; background: var(--accent); box-shadow: 0 1px 3px rgba(0, 0, 0, .18);
+    position: absolute;
+    z-index: 0;
+    top: 3px;
+    bottom: 3px;
+    left: 3px;
+    width: calc(50% - 3px);
+    border-radius: 9px;
+    background: var(--accent);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .18);
     transition: transform .25s ease;
   }
-  .seg-input:nth-of-type(2):checked ~ .seg-thumb { transform: translateX(100%); }
-  .seg-input:checked + .seg-opt { color: var(--on-accent); }
-  .seg-input:focus-visible + .seg-opt { outline: 2px solid var(--accent); outline-offset: -2px; }
-  .seg-input:disabled + .seg-opt { cursor: default; }
-  .seg:has(.seg-input:disabled) { opacity: .45; }
+  .seg-input:nth-of-type(2):checked ~ .seg-thumb {
+    transform: translateX(100%);
+  }
+  .seg-input:checked + .seg-opt {
+    color: var(--on-accent);
+  }
+  .seg-input:focus-visible + .seg-opt {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .seg-input:disabled + .seg-opt {
+    cursor: default;
+  }
+  .seg:has(.seg-input:disabled) {
+    opacity: .45;
+  }
 
   /* 動画の表示枠（縦画面で1画面に収まるよう高さを抑える） */
   .media-box {
-    position: relative; background: #000; border-radius: 12px; overflow: hidden;
-    margin-left: auto; margin-right: auto; transition: height .25s ease, width .25s ease;
+    position: relative;
+    background: #000;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-left: auto;
+    margin-right: auto;
+    transition: height .25s ease, width .25s ease;
   }
   /* 圧縮前は元動画を幅いっぱいに大きく、圧縮が終わったら圧縮後の動画を幅いっぱいに大きく（2つの合計の高さは変えない）。
      小さいほうは16:9の小窓にして中央に置く */
-  .media-box.is-large { width: 100%; height: 25vh; height: 25svh; min-height: 150px; }
+  .media-box.is-large {
+    width: 100%;
+    height: 25vh;
+    height: 25svh;
+    min-height: 150px;
+  }
   .media-box.is-small {
-    height: 12vh; height: 12svh; min-height: 64px;
-    width: min(100%, max(114px, 12vh * 16 / 9)); width: min(100%, max(114px, 12svh * 16 / 9));
+    height: 12vh;
+    height: 12svh;
+    min-height: 64px;
+    width: min(100%, max(114px, 12vh * 16 / 9));
+    width: min(100%, max(114px, 12svh * 16 / 9));
   }
   /* 圧縮中は進捗バーの分だけ、小さいほうの枠をさらに小さくする */
   .app.is-running .media-box.is-small {
-    height: 7vh; height: 7svh; min-height: 46px;
-    width: min(100%, max(82px, 7vh * 16 / 9)); width: min(100%, max(82px, 7svh * 16 / 9));
+    height: 7vh;
+    height: 7svh;
+    min-height: 46px;
+    width: min(100%, max(82px, 7vh * 16 / 9));
+    width: min(100%, max(82px, 7svh * 16 / 9));
   }
-  .media-box.is-small .media-empty { font-size: 12px; padding: 4px; text-align: center; }
-  .media-box video { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .media-box.is-small .media-empty {
+    font-size: 12px;
+    padding: 4px;
+    text-align: center;
+  }
+  .media-box video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
   .media-empty {
-    position: absolute; inset: 0; width: 100%; display: flex; flex-direction: column; align-items: center;
-    justify-content: center; gap: 4px; font: inherit; font-size: 14px; color: var(--muted);
-    background: var(--surface-2); border: 2px dashed var(--line); border-radius: 12px;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    font: inherit;
+    font-size: 14px;
+    color: var(--muted);
+    background: var(--surface-2);
+    border: 2px dashed var(--line);
+    border-radius: 12px;
   }
-  button.media-empty { color: var(--accent); font-size: 18px; font-weight: 700; cursor: pointer; }
-  button.media-empty small { color: var(--muted); font-size: 12px; font-weight: 400; }
-  .meta-line { font-size: 12px; color: var(--muted); text-align: center; min-height: 1.2em; line-height: 1.35; }
+  button.media-empty {
+    color: var(--accent);
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  button.media-empty small {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 400;
+  }
+  .meta-line {
+    font-size: 12px;
+    color: var(--muted);
+    text-align: center;
+    min-height: 1.2em;
+    line-height: 1.35;
+  }
 
   /* トリミング（2本のレンジを重ね、つまみの部分だけ触れるようにする） */
   /* つまみを画面の端から離す（iPhoneの「端からスワイプで戻る」と重ならないように）。
      --thumb-w はつまみの触れる範囲の幅。バーの両端はその半分だけ内側になる */
-  .trim { --thumb-w: 44px; --trim-h: 40px; position: relative; height: var(--trim-h); margin: 0 12px; touch-action: none; }
-  .trim-track, .trim-fill { position: absolute; top: 17px; height: 6px; border-radius: 3px; }
-  .trim-track { left: calc(var(--thumb-w) / 2); right: calc(var(--thumb-w) / 2); background: var(--surface-2); }
-  .trim-fill { background: var(--accent); opacity: .4; }
-  /* 目盛り（5秒・10秒などの間隔で縦線を引く） */
-  .trim-ticks { position: absolute; left: calc(var(--thumb-w) / 2); right: calc(var(--thumb-w) / 2); top: 0; bottom: 0; pointer-events: none; }
-  .trim-ticks i { position: absolute; top: 13px; width: 1px; height: 14px; margin-left: -0.5px; background: var(--muted); opacity: .55; }
-  .trim input[type="range"] {
-    position: absolute; inset: 0; width: 100%; height: var(--trim-h); margin: 0; background: none;
-    pointer-events: none; -webkit-appearance: none; appearance: none; touch-action: none;
+  .trim {
+    --thumb-w: 44px;
+    --trim-h: 40px;
+    position: relative;
+    height: var(--trim-h);
+    margin: 0 12px;
+    touch-action: none;
   }
-  .trim input[type="range"]::-webkit-slider-runnable-track { height: var(--trim-h); background: transparent; }
-  .trim input[type="range"]::-moz-range-track { height: var(--trim-h); background: transparent; }
+  .trim-track, .trim-fill {
+    position: absolute;
+    top: 17px;
+    height: 6px;
+    border-radius: 3px;
+  }
+  .trim-track {
+    left: calc(var(--thumb-w) / 2);
+    right: calc(var(--thumb-w) / 2);
+    background: var(--surface-2);
+  }
+  .trim-fill {
+    background: var(--accent);
+    opacity: .4;
+  }
+  /* 目盛り（5秒・10秒などの間隔で縦線を引く） */
+  .trim-ticks {
+    position: absolute;
+    left: calc(var(--thumb-w) / 2);
+    right: calc(var(--thumb-w) / 2);
+    top: 0;
+    bottom: 0;
+    pointer-events: none;
+  }
+  .trim-ticks i {
+    position: absolute;
+    top: 13px;
+    width: 1px;
+    height: 14px;
+    margin-left: -0.5px;
+    background: var(--muted);
+    opacity: .55;
+  }
+  .trim input[type="range"] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: var(--trim-h);
+    margin: 0;
+    background: none;
+    pointer-events: none;
+    -webkit-appearance: none;
+    appearance: none;
+    touch-action: none;
+  }
+  .trim input[type="range"]::-webkit-slider-runnable-track {
+    height: var(--trim-h);
+    background: transparent;
+  }
+  .trim input[type="range"]::-moz-range-track {
+    height: var(--trim-h);
+    background: transparent;
+  }
   /* つまみは縦線。見た目は幅6px・高さ30pxだが、指で掴みやすいよう触れる範囲は幅44px・高さ40pxにしてある */
   .trim input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none; appearance: none; pointer-events: auto; margin-top: 0; cursor: ew-resize;
-    width: var(--thumb-w); height: var(--trim-h); border: none; border-radius: 3px; box-shadow: none;
+    -webkit-appearance: none;
+    appearance: none;
+    pointer-events: auto;
+    margin-top: 0;
+    cursor: ew-resize;
+    width: var(--thumb-w);
+    height: var(--trim-h);
+    border: none;
+    border-radius: 3px;
+    box-shadow: none;
     background: linear-gradient(90deg, transparent 19px, var(--accent) 19px, var(--accent) 25px, transparent 25px) center / 100% 30px no-repeat;
   }
   .trim input[type="range"]::-moz-range-thumb {
-    pointer-events: auto; cursor: ew-resize; width: var(--thumb-w); height: var(--trim-h); border: none; border-radius: 3px;
+    pointer-events: auto;
+    cursor: ew-resize;
+    width: var(--thumb-w);
+    height: var(--trim-h);
+    border: none;
+    border-radius: 3px;
     background: linear-gradient(90deg, transparent 19px, var(--accent) 19px, var(--accent) 25px, transparent 25px) center / 100% 30px no-repeat;
   }
   .trim input[type="range"]:disabled::-webkit-slider-thumb {
@@ -171,7 +481,9 @@
   }
   /* 元動画の再生位置（シークバー）。つまみと区別できるよう文字色の細い線にし、触れる範囲はつまみと同じ幅にする。
      トリミングのつまみより下に重ねるので、重なった所ではトリミングが優先される */
-  .trim input[type="range"].trim-seek { z-index: 1; }
+  .trim input[type="range"].trim-seek {
+    z-index: 1;
+  }
   .trim input[type="range"].trim-seek::-webkit-slider-thumb {
     background: linear-gradient(90deg, transparent 21px, var(--text) 21px, var(--text) 23px, transparent 23px) center / 100% 22px no-repeat;
   }
@@ -181,43 +493,137 @@
   .trim input[type="range"].trim-seek:disabled::-webkit-slider-thumb {
     background: linear-gradient(90deg, transparent 21px, var(--muted) 21px, var(--muted) 23px, transparent 23px) center / 100% 22px no-repeat;
   }
-  .trim-times { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
-  #trimLabel { display: block; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .trim-times {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+  }
+  #trimLabel {
+    display: block;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 
   /* 注意書き・進捗 */
   .alert {
-    font-size: 12px; line-height: 1.45; padding: 6px 10px; border-radius: 10px;
-    background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-line);
+    font-size: 12px;
+    line-height: 1.45;
+    padding: 6px 10px;
+    border-radius: 10px;
+    background: var(--warn-bg);
+    color: var(--warn-text);
+    border: 1px solid var(--warn-line);
   }
-  .alert.danger { background: var(--err-bg); color: var(--err-text); border-color: var(--err-line); }
-  .alert p { margin: 0; }
-  .alert p + p { margin-top: 3px; }
-  .progress { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
-  .progress > i { display: block; height: 100%; width: 100%; background: var(--accent); transform-origin: left center; transform: scaleX(0); }
+  .alert.danger {
+    background: var(--err-bg);
+    color: var(--err-text);
+    border-color: var(--err-line);
+  }
+  .alert p {
+    margin: 0;
+  }
+  .alert p + p {
+    margin-top: 3px;
+  }
+  .progress {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--surface-2);
+    overflow: hidden;
+  }
+  .progress > i {
+    display: block;
+    height: 100%;
+    width: 100%;
+    background: var(--accent);
+    transform-origin: left center;
+    transform: scaleX(0);
+  }
 
   /* 詳細設定 */
-  details.settings summary { font-size: 13px; color: var(--muted); cursor: pointer; }
-  details.settings[open] { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 6px 10px 8px; }
-  details.settings label { font-size: 13px; }
-  details.settings .check { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-  details.settings input[type="checkbox"] { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); flex: none; }
-  details.settings input[type="number"] {
-    width: 5em; font: inherit; font-size: 16px; text-align: right; color: var(--text);
-    background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px;
+  details.settings summary {
+    font-size: 13px;
+    color: var(--muted);
+    cursor: pointer;
   }
-  details.settings .hint { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
-  footer { font-size: 11px; color: var(--muted); text-align: center; }
-  .contact { font-size: 12px; color: var(--muted); text-align: center; margin: 14px 0 0; }
-  .contact a { color: var(--accent); }
+  details.settings[open] {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 6px 10px 8px;
+  }
+  details.settings label {
+    font-size: 13px;
+  }
+  details.settings .check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  details.settings input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: var(--accent);
+    flex: none;
+  }
+  details.settings input[type="number"] {
+    width: 5em;
+    font: inherit;
+    font-size: 16px;
+    text-align: right;
+    color: var(--text);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 4px 8px;
+  }
+  details.settings .hint {
+    font-size: 12px;
+    color: var(--muted);
+    margin: 6px 0 0;
+  }
+  footer {
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+  }
+  .contact {
+    font-size: 12px;
+    color: var(--muted);
+    text-align: center;
+    margin: 14px 0 0;
+  }
+  .contact a {
+    color: var(--accent);
+  }
 
-  #urlStatus { word-break: break-all; }
-  #urlStatus:empty { display: none; }
+  #urlStatus {
+    word-break: break-all;
+  }
+  #urlStatus:empty {
+    display: none;
+  }
   /* 診断情報（うまく動かないときの報告用） */
-  #diagBox { margin-top: 14px; }
+  #diagBox {
+    margin-top: 14px;
+  }
   #diagOut {
-    display: block; width: 100%; box-sizing: border-box; margin-top: 8px; resize: vertical;
-    font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; color: var(--text);
-    background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px;
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 8px;
+    resize: vertical;
+    font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: break-all;
+    color: var(--text);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px 8px;
   }
 </style>
 </head>
