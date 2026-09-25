@@ -40,7 +40,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-25g';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-25h';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -270,6 +270,13 @@
     refresh();
   }
 
+  var SETTING_PARAMS = ['res', 'mode', 'target', 'fps', 'audio', 'min720', 'min1080', 'auto'];
+  function hasSettingParams() {
+    try {
+      var params = new URLSearchParams(window.location.search);
+      return SETTING_PARAMS.some(function (k) { return params.has(k); });
+    } catch (e) { return false; }
+  }
   // ショートカットなどから URL で初期値を渡せる（詳細設定の項目も含む）
   //   res=720|1080  mode=size|quality  target=MB  fps=30|source  audio=on|off  min720=kbps  min1080=kbps  auto=on|off
   function applyUrlParams() {
@@ -1726,7 +1733,9 @@
     if (!s.halfFps) q.push('fps=source');
     if (s.autoRun) q.push('auto=on');
     if (!s.audio) q.push('audio=off');
-    return location.origin + location.pathname + (q.length ? '?' + q.join('&') : '');
+    // すべて初期値でも1つは付ける（URL に設定の項目がないと、開いたときに前回の設定が使われるため）
+    if (!q.length) q.push('res=' + s.res);
+    return location.origin + location.pathname + '?' + q.join('&');
   }
   // 文字をコピーする（クリップボードAPIが使えなければ、隠した欄を選択してコピー）
   function copyText(text, status, failMsg) {
@@ -1757,7 +1766,9 @@
 
   // ---------------------------------------------------------------- 起動
   setupIOSButtons();
-  loadSavedSettings();   // 前回画面で変えた設定（URLパラメータのほうが優先）
+  // URL に設定の項目が1つでもあれば、前回の設定は使わず、初期値に URL の設定だけを重ねて始める
+  // （保存してある前回の設定は消さない。URL なしで開いたときは前回の設定で始まる）
+  if (!hasSettingParams()) loadSavedSettings();
   applyUrlParams();
   var missing = checkSupport();
   if (missing.length) {
