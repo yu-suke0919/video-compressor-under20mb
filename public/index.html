@@ -210,19 +210,15 @@
   .contact { font-size: 12px; color: var(--muted); text-align: center; margin: 14px 0 0; }
   .contact a { color: var(--accent); }
 
-  /* URLを作る（画面の下・最初は閉じている） */
-  #urlBuilder { margin-top: 14px; }
-  details.settings select {
-    font: inherit; font-size: 16px; color: var(--text);
-    background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px;
-  }
-  #uOut, #diagOut {
-    display: block; width: 100%; box-sizing: border-box; margin-top: 8px; resize: none;
-    font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; color: var(--text);
+  #urlStatus { word-break: break-all; }
+  #urlStatus:empty { display: none; }
+  /* 診断情報（うまく動かないときの報告用） */
+  #diagBox { margin-top: 14px; }
+  #diagOut {
+    display: block; width: 100%; box-sizing: border-box; margin-top: 8px; resize: vertical;
+    font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; color: var(--text);
     background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px;
   }
-  #urlBuilder .grid2 { margin-top: 8px; }
-  #diagOut { font-size: 11px; resize: vertical; }
 </style>
 </head>
 <body>
@@ -297,10 +293,6 @@
     </div>
     <p class="hint">「なるべく圧縮」はこの値で圧縮します。「MB以内に圧縮」は、この値を下回らない範囲で目標サイズに収まるなるべく高いビットレートにします。</p>
     <div class="check">
-      <input type="checkbox" id="vbrOn" checked>
-      <label for="vbrOn">可変ビットレート（VBR）で圧縮（激しい場面に多く割り振る。目標を超えたら自動で再圧縮。iPhone・Safariでは効きません）</label>
-    </div>
-    <div class="check">
       <input type="checkbox" id="halfFps" checked>
       <label for="halfFps">60fpsの動画は30fpsにする（容量を抑えられます）</label>
     </div>
@@ -314,6 +306,9 @@
     </div>
     <p class="hint">Discordの無料アカウントは20MB、Nitro Basicは50MBが目安です（上限は変更されることがあります）。</p>
     <p class="hint">設定は、画面で変えるとこの端末のブラウザに保存され、次に開いたときも同じになります。</p>
+    <p class="hint">下のボタンで作ったURLで開くと、同じ設定から始まります（ショートカットやブックマーク用。初期値と同じ項目はURLから省きます）。</p>
+    <button id="urlCopy" type="button" class="btn btn-sm" style="width: 100%; margin-top: 6px">現在の設定を記憶したURLを生成してコピー</button>
+    <p id="urlStatus" class="hint" role="status"></p>
     <button id="resetSettings" type="button" class="btn btn-sm" style="width: 100%; margin-top: 6px">設定を初期値に戻す</button>
   </details>
 
@@ -340,58 +335,10 @@
 
   <footer>
     ブラウザの付属機能を利用して圧縮するため、ここに表示される動画はネット上にアップロードされません。
-    本サイトは無保証で提供しています。利用によって生じたいかなる損害についても、作成者は責任を負いません。
+    本サイトは無保証で提供しています。作成者の故意または重大な過失による場合を除き、利用によって生じた損害について責任を負いません。
   </footer>
 
-  <!-- 7. 設定済みのURLを作る（ショートカットやブックマーク用） -->
-  <details class="settings" id="urlBuilder">
-    <summary>設定済みのURLを作る</summary>
-    <p class="hint">ここで選んだ設定が最初から入った状態で開くURLを作ります。ブックマークやショートカットに使えます。既定値と同じ項目はURLから省きます。</p>
-    <div class="row" style="margin-top: 8px">
-      <label for="uRes">解像度</label>
-      <select id="uRes"><option value="720">720p</option><option value="1080">1080p</option></select>
-    </div>
-    <div class="row" style="margin-top: 6px">
-      <label for="uMode">圧縮方法</label>
-      <select id="uMode"><option value="size">目標サイズ以内に圧縮</option><option value="quality">なるべく圧縮</option></select>
-    </div>
-    <div class="row" style="margin-top: 6px">
-      <label for="uTarget">目標サイズ</label>
-      <span><input id="uTarget" type="number" inputmode="decimal" min="1" max="500" step="1" value="20"> MB</span>
-    </div>
-    <div class="row" style="margin-top: 6px">
-      <label for="uMin720">下限ビットレート（720p）</label>
-      <span><input id="uMin720" type="number" inputmode="numeric" min="100" max="50000" step="100" value="1200"> kbps</span>
-    </div>
-    <div class="row" style="margin-top: 6px">
-      <label for="uMin1080">下限ビットレート（1080p）</label>
-      <span><input id="uMin1080" type="number" inputmode="numeric" min="100" max="50000" step="100" value="2700"> kbps</span>
-    </div>
-    <div class="check">
-      <input type="checkbox" id="uVbr" checked>
-      <label for="uVbr">可変ビットレート（VBR）で圧縮（iPhone・Safariでは効きません）</label>
-    </div>
-    <div class="check">
-      <input type="checkbox" id="uFps" checked>
-      <label for="uFps">60fpsの動画は30fpsにする</label>
-    </div>
-    <div class="check">
-      <input type="checkbox" id="uAuto">
-      <label for="uAuto">動画をアップロードしたら即圧縮</label>
-    </div>
-    <div class="check">
-      <input type="checkbox" id="uAudio" checked>
-      <label for="uAudio">音声を残す</label>
-    </div>
-    <textarea id="uOut" rows="3" readonly aria-label="作成したURL"></textarea>
-    <div class="grid2">
-      <button id="uCopy" type="button" class="btn btn-sm" style="width: 100%">コピー</button>
-      <button id="uLoad" type="button" class="btn btn-sm" style="width: 100%">今の設定を読み込む</button>
-    </div>
-    <p id="uStatus" class="hint" role="status"></p>
-  </details>
-
-  <!-- 8. 診断情報（うまく動かないときの報告用。圧縮を始めるかエラーが出ると表示） -->
+  <!-- 7. 診断情報（うまく動かないときの報告用。圧縮を始めるかエラーが出ると表示） -->
   <details class="settings hidden" id="diagBox">
     <summary>診断情報</summary>
     <p class="hint">うまく圧縮できないときは、これをコピーして、下のX（@inkaroma0431）あるいはDiscordに送ってください。端末の種類や処理の経過だけで、動画やファイル名は含みません。</p>
@@ -400,7 +347,7 @@
     <p id="diagStatus" class="hint" role="status"></p>
   </details>
 
-  <!-- 9. 不具合の報告・要望の連絡先 -->
+  <!-- 8. 不具合の報告・要望の連絡先 -->
   <p class="contact">不具合の報告・ご要望は <a href="https://x.com/inkaroma0431" target="_blank" rel="noopener noreferrer">X（@inkaroma0431）</a> あるいはDiscordへ</p>
 </main>
 
@@ -433,7 +380,7 @@
       <li>長すぎて20MBに収まらないときは、「720pなら1分56秒まで」のように収まる長さの目安を表示します。トリミングで短くするか、720pにしてください。</li>
       <li>撮影場所などの位置情報は、書き出す動画には含めません。</li>
       <li>「詳細設定」で、目標サイズ（Nitroなら50MBなど）、音声の有無などを変えられます。設定は次に開いたときも覚えています。</li>
-      <li>いちばん下の「設定済みのURLを作る」で、設定を入れたURLを作れます。ブックマークやショートカットに便利です。</li>
+      <li>「詳細設定」の「現在の設定を記憶したURLを生成してコピー」で、今の設定で開くURLを作れます。ブックマークやショートカットに便利です。</li>
       <li>ブラウザの共有メニューから「ホーム画面に追加」すると、アプリのように使えます（オフラインでも起動できます）。</li>
     </ul>
 
