@@ -137,13 +137,17 @@
   }
 
   /* 説明書（画面に重ねて開く） */
+  /* 説明書は上に少し余白を残し、下は画面の下端までいっぱいに使う */
   #helpDlg {
+    --dlg-top: max(16px, calc(env(safe-area-inset-top) + 8px));
     width: min(520px, calc(100vw - 32px));
-    max-height: 82vh;
-    max-height: 82svh;
+    height: calc(100% - var(--dlg-top));
+    max-height: calc(100% - var(--dlg-top));
+    margin: var(--dlg-top) auto 0;
     padding: 0;
     border: 1px solid var(--line);
-    border-radius: 14px;
+    border-bottom: none;
+    border-radius: 14px 14px 0 0;
     background: var(--surface);
     color: var(--text);
   }
@@ -166,24 +170,13 @@
     margin: 0;
   }
   #helpDlg .help-body {
-    padding: 4px 14px 14px;
+    padding: 4px 14px calc(14px + env(safe-area-inset-bottom));
     font-size: 14px;
     line-height: 1.6;
   }
   #helpDlg h3 {
     font-size: 14px;
     margin: 14px 0 4px;
-  }
-  #helpDlg ol, #helpDlg ul {
-    margin: 0;
-    padding-left: 1.3em;
-  }
-  #helpDlg ol.help-steps {
-    list-style: none;
-    padding-left: 0;
-  }
-  #helpDlg li + li {
-    margin-top: 4px;
   }
   #helpDlg p {
     margin: 4px 0 0;
@@ -245,7 +238,7 @@
     flex: 0 0 auto;
     width: min(70vw, 32svh, 320px);
     height: auto;
-    aspect-ratio: 390 / 844;
+    aspect-ratio: 390 / 780;
     scroll-snap-align: start;
     border: 1px solid var(--line);
     border-radius: 12px;
@@ -880,41 +873,10 @@
       <button type="button" aria-label="3枚目"></button>
     </div>
     <div class="help-slides" id="helpSlides" tabindex="0" aria-label="手順の画像（横にスワイプで次の画像）">
-      <img data-src="./help/help-1.webp" width="390" height="844" alt="①「動画を選択」をタップして動画を選ぶ">
-      <img data-src="./help/help-2.webp" width="390" height="844" alt="②青い線で使う範囲を決める、③画質と圧縮方法を選ぶ、④「圧縮する」を押す">
-      <img data-src="./help/help-3.webp" width="390" height="844" alt="小さくなった動画ができたら、⑤「Discord等に共有・動画保存」でDiscordに送るか写真に保存する">
+      <img data-src="./help/help-1.webp" width="390" height="780" alt="①「動画を選択」をタップして動画を選ぶ">
+      <img data-src="./help/help-2.webp" width="390" height="780" alt="②青い線で使う範囲を決める、③画質と圧縮方法を選ぶ、④「圧縮する」を押す">
+      <img data-src="./help/help-3.webp" width="390" height="780" alt="小さくなった動画ができたら、⑤「Discord等に共有・動画保存」でDiscordに送るか写真に保存する">
     </div>
-    <ol class="help-steps">
-      <li><b>① 動画を選ぶ</b>：上の枠をタップして、写真ライブラリなどから動画を選びます。</li>
-      <li><b>② トリミング</b>（必要なら）：バーの両端にある青い縦線を動かして、使う範囲を決めます。バーを触るか細い線を動かすと、その位置の映像を確認できます。</li>
-      <li><b>③ 画質と圧縮方法を選ぶ</b>：解像度（720p / 1080p）と圧縮方法を選びます。元の動画より大きくはしません。
-        <ul>
-          <li>「20MB以内に圧縮」：20MBに収まる範囲で、なるべくきれいに仕上げます。</li>
-          <li>「なるべく圧縮」：画質を落としてでも、できるだけ小さくします。</li>
-        </ul>
-      </li>
-      <li><b>④ 圧縮する</b>を押します。設定を変えてやり直すときは「やり直す」を押します。</li>
-      <li><b>⑤ 共有・保存</b>：「Discord等に共有」でDiscordに送るか、写真に保存します。</li>
-    </ol>
-
-    <h3>知っておくと便利なこと</h3>
-    <ul>
-      <li>元の画質のまま20MBに収まるときは、圧縮せずにそのまま使えます（トリミングしたときは切り出すだけで、数秒で終わります）。</li>
-      <li>長すぎて20MBに収まらないときは、「720pなら1分56秒まで」のように収まる長さの目安を表示します。トリミングで短くするか、720pにしてください。</li>
-      <li>撮影場所などの位置情報は、書き出す動画には含めません。</li>
-      <li>「詳細設定」で、目標サイズ（Nitroなら50MBなど）、音声の有無などを変えられます。設定は次に開いたときも覚えています。</li>
-      <li>「詳細設定」の「現在の設定を記憶したURLを生成してコピー」で、今の設定で開くURLを作れます。ブックマークやショートカットに便利です。</li>
-      <li>ブラウザの共有メニューから「ホーム画面に追加」すると、アプリのように使えます（オフラインでも起動できます）。</li>
-    </ul>
-
-    <h3>iPhoneのショートカットで使う（準備中）</h3>
-    <p>写真アプリの共有メニューから、動画を保存してこのサイトを開くショートカットを用意する予定です。入手方法と使い方は、画像つきでここに追加します。</p>
-
-    <h3>うまくいかないとき</h3>
-    <ul>
-      <li>圧縮中は、画面を表示したままにしてください。ほかのアプリに切り替えると止まることがあります。</li>
-      <li>エラーが出たときは、いちばん下の「診断情報」をコピーして、X（@inkaroma0431）あるいはDiscordに送ってください。</li>
-    </ul>
   </div>
 </dialog>
 
