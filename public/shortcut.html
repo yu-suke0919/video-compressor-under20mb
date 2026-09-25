@@ -72,15 +72,6 @@
   p {
     margin: 0 0 8px;
   }
-  .lead {
-    color: var(--muted);
-  }
-  .box {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 14px;
-  }
   .get {
     display: block;
     width: 100%;
@@ -92,17 +83,9 @@
     text-align: center;
     text-decoration: none;
   }
-  .get[aria-disabled="true"] {
-    opacity: .45;
-    pointer-events: none;
-  }
-  .note {
-    font-size: 13px;
-    color: var(--muted);
-    margin: 8px 0 0;
-  }
   /* 操作の流れの画像（横にスワイプして見る）。次の画像の端を見せて、横に続いていることが分かるようにする */
   .hint {
+    margin-top: 12px !important;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -172,12 +155,25 @@
       animation: none;
     }
   }
-  ol {
-    margin: 0;
-    padding-left: 1.4em;
+  .points {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 0 0 0 .5em;
+    font-weight: 700;
   }
-  li + li {
-    margin-top: 6px;
+  .section-lead {
+    margin-top: 24px;
+  }
+  /* 1枚だけの画像（ショートカットの中身・詳細設定の画面） */
+  .shot {
+    display: block;
+    width: min(70vw, 320px);
+    height: auto;
+    margin: 8px auto 0;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface-2);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
   }
 </style>
 </head>
@@ -185,16 +181,14 @@
 <main>
   <a class="back" href="./">‹ アプリに戻る</a>
   <h1>iPhoneのショートカットを併用した使い方</h1>
-  <p class="lead">写真アプリなどの共有メニューからショートカットを実行すると、動画を保存して、このサイトを開くところまでを1回で行えます。</p>
+  <p>iPhoneのショートカットを併用することで、</p>
+  <ol class="points">
+    <li>① 動画を保存</li>
+    <li>② 圧縮サイトを開く</li>
+    <li>③ 圧縮オプションを指定する</li>
+  </ol>
+  <p>を1タップで行うことができます。</p>
 
-  <h2>1. ショートカットを入手する</h2>
-  <div class="box">
-    <!-- iCloud の共有リンクをもらったら、href に入れて aria-disabled を外す -->
-    <a class="get" href="#" aria-disabled="true" target="_blank" rel="noopener">ショートカットを入手（準備中）</a>
-    <p class="note">リンクを開くと「ショートカット」アプリが開きます。「ショートカットを追加」を押すと使えるようになります。</p>
-  </div>
-
-  <h2>2. 使い方の流れ</h2>
   <p class="hint" aria-hidden="true"><span class="arrow">‹</span><span>左右にスワイプ（全4枚）</span><span class="arrow">›</span></p>
   <div class="slides" tabindex="0" aria-label="使い方の流れの画像（横にスワイプで次の画像）">
     <figure><img src="./help/sc-1.webp" width="390" height="848" alt="写真アプリで動画を開き、「シェア」を押す"><figcaption>1 / 4</figcaption></figure>
@@ -203,15 +197,18 @@
     <figure><img src="./help/sc-4.webp" width="390" height="848" loading="lazy" alt="動画を選ぶ画面の左上に、ショートカットで保存された動画がある"><figcaption>4 / 4</figcaption></figure>
   </div>
 
-  <h2>3. 手順</h2>
-  <div class="box">
-    <ol>
-      <li>写真アプリ（またはSwitchアプリなど）で動画を開き、共有ボタンから、追加したショートカットを選びます。</li>
-      <li>動画が写真アプリに保存され、このサイトが開きます。</li>
-      <li>「動画を選択」を押して、いま保存した動画を選びます。</li>
-      <li>「圧縮する」を押し、終わったら「Discord等に共有・動画保存」で送ります。</li>
-    </ol>
-  </div>
+  <p class="section-lead">ショートカットは以下の2つの方法で作成できます。</p>
+
+  <h2>① iCloudにアップロードしたショートカットを取り込む</h2>
+  <p>下のリンクを押すと取り込めます。</p>
+  <a class="get" href="https://www.icloud.com/shortcuts/7386207ca3c140a4b3d74bafb5e07e1b" target="_blank" rel="noopener noreferrer">ショートカットを取り込む（iCloud）</a>
+
+  <h2>② ショートカットを写す</h2>
+  <p>アップロードしたショートカットと同一のものです。リンクを踏むのが不安であればこちらで。</p>
+  <img class="shot" src="./help/sc-shortcut.webp" width="390" height="848" loading="lazy" alt="ショートカットの中身：共有シートからメディアを受け取る（入力がない場合は続ける）／ショートカットの入力が任意の値の場合、ショートカットの入力を最近の項目に保存／If文の終了／https://maka-u20mb.pages.dev/ を開く">
+
+  <p class="section-lead">また、ショートカット内のURLにパラメータを付与することで、予め項目を選択した状態にすることができます。</p>
+  <img class="shot" src="./help/sc-url.webp" width="390" height="844" loading="lazy" alt="詳細設定の「現在の設定を記憶したURLを生成してコピー」を押すと、今の設定を入れたURLがコピーされる">
 </main>
 </body>
 </html>
