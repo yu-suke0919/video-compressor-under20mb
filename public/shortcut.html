@@ -9,8 +9,7 @@
 <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
 <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
-<!-- このページは説明書のカードから開いたときだけ読み込む（アプリの起動時には読まない）。
-     動画は再生ボタンを押すまで読み込まない（preload="none"） -->
+<!-- このページは説明書のカードから開いたときだけ読み込む（アプリの起動時には読まない） -->
 <style>
   :root {
     color-scheme: light dark;
@@ -102,24 +101,76 @@
     color: var(--muted);
     margin: 8px 0 0;
   }
-  video, .video-placeholder {
-    display: block;
-    width: 100%;
-    max-height: 70svh;
-    border-radius: 12px;
-    background: #000;
-  }
-  .video-placeholder {
-    aspect-ratio: 9 / 16;
-    max-width: 280px;
-    margin: 0 auto;
+  /* 操作の流れの画像（横にスワイプして見る）。次の画像の端を見せて、横に続いていることが分かるようにする */
+  .hint {
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 6px;
+    margin: 0 0 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .hint .arrow {
+    display: inline-block;
+    font-size: 18px;
+    line-height: 1;
+    animation: hintLeft 1s ease-in-out infinite alternate;
+  }
+  .hint .arrow + span + .arrow {
+    animation-name: hintRight;
+  }
+  @keyframes hintLeft {
+    to {
+      transform: translateX(-5px);
+    }
+  }
+  @keyframes hintRight {
+    to {
+      transform: translateX(5px);
+    }
+  }
+  .slides {
+    display: flex;
+    gap: 12px;
+    margin: 0 -16px;
+    padding: 4px 16px 8px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scroll-padding: 0 16px;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .slides::-webkit-scrollbar {
+    display: none;
+  }
+  .slides figure {
+    flex: 0 0 auto;
+    width: min(70vw, 34svh, 320px);
+    margin: 0;
+    scroll-snap-align: start;
+  }
+  .slides img {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 390 / 848;
+    border: 1px solid var(--line);
+    border-radius: 12px;
     background: var(--surface-2);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
+  }
+  .slides figcaption {
+    margin-top: 4px;
+    font-size: 12px;
     color: var(--muted);
-    font-size: 14px;
-    border: 2px dashed var(--line);
+    text-align: center;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .hint .arrow {
+      animation: none;
+    }
   }
   ol {
     margin: 0;
@@ -143,10 +194,14 @@
     <p class="note">リンクを開くと「ショートカット」アプリが開きます。「ショートカットを追加」を押すと使えるようになります。</p>
   </div>
 
-  <h2>2. 使い方の流れ（動画）</h2>
-  <!-- 動画をもらったら差し替える:
-       <video src="./help/shortcut.mp4" poster="./help/shortcut-poster.webp" controls playsinline preload="none"></video> -->
-  <div class="video-placeholder">操作の動画（準備中）</div>
+  <h2>2. 使い方の流れ</h2>
+  <p class="hint" aria-hidden="true"><span class="arrow">‹</span><span>左右にスワイプ（全4枚）</span><span class="arrow">›</span></p>
+  <div class="slides" tabindex="0" aria-label="使い方の流れの画像（横にスワイプで次の画像）">
+    <figure><img src="./help/sc-1.webp" width="390" height="848" alt="写真アプリで動画を開き、「シェア」を押す"><figcaption>1 / 4</figcaption></figure>
+    <figure><img src="./help/sc-2.webp" width="390" height="848" loading="lazy" alt="共有メニューの「動画を保存して圧縮サイトに移動」を押して、ショートカットを起動する"><figcaption>2 / 4</figcaption></figure>
+    <figure><img src="./help/sc-3.webp" width="390" height="848" loading="lazy" alt="ショートカットによって圧縮サイトに移るので、「動画を選択」を押す"><figcaption>3 / 4</figcaption></figure>
+    <figure><img src="./help/sc-4.webp" width="390" height="848" loading="lazy" alt="動画を選ぶ画面の左上に、ショートカットで保存された動画がある"><figcaption>4 / 4</figcaption></figure>
+  </div>
 
   <h2>3. 手順</h2>
   <div class="box">

@@ -8,7 +8,7 @@
  */
 'use strict';
 
-var CACHE = 'video-compressor-under20mb-v50';
+var CACHE = 'video-compressor-under20mb-v51';
 var NETWORK_TIMEOUT_MS = 3000;   // ネット優先のとき、ネットの応答をこれだけ待ってからキャッシュを使う
 
 // Cloudflare Pages のプレビュー（<ブランチ名>.<プロジェクト名>.pages.dev）と手元の確認環境だけネット優先にする
