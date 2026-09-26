@@ -42,7 +42,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27i';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27j';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -603,11 +603,19 @@
   function loadMetaCompat(videoEl, codec) {
     return new Promise(function (resolve, reject) {
       var done = false;
+      // 同じ <video> を使い回すので、終わったら待ち受けを外す（動画を選ぶたびに溜まらないように）
+      function cleanup() {
+        clearTimeout(timer);
+        videoEl.removeEventListener('loadedmetadata', ready);
+        videoEl.removeEventListener('durationchange', ready);
+        videoEl.removeEventListener('loadedmetadata', checkNoPicture);
+        videoEl.removeEventListener('error', fail);
+      }
       function ready() {
         if (done) return;
         if (!(isFinite(videoEl.duration) && videoEl.duration > 0) || !videoEl.videoWidth) return;
         done = true;
-        clearTimeout(timer);
+        cleanup();
         resolve({ duration: videoEl.duration, width: videoEl.videoWidth, height: videoEl.videoHeight });
       }
       var timer = setTimeout(fail, 20000);
@@ -616,12 +624,15 @@
       // 長さは読めたのに映像の大きさが0のまま（映像の形式に対応していない）なら、20秒待たずに諦める
       // （高速モードで調べている間に、プレビューの動画がすでに長さを読み終えていることもある）
       function checkNoPicture() {
-        if (!videoEl.videoWidth) setTimeout(function () { if (!videoEl.videoWidth) fail(); }, 3000);
+        if (!videoEl.videoWidth) setTimeout(function () { if (!done && !videoEl.videoWidth) fail(); }, 3000);
       }
       if (videoEl.readyState >= 1) checkNoPicture();
       else videoEl.addEventListener('loadedmetadata', checkNoPicture, { once: true });
       function fail() {
-        if (!done) { done = true; clearTimeout(timer); reject(new Error(loadFailMessage(codec))); }
+        if (done) return;
+        done = true;
+        cleanup();
+        reject(new Error(loadFailMessage(codec)));
       }
       videoEl.addEventListener('error', fail, { once: true });
       if (videoEl.error) fail();   // 待ち受ける前にすでに失敗していた場合
@@ -766,7 +777,7 @@
 
   // 書き出した実サイズから、目標に収まる映像ビットレートを計算し直す（無理なら null）
   function nextBitrate(plan, videoBytes, audioBytes) {
-    var allowed = plan.targetBytes * 0.97 - (audioBytes || 0);
+    var allowed = plan.targetBytes * SIZE_SAFETY - (audioBytes || 0);
     if (!(allowed > 0) || !(videoBytes > 0)) return null;
     var ratio = Math.max(0.3, Math.min(0.95, allowed / videoBytes));   // 最低5%は下げ、下げすぎない
     var next = Math.floor(plan.videoBitrate * ratio);
@@ -800,7 +811,7 @@
     syncResOption();
     var s = readSettings();
     els.sizeLabel.textContent = String(s.targetMB);
-    // 狙うサイズは丸めずに見せる（例: 50MB → 49.75 MB）
+    // 狙うサイズは丸めずに見せる（例: 50MB → 48.5 MB、33MB → 32.01 MB）
     els.capLabel.textContent = String(Math.round(s.targetBytes * SIZE_SAFETY / MB * 100) / 100) + ' MB';
     var hasFile = !!(state.file && state.meta);
     var locked = state.running || state.busy;
@@ -1254,10 +1265,12 @@
             for (var c = 0; c < channels; c++) {
               audioBuffer.copyFromChannel(data.subarray(c * len, (c + 1) * len), c, pos);
             }
-            encoder.encode(new AudioData({
+            var audioData = new AudioData({
               format: 'f32-planar', sampleRate: sampleRate, numberOfFrames: len, numberOfChannels: channels,
               timestamp: Math.round((pos - from) / sampleRate * 1e6), data: data
-            }));
+            });
+            // AudioData は渡したらすぐ解放する（長い動画で、使い終わった音声がメモリに溜まらないように）
+            try { encoder.encode(audioData); } finally { audioData.close(); }
             pos += len;
             if (++n % 64 === 0) {
               onProgress((pos - from) / total);
@@ -1268,7 +1281,10 @@
           encoder.flush().then(function () {
             encoder.close();
             resolve({ packets: packets, mb: COMPAT_AUDIO_CODEC.mb });
-          }, reject);
+          }, function (err) {
+            try { if (encoder.state !== 'closed') encoder.close(); } catch (e) { /* noop */ }
+            reject(err);
+          });
         } catch (e) {
           try { encoder.close(); } catch (e2) { /* noop */ }
           reject(e);
@@ -1296,7 +1312,9 @@
     videoEl.controls = false;
 
     return new Promise(function (resolve, reject) {
-      var frames = 0, lastKeyTs = -Infinity, lastTs = -1, finished = false;
+      // stopped … フレームの受け付けを終えた（終わりまで来た・失敗・キャンセル）
+      // settled … 結果（成功・失敗）を返した。末尾の書き出し（flush）で失敗しても、必ず失敗として返すために分けておく
+      var frames = 0, lastKeyTs = -Infinity, lastTs = -1, stopped = false, settled = false;
       var minDeltaUs = 1e6 / plan.outFps * 0.75;   // 取り込むフレームレートの上限（多少の揺らぎは許容）
       var encoder = new VideoEncoder({
         output: function (chunk, meta) { onPacket(M.EncodedPacket.fromEncodedChunk(chunk), meta); },
@@ -1314,15 +1332,16 @@
         videoEl.controls = true;
       }
       function fail(err) {
-        if (finished) return;
-        finished = true;
+        if (settled) return;
+        settled = true;
+        stopped = true;
         cleanup();
         try { if (encoder.state !== 'closed') encoder.close(); } catch (e) { /* noop */ }
         reject(err);
       }
       function finish() {
-        if (finished) return;
-        finished = true;
+        if (stopped) return;
+        stopped = true;
         cleanup();
         // 取りこぼした末尾を最後の1枚で埋めて、長さをトリミング範囲に合わせる
         try {
@@ -1333,12 +1352,14 @@
           }
         } catch (e) { /* 末尾の補完は失敗しても無視する */ }
         encoder.flush().then(function () {
+          if (settled) return;   // 書き出しの途中でキャンセル・失敗していた
+          settled = true;
           encoder.close();
           resolve();
-        }, fail);
+        }, fail);   // 末尾の書き出しで失敗したら、止まったままにせず失敗として返す
       }
       function onFrame(now, frameMeta) {
-        if (finished) return;
+        if (stopped) return;
         if (job.cancelled) return fail(new Error(CANCELLED));
         try {
           var t = (frameMeta && typeof frameMeta.mediaTime === 'number') ? frameMeta.mediaTime : videoEl.currentTime;
@@ -1368,7 +1389,7 @@
             // エンコードが追いつかないときは再生を止めて待つ
             videoEl.pause();
             drain(encoder, 2, job).then(function () {
-              if (finished) return;
+              if (stopped) return;
               Promise.resolve(videoEl.play()).catch(function () { /* noop */ });
               videoEl.requestVideoFrameCallback(onFrame);
             }, fail);
@@ -1380,7 +1401,7 @@
         }
       }
       var watchdog = setInterval(function () {
-        if (finished) return;
+        if (stopped) return;
         if (job.cancelled) return fail(new Error(CANCELLED));
         if (videoEl.ended || videoEl.currentTime >= end) finish();
       }, 400);
@@ -1389,7 +1410,7 @@
       // 開始位置へシークしてから再生する
       var seeked = false;
       function begin() {
-        if (seeked || finished) return;
+        if (seeked || stopped) return;
         seeked = true;
         Promise.resolve(videoEl.play()).then(function () {
           videoEl.requestVideoFrameCallback(onFrame);
@@ -1805,8 +1826,20 @@
   // ---------------------------------------------------------------- 画面スリープ防止
   function requestWakeLock() {
     if (!navigator.wakeLock || !navigator.wakeLock.request) return;
-    navigator.wakeLock.request('screen').then(function (lock) { state.wakeLock = lock; }).catch(function () { /* noop */ });
+    if (state.wakeLock) return;   // すでに取れている
+    navigator.wakeLock.request('screen').then(function (lock) {
+      // 取れる前に圧縮が終わっていたら、すぐ外す（残ると画面が暗くならないままになる）
+      if (!state.running) { try { lock.release(); } catch (e) { /* noop */ } return; }
+      if (state.wakeLock && state.wakeLock !== lock) { try { state.wakeLock.release(); } catch (e) { /* noop */ } }
+      state.wakeLock = lock;
+      // 別のアプリに切り替えたときなど、自動で外れたら忘れる（戻ったときに取り直せるように）
+      lock.addEventListener('release', function () { if (state.wakeLock === lock) state.wakeLock = null; });
+    }).catch(function () { /* noop */ });
   }
+  // 別のアプリに切り替えると、画面を暗くしない設定は自動で外れる。戻ったときに圧縮中（やり直し中を含む）なら取り直す
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && state.running) requestWakeLock();
+  });
   function releaseWakeLock() {
     if (state.wakeLock) {
       try { state.wakeLock.release(); } catch (e) { /* noop */ }
