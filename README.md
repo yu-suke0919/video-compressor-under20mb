@@ -326,6 +326,7 @@ npm run build:vendor
 
 同梱している [Mediabunny](https://mediabunny.dev/)（v1.59.0）は **MPL-2.0** です
 （[public/vendor/mediabunny.LICENSE.txt](public/vendor/mediabunny.LICENSE.txt)）。
+画面の下にも、Mediabunny を使っていることと、そのライセンス文へのリンクを表示しています。
 必要な部分を束ねただけで、ライブラリのコード自体は改変していません。元のソースコードは
 [GitHub](https://github.com/Vanilagy/mediabunny) と npm（`mediabunny@1.59.0`）で公開されています。
 公開サイトでも、同梱ファイルの先頭の注記と `public/vendor/README.txt` にライセンスとソースコードの入手先を書いています。
