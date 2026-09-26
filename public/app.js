@@ -42,7 +42,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27f';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27g';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -590,6 +590,7 @@
   // 読み込めなかったときの文言。codec は高速モードで分かった映像の形式（分からなければ undefined）
   var CODEC_NAMES = { hevc: 'HEVC/H.265', avc: 'H.264', vp9: 'VP9', vp8: 'VP8', av1: 'AV1' };
   // 端末によっては一時的に読み込めず、もう一度選ぶと読み込めることがあるので、まず選び直してもらう
+  var MSG_READ_FAIL = '動画をうまく受け取れませんでした（端末側で一時的に読み込めないことがあります）。「動画を選択」からもう一度同じ動画を選んでください。';
   var MSG_PICK_AGAIN = '一時的に読み込めないこともあるので、まずは「動画を選択」からもう一度選び直してください。';
   function loadFailMessage(codec) {
     if (!codec) return '動画を読み込めませんでした。' + MSG_PICK_AGAIN + '何度選んでも読み込めないときは、ファイルが壊れているか、対応していない形式です（MP4・MOVに対応しています）。';
@@ -1808,16 +1809,28 @@
   // ---------------------------------------------------------------- 動画の読み込み
   // Android では、ファイル選択で渡された動画が時間が経つと読めなくなることがある（TypeError: network error）。
   // 読めるうちに中身をブラウザ内に写し取り、以降はその写しを使う（大きすぎる動画は写さない）
+  // 選んだ直後に、端末が動画を一時的に読ませてくれないことがある（NotReadableError）。少し待って1回だけ読み直す
+  var READ_RETRY_MS = 800;
   function snapshotFile(file) {
     if (!/Android/i.test(navigator.userAgent || '') || file.size > SNAPSHOT_MAX_BYTES) return Promise.resolve(file);
     var t0 = Date.now();
-    return file.arrayBuffer().then(function (buf) {
-      log('動画をブラウザ内に写した（Android・' + ((Date.now() - t0) / 1000).toFixed(1) + '秒）');
-      return new File([buf], file.name || 'video.mp4', { type: file.type || 'video/mp4', lastModified: file.lastModified });
-    }, function (err) {
-      log('動画をブラウザ内に写せなかった ' + errText(err));
-      return file;
-    });
+    function read(retry) {
+      return file.arrayBuffer().then(function (buf) {
+        log('動画をブラウザ内に写した（Android・' + ((Date.now() - t0) / 1000).toFixed(1) + '秒' + (retry ? '・読み直しで成功' : '') + '）');
+        return new File([buf], file.name || 'video.mp4', { type: file.type || 'video/mp4', lastModified: file.lastModified });
+      }, function (err) {
+        log('動画をブラウザ内に写せなかった' + (retry ? '（読み直しも失敗）' : '') + ' ' + errText(err));
+        if (!retry && isReadError(err)) return sleep(READ_RETRY_MS).then(function () { return read(true); });
+        return file;
+      });
+    }
+    return read(false);
+  }
+  // 動画の中身ではなく、端末から受け取るところで失敗したか（Android で選んだ直後などに一時的に起きる）
+  function isReadError(err) {
+    if (!err) return false;
+    return err.name === 'NotReadableError' || err.name === 'NotFoundError' ||
+      (err.name === 'TypeError' && /network error/i.test(err.message || ''));
   }
 
   function onFileChosen(picked) {
@@ -1862,6 +1875,8 @@
     }).catch(function (err) {
       console.warn('高速モードで読み込めないため互換モードを使います:', err);
       log('高速モードで読み込めない ' + errText(err));
+      // 端末から受け取れなかったときは、形式の問題ではないので互換モードは試さず、選び直してもらう
+      if (isReadError(err)) throw new Error(MSG_READ_FAIL);
       var codec = err && err.codec;   // 中身は読めたが、映像の形式に対応していないとき
       if (!state.caps.compat) throw new Error(loadFailMessage(codec));
       state.engine = 'compat';
