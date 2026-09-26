@@ -98,6 +98,11 @@
   .example p {
     margin: 0;
   }
+  .example-note {
+    margin-top: 4px !important;
+    font-size: 12px;
+    color: var(--muted);
+  }
   .example-title {
     font-weight: 700;
     margin-bottom: 4px !important;
@@ -295,6 +300,11 @@
   <div class="example">
     <p class="example-title">Discordの上限ギリギリで高画質、さらに動画を選択した後、自動で圧縮を開始したいなら（1080p・20MB以内に圧縮・即圧縮）</p>
     <p><a class="url" href="./?res=1080&amp;auto=on">https://maka-u20mb.pages.dev/?res=1080&amp;auto=on</a></p>
+  </div>
+  <div class="example">
+    <p class="example-title">画質を保ちつつなるべく軽く、60fpsのまま・音声なしで、ファイル名を「日付_名前_ランダム英数字」にしたいなら（1080p・なるべく圧縮・fpsそのまま・音声なし・ファイル名指定）</p>
+    <p><a class="url" href="./?res=1080&amp;mode=quality&amp;fps=source&amp;audio=off&amp;name=date,text1,rand&amp;text1=%E3%81%82%E3%82%93%E3%81%9F%E3%81%AE%E5%90%8D%E5%89%8D">https://maka-u20mb.pages.dev/?res=1080&amp;mode=quality&amp;fps=source&amp;audio=off&amp;name=date,text1,rand&amp;text1=%E3%81%82%E3%82%93%E3%81%9F%E3%81%AE%E5%90%8D%E5%89%8D</a></p>
+    <p class="example-note">（<code>text1=</code> の後ろは「あんたの名前」を URL 用に変換した文字です。自分の名前などに変えて使ってください）</p>
   </div>
 </main>
 </body>
