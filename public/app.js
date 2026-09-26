@@ -258,15 +258,20 @@
     { key: 'orig', label: '元のファイル名' }
   ];
   var NAME_KEYS = NAME_PARTS.map(function (p) { return p.key; });
-  var NAME_TEXT_MAX = 30;
+  var NAME_TEXT_MAX = 10;    // 自由入力の文字数
+  var NAME_ORIG_MAX = 30;    // 元のファイル名の文字数
   function defaultNaming() {
     return { on: false, order: NAME_KEYS.slice(), enabled: ['date', 'text1', 'opt'], text: { text1: '', text2: '' } };
   }
   var naming = defaultNaming();
   // ファイル名に使えない記号・制御文字を外し、長さをそろえる
-  function cleanName(v) {
+  function cleanName(v, max) {
     var t = String(v || '').replace(/[\/\\:*?"<>|\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim().replace(/^\.+/, '');
-    return Array.from(t).slice(0, NAME_TEXT_MAX).join('').trim();   // 絵文字などを途中で切らないよう、文字単位で数える
+    return Array.from(t).slice(0, max || NAME_ORIG_MAX).join('').trim();   // 文字単位で数える
+  }
+  // 自由入力は文字（ひらがな・カタカナ・漢字・英字）と数字、「-」「_」だけにする（絵文字・記号・空白は外す）
+  function cleanText(v) {
+    return Array.from(String(v || '').replace(/[^\p{L}\p{N}_-]/gu, '')).slice(0, NAME_TEXT_MAX).join('');
   }
   // ファイル名は多くの端末で 255 バイトまでなので、拡張子のぶんを残して 200 バイトに収める
   var NAME_MAX_BYTES = 200;
@@ -308,7 +313,7 @@
     var ymd = d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate());
     if (key === 'date') return ymd;
     if (key === 'datetime') return ymd + pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds());
-    if (key === 'text1' || key === 'text2') return cleanName(naming.text[key]);
+    if (key === 'text1' || key === 'text2') return cleanText(naming.text[key]);
     if (key === 'rand') return ctx.rand;
     if (key === 'opt') {
       if (ctx.kind === 'original' || ctx.kind === 'copy') return '元のまま';
@@ -414,8 +419,8 @@
     var n = d.name;
     if (n && typeof n === 'object' && Array.isArray(n.enabled) && Array.isArray(n.order)) {
       setNaming(n.on === true, n.enabled, n.order);
-      naming.text.text1 = cleanName(n.text1);
-      naming.text.text2 = cleanName(n.text2);
+      naming.text.text1 = cleanText(n.text1);
+      naming.text.text2 = cleanText(n.text2);
     }
   }
   function resetSettings() {
@@ -477,7 +482,7 @@
         setNaming(true, keys, keys);
       }
     }
-    ['text1', 'text2'].forEach(function (k) { if (params.has(k)) naming.text[k] = cleanName(params.get(k)); });
+    ['text1', 'text2'].forEach(function (k) { if (params.has(k)) naming.text[k] = cleanText(params.get(k)); });
   }
 
   // ---------------------------------------------------------------- 対応判定
@@ -1908,7 +1913,8 @@
     nameChanged(false);
   });
   els.nameList.addEventListener('change', function (e) {
-    if (e.target.classList.contains('name-text')) { e.target.value = naming.text[e.target.closest('li').dataset.key] = cleanName(e.target.value); nameChanged(false); }
+    // 入力が終わったら、使えない文字を外した形に直す（入力中に直すと、日本語の変換が途切れるため）
+    if (e.target.classList.contains('name-text')) { e.target.value = naming.text[e.target.closest('li').dataset.key] = cleanText(e.target.value); nameChanged(false); }
   });
   els.nameList.addEventListener('click', function (e) {
     var btn = e.target.closest('button[data-move]');
@@ -1972,7 +1978,7 @@
       if (keys.length) {
         q.push('name=' + keys.join(','));
         ['text1', 'text2'].forEach(function (k) {
-          var t = cleanName(naming.text[k]);
+          var t = cleanText(naming.text[k]);
           if (keys.indexOf(k) >= 0 && t) q.push(k + '=' + encodeURIComponent(t));
         });
       }
