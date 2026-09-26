@@ -1008,7 +1008,7 @@
     <p>動画をDiscordに送れるサイズ（20MB以内）に小さくします。</p>
 
     <!-- 画像は説明書を開いたときに読み込む（data-src → src）。アプリの起動時には読まない -->
-    <p class="help-hint" id="helpHint" aria-hidden="true"><span class="hint-arrow">‹</span><span>左右にスワイプ（全11枚）</span><span class="hint-arrow">›</span></p>
+    <p class="help-hint" id="helpHint" aria-hidden="true"><span class="hint-arrow">‹</span><span>左右にスワイプ（全12枚）</span><span class="hint-arrow">›</span></p>
     <div class="help-dots" id="helpDots">
       <button type="button" aria-label="1枚目" aria-current="true"></button>
       <button type="button" aria-label="2枚目"></button>
@@ -1021,6 +1021,7 @@
       <button type="button" aria-label="9枚目"></button>
       <button type="button" aria-label="10枚目"></button>
       <button type="button" aria-label="11枚目"></button>
+      <button type="button" aria-label="12枚目"></button>
     </div>
     <div class="help-slides" id="helpSlides" tabindex="0" aria-label="手順の画像（横にスワイプで次の画像）">
       <img data-src="./help/help-1.webp" width="390" height="780" alt="①「動画を選択」をタップして動画を選ぶ">
@@ -1057,6 +1058,13 @@
         <p class="qa-answer"><b>入力</b>：MP4・MOV（iPhoneやSwitchの動画など）。ほかの形式も、ブラウザで再生できれば使えることがあります。</p>
         <p class="qa-answer"><b>出力</b>：MP4（映像H.264・音声AAC）。Discordやほとんどの端末でそのまま再生できます。</p>
         <p class="qa-answer qa-note">※「20MB以内に圧縮」のとき、最初から目標サイズ以下の動画は、元のファイルのまま渡します（位置情報付きの動画は除く）。</p>
+      </div>
+      <div class="help-card help-qa">
+        <span class="card-icon qa-icon" aria-hidden="true">Q</span>
+        <span class="card-title"><span>Q. iPhoneの</span><span>60fps・HDR動画は？</span></span>
+        <p class="qa-answer">A. 写真アプリから選ぶと、iPhoneが自動で変換するため、30fps・HDRなしになります。</p>
+        <p class="qa-answer"><b>60fpsのまま使うには</b>：写真アプリの共有から「"ファイル"に保存」し、「ファイルを選択」から選びます。詳細設定の「60fpsの動画は30fpsにする」もオフにします。</p>
+        <p class="qa-answer qa-note">※どちらの場合も、圧縮後はHDRなしになります。</p>
       </div>
       <div class="help-card help-qa">
         <span class="card-icon qa-icon" aria-hidden="true">Q</span>
