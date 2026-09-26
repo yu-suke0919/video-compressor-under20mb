@@ -184,6 +184,21 @@
   .caution p {
     margin: 0;
   }
+  .caution .perm {
+    margin: 10px 0 0;
+  }
+  .caution .perm figcaption {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .caution .perm img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 10px;
+    border: 1px solid rgba(0, 0, 0, .12);
+  }
   .caution p + p {
     margin-top: 4px;
   }
@@ -242,7 +257,15 @@
 
   <div class="caution">
     <p><b>初めて実行したとき</b></p>
-    <p>iPhoneから「写真への保存」と「このサイト（maka-u20mb.pages.dev）を開くこと」の許可を求められます。どちらも「常に許可」（または「許可」）を押してください。「1回だけ許可」を選ぶと、次に実行したときにもまた聞かれます。</p>
+    <p>iPhoneから2回、許可を求められます。どちらも許可してください。</p>
+    <figure class="perm">
+      <figcaption>1回目：写真への保存 →「常に許可」を押す（「1度だけ許可」だと、次からも毎回聞かれます）</figcaption>
+      <img src="./help/perm-1.webp" width="390" height="378" loading="lazy" alt="「動画を保存して圧縮サイトに移動」が写真アルバムに保存することを許可しますか？という確認で、「常に許可」を押す">
+    </figure>
+    <figure class="perm">
+      <figcaption>2回目：このサイトを開く →「許可」を押す</figcaption>
+      <img src="./help/perm-2.webp" width="390" height="378" loading="lazy" alt="「動画を保存して圧縮サイトに移動」が maka-u20mb.pages.dev を開くことを許可しますか？という確認で、「許可」を押す">
+    </figure>
   </div>
 
   <p class="section-lead">また、ショートカット内のURLにパラメータを付与することで、予め項目を選択した状態にすることができます。</p>
