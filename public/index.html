@@ -174,10 +174,6 @@
     font-size: 14px;
     line-height: 1.6;
   }
-  #helpDlg h3 {
-    font-size: 14px;
-    margin: 14px 0 4px;
-  }
   #helpDlg p {
     margin: 4px 0 0;
   }
@@ -307,6 +303,10 @@
     font-size: 14px;
     line-height: 1.6;
     text-align: left;
+  }
+  #helpDlg .help-qa .qa-note {
+    font-size: 12px;
+    color: var(--muted);
   }
   /* 初めて開いたときに、画像を少し横に揺らしてスワイプできることを知らせる */
   .help-slides.is-nudge > * {
@@ -927,15 +927,15 @@
   <div class="help-body">
     <p>動画をDiscordに送れるサイズ（20MB以内）に小さくします。</p>
 
-    <h3>基本の手順</h3>
     <!-- 画像は説明書を開いたときに読み込む（data-src → src）。アプリの起動時には読まない -->
-    <p class="help-hint" id="helpHint" aria-hidden="true"><span class="hint-arrow">‹</span><span>左右にスワイプ（全5枚）</span><span class="hint-arrow">›</span></p>
+    <p class="help-hint" id="helpHint" aria-hidden="true"><span class="hint-arrow">‹</span><span>左右にスワイプ（全6枚）</span><span class="hint-arrow">›</span></p>
     <div class="help-dots" id="helpDots">
       <button type="button" aria-label="1枚目" aria-current="true"></button>
       <button type="button" aria-label="2枚目"></button>
       <button type="button" aria-label="3枚目"></button>
       <button type="button" aria-label="4枚目"></button>
       <button type="button" aria-label="5枚目"></button>
+      <button type="button" aria-label="6枚目"></button>
     </div>
     <div class="help-slides" id="helpSlides" tabindex="0" aria-label="手順の画像（横にスワイプで次の画像）">
       <img data-src="./help/help-1.webp" width="390" height="780" alt="①「動画を選択」をタップして動画を選ぶ">
@@ -958,6 +958,13 @@
         <span class="card-title"><span>Q. 無料ですか？</span></span>
         <p class="qa-answer">A. はい、無料です。登録不要で、透かしや回数の制限もありません。動画はアップロードされず、この端末の中だけで処理します。</p>
         <p class="qa-answer">2026年9月現在、広告も付けていません。（利用者が多くなったら検討させてもらうよ！）</p>
+      </div>
+      <div class="help-card help-qa">
+        <span class="card-icon qa-icon" aria-hidden="true">Q</span>
+        <span class="card-title"><span>Q. どのスマホで</span><span>使えますか？</span></span>
+        <p class="qa-answer"><b>iPhone</b>：iOS 16.4以降（iPhone 8以降）。Safari以外のブラウザでも使えます。</p>
+        <p class="qa-answer"><b>Android</b>：Android 10以降の最新のChrome。Firefoxは非対応です。</p>
+        <p class="qa-answer qa-note">※iOS 26より前は、AAC以外の音声は消えます（iPhone・Switchの動画はAACなので問題ありません）。</p>
       </div>
     </div>
   </div>
