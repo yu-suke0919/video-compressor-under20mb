@@ -109,7 +109,6 @@ Nintendo Switchアプリで録画した動画をDiscordに投稿するまでの�
 | `fps` | `30` / `source` | `30`なら60fpsの動画を30fpsにする。`source`は元のフレームレートを保つ | `30` |
 | `audio` | `on` / `off` | 音声を残すか | `on` |
 | `auto` | `on` / `off` | 動画を選んだらすぐ圧縮を始めるか | `off` |
-
 | `name` | `date,text1,opt` など / `off` | ファイル名を指定する（使う項目を並べる順にカンマで区切る。`date`・`datetime`・`text1`・`text2`・`rand`・`opt`・`orig`）。`off` で指定しない | 指定しない |
 | `text1` / `text2` | 文字 | ファイル名の自由入力 / 自由入力2 | 空 |
 
