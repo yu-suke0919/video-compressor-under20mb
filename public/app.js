@@ -42,11 +42,14 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27b';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27c';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、互換モードに切り替える
+  var BG_STALL_MS = 6000;                // 別のアプリから戻ったあと、進捗がこれだけ止まっていたら、最初からやり直す
+  var MAX_BG_RETRIES = 3;                // 別のアプリに切り替えたために失敗したとき、やり直す回数の上限
+  var MSG_BG_RETRY = '別のアプリに切り替えたため、最初からやり直し中';
 
   // 出力に使うコーデック（優先順）。高速モードは Mediabunny の名前、互換モードは WebCodecs のコーデック文字列
   var FAST_VIDEO_CODECS = ['avc', 'hevc'];
@@ -147,6 +150,19 @@
       try { Promise.resolve(hook()).catch(function () { /* noop */ }); } catch (e) { /* noop */ }
     });
     job.abort(new Error(reason));
+  }
+  // 画面が表示されるまで待つ（キャンセルされたら失敗する）
+  function waitVisible(job) {
+    if (document.visibilityState === 'visible') return Promise.resolve();
+    return new Promise(function (resolve, reject) {
+      function onVisible() {
+        if (document.visibilityState !== 'visible') return;
+        document.removeEventListener('visibilitychange', onVisible);
+        resolve();
+      }
+      document.addEventListener('visibilitychange', onVisible);
+      job.aborted.catch(function (e) { document.removeEventListener('visibilitychange', onVisible); reject(e); });
+    });
   }
   function throwIfCancelled(job) { if (job && job.cancelled) throw new Error(CANCELLED); }
   function isCancel(job, err) { return !!(job && job.cancelled) || !!(err && err.message === CANCELLED); }
@@ -1443,6 +1459,7 @@
     requestWakeLock();
     showDiag(false);
     log('圧縮開始 ' + describePlan(plan) + ' engine=' + engine);
+    var bgRetries = 0;   // 別のアプリに切り替えたためにやり直した回数
 
     // prevSize: 前回の圧縮結果のサイズ（再圧縮のときに表示する）。note: 進捗の欄に出す補足
     function attempt(index, prevSize, note) {
@@ -1453,6 +1470,14 @@
       // 1回ぶんの処理（進まなくなったらこれだけ止めて、別の方式でやり直す）
       var aj = state.attemptJob = newJob();
       var t0 = Date.now(), lastVal = -1, idleMs = 0, lastTick = Date.now(), nextLog = 0;
+      // この処理の途中で別のアプリに切り替えたか（iPhone は裏に回ると動画の読み込み・書き出しを止めたり壊したりする）
+      var wentHidden = document.visibilityState !== 'visible';
+      var onVisibility = function () {
+        if (document.visibilityState !== 'visible') { wentHidden = true; return; }
+        idleMs = 0;   // 戻ってからの時間で、止まっているかを判断する
+      };
+      document.addEventListener('visibilitychange', onVisibility);
+      var endAttempt = function () { clearInterval(watchdog); document.removeEventListener('visibilitychange', onVisibility); };
       // キャンセル後に古い処理から届く進捗は無視する
       var onProgress = function (p) {
         if (job.cancelled || aj.cancelled) return;
@@ -1469,10 +1494,12 @@
         lastTick = now;
         if (document.visibilityState !== 'visible' || dt > 5000) return;
         idleMs += dt;
-        if (idleMs >= STALL_MS) {
+        // 別のアプリから戻ったあとは、止まっていたら早めに見切る（裏に回って処理が止まったままのことがある）
+        var limit = wentHidden ? BG_STALL_MS : STALL_MS;
+        if (idleMs >= limit) {
           clearInterval(watchdog);
-          log('進捗が' + Math.round(STALL_MS / 1000) + '秒止まったため中断（' + Math.round(Math.max(0, lastVal) * 100) + '%）');
-          showDiag(true);
+          log('進捗が' + Math.round(limit / 1000) + '秒止まったため中断（' + Math.round(Math.max(0, lastVal) * 100) + '%）');
+          if (!wentHidden) showDiag(true);   // 別のアプリに切り替えたせいなら、やり直すだけなので開かない
           stopJob(aj, STALLED);
         }
       }, 1000);
@@ -1482,7 +1509,7 @@
 
       // キャンセルしたら、ライブラリ側が止まりきるのを待たずにすぐ抜ける
       return Promise.race([task, job.aborted, aj.aborted]).then(function (res) {
-        clearInterval(watchdog);
+        endAttempt();
         throwIfCancelled(job);
         log('完了 ' + fmtBytes(res.blob.size) + '（' + ((Date.now() - t0) / 1000).toFixed(1) + '秒）');
         if (engine === 'copy') {
@@ -1519,10 +1546,18 @@
         res.attempts = index + 1;
         return res;
       }, function (err) {
-        clearInterval(watchdog);
+        endAttempt();
         if (job.cancelled || (!aj.cancelled && isCancel(null, err))) throw new Error(CANCELLED);
         var stalled = aj.cancelled;
         if (!stalled) log('失敗（' + engine + '）' + errText(err));
+        // 途中で別のアプリに切り替えていたら、失敗・停止は動画のせいではない（iPhone は裏に回ると読み込み・書き出しを壊す）。
+        // 別の方式に切り替えず、画面に戻るのを待ってから同じ方式で最初からやり直す
+        if (wentHidden && bgRetries < MAX_BG_RETRIES) {
+          bgRetries++;
+          log('別のアプリに切り替えていたため、画面に戻ってから最初からやり直し（' + engine + '・' + bgRetries + '回目）');
+          setProgress(0, MSG_BG_RETRY);
+          return waitVisible(job).then(function () { return attempt(index, prevSize, MSG_BG_RETRY); });
+        }
         // トリミングのみがうまくいかなければ、通常の圧縮でやり直す
         if (engine === 'copy') {
           engine = 'fast';
