@@ -6,7 +6,8 @@
  *   互換モード … 高速モードで扱えない動画向け。<video> を再生しながら requestVideoFrameCallback で
  *                フレームを取り出し、WebCodecs でエンコードして Mediabunny で mp4 にまとめる
  *
- * 圧縮の方針（解像度は選んだ720p/1080pで固定し、ビットレートだけで容量を調整する）:
+ * 圧縮の方針（解像度は選んだもの（720p / 1080p / 元の解像度）で固定し、ビットレートだけで容量を調整する）:
+ *   元の解像度 … 720p・1080p より大きい動画（スマホの画面録画など）のときだけ選べる。解像度を変えずに圧縮する
  *   なるべく圧縮 … 解像度ごとの「下限ビットレート」で圧縮する
  *   ◯MB以内に圧縮 … 下限を下回らない範囲で、目標サイズに収まるなるべく高いビットレートにする。
  *                   超えたら実サイズからビットレートを直し、最大2回まで再圧縮
@@ -31,7 +32,8 @@
   var DEFAULT_MIN_KBPS = { '720': 1200, '1080': 2700 };
   var MIN_KBPS_LIMITS = [100, 50000];
   var MSG_UNREACHABLE = '目標サイズに圧縮できません。解像度を下げるか、詳細設定にて下限ビットレートを引き下げてください。';
-  var MSG_OVER_DISCORD = '20MBを超える為、Discord(無料垢)では送信できません。';
+  var MSG_OVER_DISCORD = '20MBを超えるため、Discordの無料アカウントでは送信できません。';
+  var MSG_HALF_FPS_HINT = '詳細設定の「60fpsの動画は30fpsにする」をオンにすると収まりやすくなります。';
   var MSG_LOCATION = '位置情報が含まれている動画です。この情報はアップロードされず、圧縮後の動画には位置情報を含めません。';
   var SETTINGS_KEY = 'video-compressor-under20mb:settings';   // 画面で変えた設定を覚えておく場所（この端末のブラウザ内だけ）
   var DEFAULT_FPS = 30;
@@ -40,7 +42,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-26c';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27a';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -110,6 +112,7 @@
     return (n / MB).toFixed(1) + ' MB';
   }
   function fmtDuration(sec) {
+    if (sec > 0 && sec < 0.95) return sec.toFixed(1) + '秒';   // 1秒未満（0.3秒など）が「0秒」にならないようにする
     sec = Math.round(sec);
     var m = Math.floor(sec / 60), s = sec % 60;
     if (m === 0) return s + '秒';
@@ -212,7 +215,8 @@
   }
   function resValue(v) { return v === '1080' || v === 'source' ? v : '720'; }
 
-  // 「元の解像度」は、720p・1080p 以外の動画（スマホの画面録画など）のときだけ出す。
+  // 「元の解像度」は、720p・1080p 以外で720pより大きい動画（スマホの画面録画など）のときだけ出す
+  // （720p以下の動画は、どれを選んでも元の大きさのままなので出さない）。
   // 選んだことは覚えておき、出せない動画のあいだは 720p・1080p のどちらか（選択中なら 1080p）にしておく（次に出せる動画を選んだら戻す）
   var wantSource = false;
   function isStandardRes(meta) {
@@ -220,7 +224,7 @@
     return Math.abs(shortSide - 720) <= 8 || Math.abs(shortSide - 1080) <= 8;
   }
   function syncResOption() {
-    var show = !!(state.meta && !isStandardRes(state.meta));
+    var show = !!(state.meta && !isStandardRes(state.meta) && Math.min(state.meta.width, state.meta.height) > 720 + 8);
     els.resSeg.classList.toggle('is-three', show);
     if (show && wantSource) els.resSource.checked = true;
     else if (!show && els.resSource.checked) els.res1080.checked = true;
@@ -565,8 +569,16 @@
     });
   }
 
+  // 読み込めなかったときの文言。codec は高速モードで分かった映像の形式（分からなければ undefined）
+  var CODEC_NAMES = { hevc: 'HEVC/H.265', avc: 'H.264', vp9: 'VP9', vp8: 'VP8', av1: 'AV1' };
+  function loadFailMessage(codec) {
+    if (!codec) return '動画を読み込めませんでした。ファイルが壊れているか、対応していない形式です（MP4・MOVに対応しています）。';
+    return 'この端末は、この動画の映像形式（' + (CODEC_NAMES[codec] || codec) + '）の読み込みに対応していません。' +
+      (codec === 'hevc' ? '別の端末で試すか、iPhoneで撮影するときは「設定」→「カメラ」→「フォーマット」を「互換性優先」にしてください。' : '別の端末でお試しください。');
+  }
+
   // 互換モード: <video> で長さと解像度を読み、冒頭を少し再生してフレームレートを測る
-  function loadMetaCompat(videoEl) {
+  function loadMetaCompat(videoEl, codec) {
     return new Promise(function (resolve, reject) {
       var done = false;
       function ready() {
@@ -576,13 +588,15 @@
         clearTimeout(timer);
         resolve({ duration: videoEl.duration, width: videoEl.videoWidth, height: videoEl.videoHeight });
       }
-      var timer = setTimeout(function () {
-        if (!done) { done = true; reject(new Error('この動画を読み込めませんでした。mp4またはmovをお試しください。')); }
-      }, 20000);
+      var timer = setTimeout(fail, 20000);
       videoEl.addEventListener('loadedmetadata', ready);
       videoEl.addEventListener('durationchange', ready);
+      // 長さは読めたのに映像の大きさが0のまま（映像の形式に対応していない）なら、20秒待たずに諦める
+      videoEl.addEventListener('loadedmetadata', function () {
+        if (!videoEl.videoWidth) setTimeout(function () { if (!videoEl.videoWidth) fail(); }, 3000);
+      }, { once: true });
       function fail() {
-        if (!done) { done = true; clearTimeout(timer); reject(new Error('この動画を読み込めませんでした。mp4またはmovをお試しください。')); }
+        if (!done) { done = true; clearTimeout(timer); reject(new Error(loadFailMessage(codec))); }
       }
       videoEl.addEventListener('error', fail, { once: true });
       if (videoEl.error) fail();   // 待ち受ける前にすでに失敗していた場合
@@ -799,10 +813,14 @@
       warns.push(MSG_UNREACHABLE);
       // 今の解像度と下限ビットレートで、目標サイズに収まる長さの目安
       var fitSec = Math.floor(plan.targetBytes * 8 * SIZE_SAFETY / (plan.floorBitrate + plan.audioBitrate));
-      warns.push(resLabel(plan) + 'なら' + fmtDuration(fitSec) + 'までなら' + plan.targetMB + 'MBに収められます。');
+      warns.push(resLabel(plan) + 'なら' + fmtDuration(fitSec) + 'まで' + plan.targetMB + 'MBに収められます。');
     }
+    if (plan.audio.note) warns.push(plan.audio.note);   // 音声を残せないとき（圧縮する前に知らせる）
     if (state.meta.hasLocation) warns.push(MSG_LOCATION);
-    if (trimEst ? trimEst > DISCORD_FREE_BYTES : plan.overDiscord) warns.push(MSG_OVER_DISCORD);
+    // 目標サイズに収まらないと出しているときは、同じ内容になる20MB超えの注意は重ねない
+    if (!(plan.mode === 'size' && plan.unreachable && !trimEst) && (trimEst ? trimEst > DISCORD_FREE_BYTES : plan.overDiscord)) {
+      warns.push(MSG_OVER_DISCORD);
+    }
     setAlert(els.planWarn, warns);
 
     // 目標サイズを超えるのが分かっているときは実行させない（処理中はキャンセル、圧縮後はやり直すボタンなので有効のまま）
@@ -1648,7 +1666,11 @@
       (plan.audio.mode === 'none' && readSettings().audio ? '・音声なし' : '') + (engine === 'compat' ? '・互換モード' : '');
 
     var warns = [];
-    if (plan.mode === 'size' && size >= plan.targetBytes) warns.push(MSG_UNREACHABLE);
+    if (plan.mode === 'size' && size >= plan.targetBytes) {
+      warns.push(MSG_UNREACHABLE);
+      // 60fpsのままだと、エンコーダが下限ビットレートまで下げきれず目標を超えることがある
+      if (plan.outFps > 40 && !plan.halfFps) warns.push(MSG_HALF_FPS_HINT);
+    }
     if (size > DISCORD_FREE_BYTES) warns.push(MSG_OVER_DISCORD);
     setAlert(els.outWarn, warns);
   }
@@ -1754,18 +1776,17 @@
       log('解析（高速） ' + meta.width + 'x' + meta.height + ' ' + meta.fps + 'fps ' + (meta.duration || 0).toFixed(1) + 's codec=' +
         (meta.codecString || meta.videoCodec) + ' hdr=' + meta.hdr + ' decode=' + meta.canDecode +
         ' audio=' + (meta.audio ? meta.audio.codec + '/' + Math.round(meta.audio.bitrate / 1000) + 'kbps' : 'なし'));
-      if (!meta.canDecode) throw new Error('decode');
+      if (!meta.canDecode) { var e = new Error('decode'); e.codec = meta.videoCodec; throw e; }
       state.engine = 'fast';
       return meta;
     }).catch(function (err) {
       console.warn('高速モードで読み込めないため互換モードを使います:', err);
       log('高速モードで読み込めない ' + errText(err));
-      if (!state.caps.compat) {
-        throw new Error('この動画は読み込めませんでした（この端末では対応していない形式の可能性があります）。');
-      }
+      var codec = err && err.codec;   // 中身は読めたが、映像の形式に対応していないとき
+      if (!state.caps.compat) throw new Error(loadFailMessage(codec));
       state.engine = 'compat';
       els.srcInfo.textContent = '解析中…';
-      return loadMetaCompat(els.srcVideo);
+      return loadMetaCompat(els.srcVideo, codec);
     }).then(function (meta) {
       if (state.file !== file) return;
       state.meta = meta;
@@ -1787,7 +1808,7 @@
     });
   }
 
-  // 「動画をアップロードしたら即圧縮」がオンなら、選んだ直後に圧縮を始める。
+  // 「動画を選んだらすぐ圧縮」がオンなら、選んだ直後に圧縮を始める。
   // 目標サイズに収まらない（ボタンが無効）ときや、元のままで目標以下（圧縮不要）のときは始めない
   function autoRunIfEnabled(file) {
     if (!els.autoRun.checked || state.file !== file || !state.meta || state.running) return;
