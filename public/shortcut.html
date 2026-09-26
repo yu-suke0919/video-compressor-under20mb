@@ -65,9 +65,18 @@
     line-height: 1.4;
     margin: 0 0 8px;
   }
+  /* 大見出し（1〜4）は左に色の線を付け、区切りをはっきりさせる。小見出し（①②）は控えめに */
   h2 {
-    font-size: 16px;
-    margin: 24px 0 8px;
+    font-size: 18px;
+    line-height: 1.4;
+    margin: 36px 0 12px;
+    padding: 2px 0 2px 10px;
+    border-left: 4px solid var(--accent);
+  }
+  h3 {
+    font-size: 15px;
+    line-height: 1.5;
+    margin: 20px 0 6px;
   }
   p {
     margin: 0 0 8px;
@@ -95,7 +104,7 @@
   }
   /* 操作の流れの画像（横にスワイプして見る）。次の画像の端を見せて、横に続いていることが分かるようにする */
   .hint {
-    margin-top: 12px !important;
+    margin-top: 0 !important;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -173,7 +182,7 @@
   }
   /* 初めて実行したときの注意 */
   .caution {
-    margin-top: 16px;
+    margin-top: 0;
     padding: 10px 12px;
     border-radius: 12px;
     background: #fff4e0;
@@ -237,6 +246,7 @@
   </ol>
   <p>を1タップで行うことができます。</p>
 
+  <h2>1. 使い方の流れ</h2>
   <p class="hint" aria-hidden="true"><span class="arrow">‹</span><span>左右にスワイプ（全4枚）</span><span class="arrow">›</span></p>
   <div class="slides" tabindex="0" aria-label="使い方の流れの画像（横にスワイプで次の画像）">
     <figure><img src="./help/sc-1.webp" width="390" height="848" alt="写真アプリで動画を開き、「シェア」を押す"><figcaption>1 / 4</figcaption></figure>
@@ -245,18 +255,19 @@
     <figure><img src="./help/sc-4.webp" width="390" height="848" loading="lazy" alt="動画を選ぶ画面の左上に、ショートカットで保存された動画がある"><figcaption>4 / 4</figcaption></figure>
   </div>
 
-  <p class="section-lead">ショートカットは以下の2つの方法で作成できます。</p>
+  <h2>2. ショートカットを入手する</h2>
+  <p>ショートカットは以下の2つの方法で作成できます。</p>
 
-  <h2>① iCloudにアップロードしたショートカットを取り込む</h2>
+  <h3>① iCloudにアップロードしたショートカットを取り込む</h3>
   <p>下のリンクを押すと取り込めます。</p>
   <p><a class="url" href="https://www.icloud.com/shortcuts/7386207ca3c140a4b3d74bafb5e07e1b" target="_blank" rel="noopener noreferrer">https://www.icloud.com/shortcuts/7386207ca3c140a4b3d74bafb5e07e1b</a></p>
 
-  <h2>② ショートカットを写す</h2>
+  <h3>② ショートカットを写す</h3>
   <p>アップロードしたショートカットと同一のものです。リンクを踏むのが不安であればこちらで。</p>
   <img class="shot" src="./help/sc-shortcut.webp" width="390" height="848" loading="lazy" alt="ショートカットの中身：共有シートからメディアを受け取る（入力がない場合は続ける）／ショートカットの入力が任意の値の場合、ショートカットの入力を最近の項目に保存／If文の終了／https://maka-u20mb.pages.dev/ を開く">
 
+  <h2>3. 初めて実行したとき</h2>
   <div class="caution">
-    <p><b>初めて実行したとき</b></p>
     <p>iPhoneから2回、許可を求められます。どちらも許可してください。</p>
     <figure class="perm">
       <figcaption>1回目：写真への保存 →「常に許可」を押す（「1度だけ許可」だと、次からも毎回聞かれます）</figcaption>
@@ -268,7 +279,8 @@
     </figure>
   </div>
 
-  <p class="section-lead">また、ショートカット内のURLにパラメータを付与することで、予め項目を選択した状態にすることができます。</p>
+  <h2>4. 設定を指定して開く（応用）</h2>
+  <p>また、ショートカット内のURLにパラメータを付与することで、予め項目を選択した状態にすることができます。</p>
   <img class="shot" src="./help/sc-url.webp" width="390" height="844" loading="lazy" alt="詳細設定の「現在の設定を記憶したURLを生成してコピー」を押すと、今の設定を入れたURLがコピーされる">
 
   <p class="section-lead">例えば、ショートカットの「URLを開く」に次のURLを入れます。URLに入っていない項目は初期値（720p・20MB以内に圧縮など）になり、前回の設定は使われません。</p>
