@@ -42,7 +42,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27h';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27i';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -614,9 +614,12 @@
       videoEl.addEventListener('loadedmetadata', ready);
       videoEl.addEventListener('durationchange', ready);
       // 長さは読めたのに映像の大きさが0のまま（映像の形式に対応していない）なら、20秒待たずに諦める
-      videoEl.addEventListener('loadedmetadata', function () {
+      // （高速モードで調べている間に、プレビューの動画がすでに長さを読み終えていることもある）
+      function checkNoPicture() {
         if (!videoEl.videoWidth) setTimeout(function () { if (!videoEl.videoWidth) fail(); }, 3000);
-      }, { once: true });
+      }
+      if (videoEl.readyState >= 1) checkNoPicture();
+      else videoEl.addEventListener('loadedmetadata', checkNoPicture, { once: true });
       function fail() {
         if (!done) { done = true; clearTimeout(timer); reject(new Error(loadFailMessage(codec))); }
       }
@@ -1895,6 +1898,7 @@
       els.srcInfo.textContent = meta.width + '×' + meta.height + '・' +
         (meta.fps ? fmtFps(meta.fps) : 'fps不明') + '・' + fmtDuration(meta.duration) + '・' + fmtBytes(file.size);
     }).catch(function (err) {
+      if (state.file !== file) return;   // 読み込んでいる間に別の動画が選ばれていたら、その動画の表示を崩さない
       log('読み込みに失敗 ' + errText(err));
       showDiag(true);
       state.file = null;
