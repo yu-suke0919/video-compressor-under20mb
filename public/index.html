@@ -456,6 +456,19 @@
   .seg-input:nth-of-type(2):checked ~ .seg-thumb {
     transform: translateX(100%);
   }
+  /* 3つ目の選択肢（元の解像度）は、出すときだけ3列にする */
+  .seg:not(.is-three) .seg-opt-source {
+    display: none;
+  }
+  .seg.is-three {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+  .seg.is-three .seg-thumb {
+    width: calc(33.333% - 2px);
+  }
+  .seg-input:nth-of-type(3):checked ~ .seg-thumb {
+    transform: translateX(200%);
+  }
   .seg-input:checked + .seg-opt {
     color: var(--on-accent);
   }
@@ -825,11 +838,14 @@
 
   <!-- 3. 二択のセグメント切り替え（上段: 解像度、下段: 圧縮方法） -->
   <div class="segs">
-    <div class="seg" role="radiogroup" aria-label="解像度">
+    <div class="seg" id="resSeg" role="radiogroup" aria-label="解像度">
       <input type="radio" class="seg-input" name="res" id="res720" value="720" checked>
       <label class="seg-opt" for="res720">720p</label>
       <input type="radio" class="seg-input" name="res" id="res1080" value="1080">
       <label class="seg-opt" for="res1080">1080p</label>
+      <!-- 720p・1080p 以外の動画（スマホの画面録画など）のときだけ出す -->
+      <input type="radio" class="seg-input" name="res" id="resSource" value="source">
+      <label class="seg-opt seg-opt-source" for="resSource">元の解像度</label>
       <span class="seg-thumb" aria-hidden="true"></span>
     </div>
     <div class="seg" role="radiogroup" aria-label="圧縮方法">
@@ -858,7 +874,7 @@
       <label for="minRate1080">下限ビットレート（1080p）</label>
       <span><input id="minRate1080" type="number" inputmode="numeric" min="100" max="50000" step="100" value="2700"> kbps</span>
     </div>
-    <p class="hint">「なるべく圧縮」はこの値で圧縮します。「MB以内に圧縮」は、この値を下回らない範囲で目標サイズに収まるなるべく高いビットレートにします。</p>
+    <p class="hint">「なるべく圧縮」はこの値で圧縮します。「MB以内に圧縮」は、この値を下回らない範囲で目標サイズに収まるなるべく高いビットレートにします。「元の解像度」のときは、720pの値を画素数に比例させて使います。</p>
     <div class="check">
       <input type="checkbox" id="halfFps" checked>
       <label for="halfFps">60fpsの動画は30fpsにする（容量を抑えられます）</label>

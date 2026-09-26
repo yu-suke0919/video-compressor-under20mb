@@ -40,7 +40,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-26a';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-26b';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -54,6 +54,7 @@
     { codec: 'avc1.42E028', mb: 'avc', extra: { avc: { format: 'avc' } } },
     { codec: 'avc1.640028', mb: 'avc', extra: { avc: { format: 'avc' } } },
     { codec: 'avc1.42E01F', mb: 'avc', extra: { avc: { format: 'avc' } } },
+    { codec: 'avc1.640033', mb: 'avc', extra: { avc: { format: 'avc' } } },   // 1080pより大きい「元の解像度」用（レベル5.1）
     { codec: 'hvc1.1.6.L123.B0', mb: 'hevc', extra: { hevc: { format: 'hevc' } } }
   ];
   var COMPAT_AUDIO_CODEC = { codec: 'mp4a.40.2', mb: 'aac' };
@@ -68,7 +69,7 @@
     srcVideo: $('srcVideo'), srcInfo: $('srcInfo'), srcBox: $('srcBox'), outBox: $('outBox'),
     trimStart: $('trimStart'), trimEnd: $('trimEnd'), trimFill: $('trimFill'), trimLabel: $('trimLabel'),
     trimTicks: $('trimTicks'), trimSeek: $('trimSeek'),
-    res720: $('res720'), res1080: $('res1080'), modeQuality: $('modeQuality'), modeSize: $('modeSize'),
+    res720: $('res720'), res1080: $('res1080'), resSource: $('resSource'), resSeg: $('resSeg'), modeQuality: $('modeQuality'), modeSize: $('modeSize'),
     sizeLabel: $('sizeLabel'), planInfo: $('planInfo'), planWarn: $('planWarn'),
     targetSize: $('targetSize'), halfFps: $('halfFps'), audioOn: $('audioOn'), audioLabel: $('audioLabel'),
     minRate720: $('minRate720'), minRate1080: $('minRate1080'), autoRun: $('autoRun'), capLabel: $('capLabel'),
@@ -208,12 +209,27 @@
     if (!isFinite(v)) v = fallback;
     return Math.min(MIN_KBPS_LIMITS[1], Math.max(MIN_KBPS_LIMITS[0], Math.round(v)));
   }
+  function resValue(v) { return v === '1080' || v === 'source' ? v : '720'; }
+
+  // 「元の解像度」は、720p・1080p 以外の動画（スマホの画面録画など）のときだけ出す。
+  // 選んだことは覚えておき、出せない動画のあいだは 720p・1080p のどちらか（選択中なら 1080p）にしておく（次に出せる動画を選んだら戻す）
+  var wantSource = false;
+  function isStandardRes(meta) {
+    var shortSide = Math.min(meta.width, meta.height);
+    return Math.abs(shortSide - 720) <= 8 || Math.abs(shortSide - 1080) <= 8;
+  }
+  function syncResOption() {
+    var show = !!(state.meta && !isStandardRes(state.meta));
+    els.resSeg.classList.toggle('is-three', show);
+    if (show && wantSource) els.resSource.checked = true;
+    else if (!show && els.resSource.checked) els.res1080.checked = true;
+  }
   function readSettings() {
     var mb = parseFloat(els.targetSize.value);
     if (!isFinite(mb) || mb < MIN_TARGET_MB) mb = DEFAULT_TARGET_MB;
     if (mb > MAX_TARGET_MB) mb = MAX_TARGET_MB;
     return {
-      res: radioValue('res', '720') === '1080' ? '1080' : '720',
+      res: resValue(radioValue('res', '720')),
       mode: radioValue('mode', 'size') === 'quality' ? 'quality' : 'size',
       targetMB: mb,
       // 上限（この値「未満」に収める）。見積もりはこの97%を狙う
@@ -232,12 +248,12 @@
   // ---------------------------------------------------------------- 設定を覚える
   // 画面で設定を変えたらこの端末のブラウザ内に保存し、次に開いたときに戻す。
   // URL パラメータで開いたときの値は保存しない（画面で変えたときだけ保存する）
-  var SAVED_FIELDS = ['res720', 'res1080', 'modeQuality', 'modeSize', 'targetSize', 'minRate720', 'minRate1080',
+  var SAVED_FIELDS = ['res720', 'res1080', 'resSource', 'modeQuality', 'modeSize', 'targetSize', 'minRate720', 'minRate1080',
     'halfFps', 'autoRun', 'audioOn'];
   function saveSettings() {
     var s = readSettings();
     var data = {
-      res: s.res, mode: s.mode, target: s.targetMB, min720: s.minBitrate['720'] / 1000, min1080: s.minBitrate['1080'] / 1000,
+      res: wantSource ? 'source' : s.res, mode: s.mode, target: s.targetMB, min720: s.minBitrate['720'] / 1000, min1080: s.minBitrate['1080'] / 1000,
       halfFps: s.halfFps, auto: s.autoRun, audio: s.audio
     };
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(data)); } catch (e) { /* 保存できない環境では覚えない */ }
@@ -247,6 +263,7 @@
     try { d = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null'); } catch (e) { d = null; }
     if (!d || typeof d !== 'object') return;
     if (d.res === '1080') els.res1080.checked = true; else if (d.res === '720') els.res720.checked = true;
+    wantSource = d.res === 'source';
     if (d.mode === 'quality') els.modeQuality.checked = true; else if (d.mode === 'size') els.modeSize.checked = true;
     if (isFinite(d.target) && d.target >= MIN_TARGET_MB && d.target <= MAX_TARGET_MB) els.targetSize.value = String(d.target);
     [['min720', els.minRate720], ['min1080', els.minRate1080]].forEach(function (pair) {
@@ -260,6 +277,7 @@
   function resetSettings() {
     try { localStorage.removeItem(SETTINGS_KEY); } catch (e) { /* noop */ }
     els.res720.checked = true;
+    wantSource = false;
     els.modeSize.checked = true;
     els.targetSize.value = String(DEFAULT_TARGET_MB);
     els.minRate720.value = String(DEFAULT_MIN_KBPS['720']);
@@ -278,15 +296,16 @@
     } catch (e) { return false; }
   }
   // ショートカットなどから URL で初期値を渡せる（詳細設定の項目も含む）
-  //   res=720|1080  mode=size|quality  target=MB  fps=30|source  audio=on|off  min720=kbps  min1080=kbps  auto=on|off
+  //   res=720|1080|source  mode=size|quality  target=MB  fps=30|source  audio=on|off  min720=kbps  min1080=kbps  auto=on|off
   function applyUrlParams() {
     var params;
     try { params = new URLSearchParams(window.location.search); } catch (e) { return; }
     var t = parseFloat(params.get('target'));
     if (isFinite(t) && t >= MIN_TARGET_MB && t <= MAX_TARGET_MB) els.targetSize.value = String(t);
     var r = (params.get('res') || '').toLowerCase().replace('p', '');
-    if (r === '1080') els.res1080.checked = true;
-    else if (r === '720') els.res720.checked = true;
+    if (r === '1080') { els.res1080.checked = true; wantSource = false; }
+    else if (r === '720') { els.res720.checked = true; wantSource = false; }
+    else if (r === 'source' || r === 'original') wantSource = true;
     var m = (params.get('mode') || '').toLowerCase();
     if (m === 'quality' || m === 'max' || m === 'best') els.modeQuality.checked = true;
     else if (m === 'size' || m === 'target') els.modeSize.checked = true;
@@ -483,6 +502,7 @@
 
   // ---------------------------------------------------------------- 圧縮プラン
   function resolutionCap(meta, res) {
+    if (res === 'source') return 1;   // 元の解像度のまま
     var limit = res === '1080' ? 1080 : 720;
     var shortSide = Math.min(meta.width, meta.height);
     return shortSide > limit ? limit / shortSide : 1;   // 拡大はしない
@@ -501,7 +521,10 @@
     var scale = resolutionCap(meta, settings.res);
     var width = even(meta.width * scale);
     var height = even(meta.height * scale);
-    var floorBps = settings.minBitrate[settings.res];
+    // 元の解像度の下限は、720p の下限を画素数に比例させる（1080p の既定値 2700kbps も同じ考え方）
+    var floorBps = settings.res === 'source'
+      ? Math.max(MIN_KBPS_LIMITS[0] * 1000, Math.round(settings.minBitrate['720'] * width * height / (1280 * 720)))
+      : settings.minBitrate[settings.res];
     var videoBps, unreachable = false;
 
     if (settings.mode === 'quality') {
@@ -570,6 +593,7 @@
 
   function refresh() {
     updateMediaLayout();
+    syncResOption();
     var s = readSettings();
     els.sizeLabel.textContent = String(s.targetMB);
     // 狙うサイズは丸めずに見せる（例: 50MB → 49.75 MB）
@@ -582,7 +606,7 @@
     [els.trimStart, els.trimEnd].forEach(function (el) { el.disabled = !hasFile || locked || done; });
     // シークバーは圧縮後も元動画の確認に使えるようにする（圧縮中だけ止める）
     els.trimSeek.disabled = !hasFile || locked;
-    [els.res720, els.res1080, els.modeQuality, els.modeSize, els.targetSize, els.halfFps, els.audioOn,
+    [els.res720, els.res1080, els.resSource, els.modeQuality, els.modeSize, els.targetSize, els.halfFps, els.audioOn,
       els.minRate720, els.minRate1080, els.autoRun].forEach(function (el) { el.disabled = state.running || done; });
     els.repickBtn.disabled = locked;
     els.runBtn.textContent = state.running ? 'キャンセル' : done ? 'やり直す' : '圧縮する';
@@ -609,7 +633,7 @@
       warns.push(MSG_UNREACHABLE);
       // 今の解像度と下限ビットレートで、目標サイズに収まる長さの目安
       var fitSec = Math.floor(plan.targetBytes * 8 * SIZE_SAFETY / (plan.floorBitrate + plan.audioBitrate));
-      warns.push(plan.res + 'pなら' + fmtDuration(fitSec) + 'までなら' + plan.targetMB + 'MBに収められます。');
+      warns.push(resLabel(plan) + 'なら' + fmtDuration(fitSec) + 'までなら' + plan.targetMB + 'MBに収められます。');
     }
     if (state.meta.hasLocation) warns.push(MSG_LOCATION);
     if (trimEst ? trimEst > DISCORD_FREE_BYTES : plan.overDiscord) warns.push(MSG_OVER_DISCORD);
@@ -1343,8 +1367,11 @@
     });
   }
 
+  // 画面に出す解像度の名前（例: 720p、元の解像度）
+  function resLabel(plan) { return plan.res === 'source' ? '元の解像度' : plan.res + 'p'; }
+
   function describePlan(plan) {
-    return plan.res + 'p ' + plan.width + 'x' + plan.height + ' mode=' + plan.mode + ' ' + Math.round(plan.videoBitrate / 1000) + 'kbps' +
+    return plan.res + ' ' + plan.width + 'x' + plan.height + ' mode=' + plan.mode + ' ' + Math.round(plan.videoBitrate / 1000) + 'kbps' +
       ' fps=' + plan.srcFps + '→' + plan.outFps + ' audio=' + plan.audio.mode +
       ' trim=' + plan.trimStart.toFixed(1) + '-' + plan.trimEnd.toFixed(1) + 's';
   }
@@ -1670,7 +1697,11 @@
     if (els.srcVideo.currentTime >= state.trim.end) els.srcVideo.pause();
   });
 
-  ['res720', 'res1080', 'modeQuality', 'modeSize', 'halfFps', 'audioOn'].forEach(function (k) {
+  // 画面で解像度を選んだら、「元の解像度」を選んだかどうかを覚えておく
+  ['res720', 'res1080', 'resSource'].forEach(function (k) {
+    els[k].addEventListener('change', function () { wantSource = k === 'resSource'; });
+  });
+  ['res720', 'res1080', 'resSource', 'modeQuality', 'modeSize', 'halfFps', 'audioOn'].forEach(function (k) {
     els[k].addEventListener('change', refresh);
   });
   [els.minRate720, els.minRate1080].forEach(function (el) {
@@ -1725,7 +1756,8 @@
   function buildUrl() {
     var s = readSettings();
     var q = [];
-    if (s.res !== '720') q.push('res=' + s.res);
+    var res = wantSource ? 'source' : s.res;
+    if (res !== '720') q.push('res=' + res);
     if (s.mode !== 'size') q.push('mode=' + s.mode);
     if (s.targetMB !== DEFAULT_TARGET_MB) q.push('target=' + s.targetMB);
     if (s.minBitrate['720'] !== DEFAULT_MIN_KBPS['720'] * 1000) q.push('min720=' + s.minBitrate['720'] / 1000);
@@ -1734,7 +1766,7 @@
     if (s.autoRun) q.push('auto=on');
     if (!s.audio) q.push('audio=off');
     // すべて初期値でも1つは付ける（URL に設定の項目がないと、開いたときに前回の設定が使われるため）
-    if (!q.length) q.push('res=' + s.res);
+    if (!q.length) q.push('res=' + res);
     return location.origin + location.pathname + '?' + q.join('&');
   }
   // 文字をコピーする（クリップボードAPIが使えなければ、隠した欄を選択してコピー）
