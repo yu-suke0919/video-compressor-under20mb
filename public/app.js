@@ -42,12 +42,13 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27d';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27e';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、互換モードに切り替える
   var BG_STALL_MS = 6000;                // 別のアプリから戻ったあと、進捗がこれだけ止まっていたら、最初からやり直す
+  var FAIL_SETTLE_MS = 1500;             // 失敗してから、別のアプリに切り替えたかを見極めるまで待つ時間
   var FROZEN_GAP_MS = 3000;              // 1秒ごとの見回りの間がこれより空いたら、ページが止められていた（裏に回っていた）とみなす
   var MAX_BG_RETRIES = 3;                // 別のアプリに切り替えたために失敗したとき、やり直す回数の上限
   var MSG_BG_RETRY = '別のアプリに切り替えたため、最初からやり直し中';
@@ -1569,10 +1570,23 @@
         return res;
       }, function (err) {
         checkFrozen();   // 止められていたページが再開した直後に失敗が届くことがある（見回りより先に）
-        endAttempt();
-        if (job.cancelled || (!aj.cancelled && isCancel(null, err))) throw new Error(CANCELLED);
+        clearInterval(watchdog);
+        if (job.cancelled || (!aj.cancelled && isCancel(null, err))) { endAttempt(); throw new Error(CANCELLED); }
         var stalled = aj.cancelled;
         if (!stalled) log('失敗（' + engine + '）' + errText(err));
+        // iPhone では、別のアプリに切り替え始めた瞬間に読み込みが壊れて失敗し、画面が隠れた知らせはその直後に届く。
+        // すぐには決めず、少し待ってから別のアプリに切り替えたかを見る（切り替えていなければ、少し遅れて互換モードにするだけ）
+        var settle = wentHidden ? Promise.resolve() : sleep(FAIL_SETTLE_MS);
+        return Promise.race([settle, job.aborted]).then(function () {   // 待っている間のキャンセルはすぐ効かせる
+          checkFrozen();
+          endAttempt();
+          throwIfCancelled(job);
+          return afterFailure(err, stalled);
+        });
+      });
+
+      // 失敗・停止したあと、どうやり直すかを決める
+      function afterFailure(err, stalled) {
         // 途中で別のアプリに切り替えていたら、失敗・停止は動画のせいではない（iPhone は裏に回ると読み込み・書き出しを壊す）。
         // 別の方式に切り替えず、画面に戻るのを待ってから同じ方式で最初からやり直す
         if (wentHidden && bgRetries < MAX_BG_RETRIES) {
@@ -1597,7 +1611,7 @@
         }
         if (stalled) throw new Error('圧縮が進まなくなりました。画面を表示したまま、もう一度お試しください。');
         throw err;
-      });
+      }
     }
 
     return attempt(0).then(function (res) {
