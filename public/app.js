@@ -253,7 +253,7 @@
     { key: 'datetime', label: '日付+時間' },
     { key: 'text1', label: '自由入力' },
     { key: 'text2', label: '自由入力2' },
-    { key: 'rand', label: '乱数4桁' },
+    { key: 'rand', label: 'ランダム英数字4桁' },
     { key: 'opt', label: '圧縮オプション' },
     { key: 'orig', label: '元のファイル名' }
   ];
@@ -269,7 +269,14 @@
       .replace(/^\.+/, '').slice(0, NAME_TEXT_MAX);
   }
   function pad2(n) { return (n < 10 ? '0' : '') + n; }
-  function randDigits() { return String(Math.floor(Math.random() * 10000) + 10000).slice(1); }
+  // ランダムな英数字4文字（数字だけだと意味があるように見えるため。見間違えやすい 0 o 1 l i は使わない）
+  var RAND_CHARS = 'abcdefghjkmnpqrstuvwxyz23456789';
+  function randDigits() {
+    var v = new Uint32Array(4), out = '';
+    try { crypto.getRandomValues(v); } catch (e) { for (var j = 0; j < 4; j++) v[j] = Math.floor(Math.random() * 1e9); }
+    for (var i = 0; i < 4; i++) out += RAND_CHARS.charAt(v[i] % RAND_CHARS.length);
+    return out;
+  }
   // 並び順と使う項目を整える（知らない項目は捨て、日付と日付+時間はどちらか1つ）
   function setNaming(on, enabledKeys, orderKeys) {
     var enabled = [];
