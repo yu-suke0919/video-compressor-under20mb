@@ -574,7 +574,7 @@
       meta.canDecode = !!r[2];
       var at = r[3];
       if (!at) { meta.audio = null; return meta; }
-      // 音声をこの端末で読み込めるか（iPhone の Safari は MP3 を読み込めず、変換すると無音になっていた）
+      // 音声をこの端末で読み込めるか（読み込めない音声は、変換しようとしても外されて無音になるので、先に知らせる）
       return Promise.all([at.computePacketStats(200), at.canDecode().catch(function () { return null; })]).then(function (r2) {
         meta.audio = { codec: at.codec, bitrate: r2[0].averageBitrate || 0, canDecode: r2[1] };
         return meta;
