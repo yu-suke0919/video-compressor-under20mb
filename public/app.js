@@ -42,7 +42,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27e';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27f';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -589,10 +589,12 @@
 
   // 読み込めなかったときの文言。codec は高速モードで分かった映像の形式（分からなければ undefined）
   var CODEC_NAMES = { hevc: 'HEVC/H.265', avc: 'H.264', vp9: 'VP9', vp8: 'VP8', av1: 'AV1' };
+  // 端末によっては一時的に読み込めず、もう一度選ぶと読み込めることがあるので、まず選び直してもらう
+  var MSG_PICK_AGAIN = '一時的に読み込めないこともあるので、まずは「動画を選択」からもう一度選び直してください。';
   function loadFailMessage(codec) {
-    if (!codec) return '動画を読み込めませんでした。ファイルが壊れているか、対応していない形式です（MP4・MOVに対応しています）。';
-    return 'この端末は、この動画の映像形式（' + (CODEC_NAMES[codec] || codec) + '）の読み込みに対応していません。' +
-      (codec === 'hevc' ? '別の端末で試すか、iPhoneで撮影するときは「設定」→「カメラ」→「フォーマット」を「互換性優先」にしてください。' : '別の端末でお試しください。');
+    if (!codec) return '動画を読み込めませんでした。' + MSG_PICK_AGAIN + '何度選んでも読み込めないときは、ファイルが壊れているか、対応していない形式です（MP4・MOVに対応しています）。';
+    return 'この端末は、この動画の映像形式（' + (CODEC_NAMES[codec] || codec) + '）の読み込みに対応していない可能性があります。' + MSG_PICK_AGAIN +
+      (codec === 'hevc' ? '何度選んでも読み込めないときは、別の端末で試すか、iPhoneで撮影するときは「設定」→「カメラ」→「フォーマット」を「互換性優先」にしてください。' : '何度選んでも読み込めないときは、別の端末でお試しください。');
   }
 
   // 互換モード: <video> で長さと解像度を読み、冒頭を少し再生してフレームレートを測る
@@ -1877,6 +1879,13 @@
       showDiag(true);
       state.file = null;
       els.srcInfo.textContent = '';
+      // 最初の画面に戻し、「動画を選択」からもう一度選べるようにする（一時的に読み込めないだけのことがある）
+      if (state.srcUrl) { URL.revokeObjectURL(state.srcUrl); state.srcUrl = null; }
+      els.srcVideo.removeAttribute('src');
+      try { els.srcVideo.load(); } catch (e) { /* noop */ }
+      show(els.srcVideo, false);
+      show(els.pickBtn, true);
+      show(els.repickBtn, false);
       state.loadError = (err && err.message) || String(err);
       setAlert(els.planWarn, [state.loadError], true);
     }).then(function () {
