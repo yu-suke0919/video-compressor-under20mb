@@ -42,7 +42,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27g';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27h';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -574,8 +574,9 @@
       meta.canDecode = !!r[2];
       var at = r[3];
       if (!at) { meta.audio = null; return meta; }
-      return at.computePacketStats(200).then(function (st) {
-        meta.audio = { codec: at.codec, bitrate: st.averageBitrate || 0 };
+      // 音声をこの端末で読み込めるか（iPhone の Safari は MP3 を読み込めず、変換すると無音になっていた）
+      return Promise.all([at.computePacketStats(200), at.canDecode().catch(function () { return null; })]).then(function (r2) {
+        meta.audio = { codec: at.codec, bitrate: r2[0].averageBitrate || 0, canDecode: r2[1] };
         return meta;
       });
     }).then(function (m) {
@@ -689,9 +690,13 @@
     if (isAac && src.bitrate > 0 && src.bitrate <= AUDIO_COPY_MAX_BITRATE) {
       return { mode: 'copy', bps: src.bitrate, label: 'AAC ' + fmtRate(src.bitrate) + '（そのまま）', note: null };
     }
-    if (state.caps.aac) return { mode: 'aac', bps: AUDIO_BITRATE, label: 'AAC ' + fmtRate(AUDIO_BITRATE), note: null };
+    // 変換するには、元の音声を読み込めて、AAC で書き出せる必要がある
+    if (state.caps.aac && src.canDecode !== false) return { mode: 'aac', bps: AUDIO_BITRATE, label: 'AAC ' + fmtRate(AUDIO_BITRATE), note: null };
     if (isAac) {
       return { mode: 'copy', bps: src.bitrate || AUDIO_BITRATE, label: 'AAC ' + fmtRate(src.bitrate || AUDIO_BITRATE) + '（そのまま）', note: null };
+    }
+    if (state.caps.aac) {
+      return { mode: 'none', bps: 0, label: 'なし', note: 'この端末ではこの動画の音声（' + String(src.codec || '不明').toUpperCase() + '）を読み込めないため、音声なしで圧縮します。' };
     }
     return { mode: 'none', bps: 0, label: 'なし', note: 'この端末では音声をAACに変換できないため、音声なしで圧縮します。' };
   }
@@ -1868,7 +1873,7 @@
     loadMetaFast(file).then(function (meta) {
       log('解析（高速） ' + meta.width + 'x' + meta.height + ' ' + meta.fps + 'fps ' + (meta.duration || 0).toFixed(1) + 's codec=' +
         (meta.codecString || meta.videoCodec) + ' hdr=' + meta.hdr + ' decode=' + meta.canDecode +
-        ' audio=' + (meta.audio ? meta.audio.codec + '/' + Math.round(meta.audio.bitrate / 1000) + 'kbps' : 'なし'));
+        ' audio=' + (meta.audio ? meta.audio.codec + '/' + Math.round(meta.audio.bitrate / 1000) + 'kbps' + (meta.audio.canDecode === false ? '（読み込めない）' : '') : 'なし'));
       if (!meta.canDecode) { var e = new Error('decode'); e.codec = meta.videoCodec; throw e; }
       state.engine = 'fast';
       return meta;
