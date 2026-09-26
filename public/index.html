@@ -218,6 +218,7 @@
   }
   .help-slides {
     display: flex;
+    align-items: flex-start;   /* 文字の多いカードに合わせて画像が縦に伸びないようにする */
     gap: 12px;
     margin: 0 -14px;
     padding: 4px 14px 6px;
@@ -1055,12 +1056,12 @@
         <span class="card-title"><span>Q. どんなファイルに</span><span>対応していますか？</span></span>
         <p class="qa-answer"><b>入力</b>：MP4・MOV（iPhoneやSwitchの動画など）。ほかの形式も、ブラウザで再生できれば使えることがあります。</p>
         <p class="qa-answer"><b>出力</b>：MP4（映像H.264・音声AAC）。Discordやほとんどの端末でそのまま再生できます。</p>
-        <p class="qa-answer qa-note">※最初から目標サイズ以下の動画は、変換せず元のファイルのまま渡します。</p>
+        <p class="qa-answer qa-note">※「20MB以内に圧縮」のとき、最初から目標サイズ以下の動画は、元のファイルのまま渡します（位置情報付きの動画は除く）。</p>
       </div>
       <div class="help-card help-qa">
         <span class="card-icon qa-icon" aria-hidden="true">Q</span>
         <span class="card-title"><span>Q. 何分の動画まで</span><span>20MBに入りますか？</span></span>
-        <p class="qa-answer">A. 初期設定では、<b>720pで約1分55秒</b>、<b>1080pで約55秒</b>までが目安です（音声ありの場合）。</p>
+        <p class="qa-answer">A. 初期設定では、<b>720pで約1分56秒</b>、<b>1080pで約54秒</b>までが目安です（音声ありの場合）。</p>
         <p class="qa-answer">長いときは、青い線で使う範囲を短くするか、720pにしてください。入らない長さのときは、何秒までなら入るかが画面に出ます。</p>
       </div>
       <div class="help-card help-qa">
