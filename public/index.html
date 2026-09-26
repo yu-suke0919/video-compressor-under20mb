@@ -737,6 +737,45 @@
     gap: 8px;
     margin-top: 8px;
   }
+  /* 書き出す動画のファイル名 */
+  .name-list {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0;
+  }
+  .name-list li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .name-list li > label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 auto;
+    font-size: 13px;
+  }
+  .name-list .name-move {
+    width: 34px;
+    padding: 2px 0;
+  }
+  .name-list input[type="text"] {
+    flex: 1 0 100%;
+    font: inherit;
+    font-size: 16px;
+    color: var(--text);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 4px 8px;
+  }
+  .name-preview {
+    word-break: break-all;
+    color: var(--text);
+  }
   details.settings input[type="checkbox"] {
     width: 18px;
     height: 18px;
@@ -886,6 +925,16 @@
     <div class="check">
       <input type="checkbox" id="audioOn" checked>
       <label for="audioOn" id="audioLabel">音声を残す</label>
+    </div>
+    <div class="check">
+      <input type="checkbox" id="nameOn">
+      <label for="nameOn">書き出す動画のファイル名を指定する</label>
+    </div>
+    <!-- ファイル名の項目（チェックで使う・使わない、↑↓で並べる順番。行は app.js で作る） -->
+    <div id="nameBox" class="name-box hidden">
+      <p class="hint">使う項目にチェックを入れ、↑↓で並べる順番を変えます（上にあるほど名前の前）。全部オフのときは今までの名前になります。</p>
+      <ol id="nameList" class="name-list"></ol>
+      <p class="hint">例：<span id="namePreview" class="name-preview"></span></p>
     </div>
     <p class="hint">Discordの無料アカウントは20MB、Nitro Basicは50MBが目安です（上限は変更されることがあります）。</p>
     <p class="hint">設定は、画面で変えるとこの端末のブラウザに保存され、次に開いたときも同じになります。</p>
