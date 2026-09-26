@@ -42,12 +42,13 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27c';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27d';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、互換モードに切り替える
   var BG_STALL_MS = 6000;                // 別のアプリから戻ったあと、進捗がこれだけ止まっていたら、最初からやり直す
+  var FROZEN_GAP_MS = 3000;              // 1秒ごとの見回りの間がこれより空いたら、ページが止められていた（裏に回っていた）とみなす
   var MAX_BG_RETRIES = 3;                // 別のアプリに切り替えたために失敗したとき、やり直す回数の上限
   var MSG_BG_RETRY = '別のアプリに切り替えたため、最初からやり直し中';
 
@@ -1470,14 +1471,34 @@
       // 1回ぶんの処理（進まなくなったらこれだけ止めて、別の方式でやり直す）
       var aj = state.attemptJob = newJob();
       var t0 = Date.now(), lastVal = -1, idleMs = 0, lastTick = Date.now(), nextLog = 0;
-      // この処理の途中で別のアプリに切り替えたか（iPhone は裏に回ると動画の読み込み・書き出しを止めたり壊したりする）
-      var wentHidden = document.visibilityState !== 'visible';
+      // この処理の途中で別のアプリに切り替えたか（iPhone は裏に回ると動画の読み込み・書き出しを止めたり壊したりする）。
+      // iPhone でブラウザを閉じた（ホーム画面に戻った）ときは、画面が隠れた知らせが届かないか、戻ってから遅れて届くことがあるので、
+      // ページが止められていたこと（1秒ごとの見回りの間が空いた）でも見分ける
+      var wentHidden = false;
+      var markHidden = function (why) {
+        if (!wentHidden) log('画面から離れた（' + why + '）');
+        wentHidden = true;
+      };
+      if (document.visibilityState !== 'visible') markHidden('開始時に非表示');
       var onVisibility = function () {
-        if (document.visibilityState !== 'visible') { wentHidden = true; return; }
+        if (document.visibilityState !== 'visible') { markHidden('visibilitychange'); return; }
         idleMs = 0;   // 戻ってからの時間で、止まっているかを判断する
       };
+      var onLeave = function (e) { markHidden(e.type); };
       document.addEventListener('visibilitychange', onVisibility);
-      var endAttempt = function () { clearInterval(watchdog); document.removeEventListener('visibilitychange', onVisibility); };
+      window.addEventListener('pagehide', onLeave);
+      document.addEventListener('freeze', onLeave);
+      var endAttempt = function () {
+        clearInterval(watchdog);
+        document.removeEventListener('visibilitychange', onVisibility);
+        window.removeEventListener('pagehide', onLeave);
+        document.removeEventListener('freeze', onLeave);
+      };
+      // ページが止められていたか（見回りは1秒ごとなので、それより大きく間が空いたら止められていた）
+      var checkFrozen = function () {
+        var gap = Date.now() - lastTick;
+        if (gap > FROZEN_GAP_MS) markHidden('ページが' + (gap / 1000).toFixed(1) + '秒止まっていた');
+      };
       // キャンセル後に古い処理から届く進捗は無視する
       var onProgress = function (p) {
         if (job.cancelled || aj.cancelled) return;
@@ -1490,6 +1511,7 @@
       };
       // 画面を表示しているのに進捗が止まったままなら、止まったとみなす（裏に回っていた時間は数えない）
       var watchdog = setInterval(function () {
+        checkFrozen();
         var now = Date.now(), dt = now - lastTick;
         lastTick = now;
         if (document.visibilityState !== 'visible' || dt > 5000) return;
@@ -1546,6 +1568,7 @@
         res.attempts = index + 1;
         return res;
       }, function (err) {
+        checkFrozen();   // 止められていたページが再開した直後に失敗が届くことがある（見回りより先に）
         endAttempt();
         if (job.cancelled || (!aj.cancelled && isCancel(null, err))) throw new Error(CANCELLED);
         var stalled = aj.cancelled;
