@@ -42,7 +42,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27a';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27b';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1035,8 +1035,7 @@
       if (!conv.isValid || videoLost) {
         throw new Error('高速モードで扱えない動画です（' + (videoLost ? videoLost.reason : 'invalid') + '）');
       }
-      var audioLost = plan.audio.mode !== 'none' &&
-        discarded.some(function (d) { return d.track && d.track.type === 'audio' && d.reason !== 'discarded_by_user'; });
+      var audioLost = audioTrackLost(plan, conv);
       // キャンセル時: 変換を止め、ファイルの読み込みも閉じる（止まりきるのは待たない）
       job.hooks.push(function () { var stop = conv.cancel(); dispose(); return stop; });
       conv.onProgress = function (p) { onProgress(p); };
@@ -1055,6 +1054,14 @@
       if (job.cancelled) throw new Error(CANCELLED);
       throw err;
     });
+  }
+
+  // 音声を残すつもりだったのに、書き出す動画に音声が1本も入らないか。
+  // iPhone の動画には、空間オーディオ（APAC）など読めない音声が AAC と一緒に入っていることがあり、
+  // それだけが外されたときは AAC が残るので「音声なし」にしない
+  function audioTrackLost(plan, conv) {
+    if (plan.audio.mode === 'none') return false;
+    return !(conv.utilizedTracks || []).some(function (t) { return t && t.type === 'audio'; });
   }
 
   function isFullTrimOf(plan) {
@@ -1099,8 +1106,7 @@
       if (!conv.isValid || videoLost) {
         throw new Error('トリミングのみでは扱えない動画です（' + (videoLost ? videoLost.reason : 'invalid') + '）');
       }
-      var audioLost = plan.audio.mode !== 'none' &&
-        discarded.some(function (d) { return d.track && d.track.type === 'audio' && d.reason !== 'discarded_by_user'; });
+      var audioLost = audioTrackLost(plan, conv);
       job.hooks.push(function () { var stop = conv.cancel(); dispose(); return stop; });
       conv.onProgress = function (p) { onProgress(p); };
       throwIfCancelled(job);
