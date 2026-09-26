@@ -304,6 +304,12 @@
     line-height: 1.6;
     text-align: left;
   }
+  #helpDlg .help-qa .qa-answer b {
+    white-space: nowrap;   /* 「720pで約1分55秒」などを途中で折り返さない */
+  }
+  #helpDlg .help-qa .qa-answer a {
+    color: var(--accent);
+  }
   #helpDlg .help-qa .qa-note {
     font-size: 12px;
     color: var(--muted);
@@ -1001,7 +1007,7 @@
     <p>動画をDiscordに送れるサイズ（20MB以内）に小さくします。</p>
 
     <!-- 画像は説明書を開いたときに読み込む（data-src → src）。アプリの起動時には読まない -->
-    <p class="help-hint" id="helpHint" aria-hidden="true"><span class="hint-arrow">‹</span><span>左右にスワイプ（全6枚）</span><span class="hint-arrow">›</span></p>
+    <p class="help-hint" id="helpHint" aria-hidden="true"><span class="hint-arrow">‹</span><span>左右にスワイプ（全10枚）</span><span class="hint-arrow">›</span></p>
     <div class="help-dots" id="helpDots">
       <button type="button" aria-label="1枚目" aria-current="true"></button>
       <button type="button" aria-label="2枚目"></button>
@@ -1009,6 +1015,10 @@
       <button type="button" aria-label="4枚目"></button>
       <button type="button" aria-label="5枚目"></button>
       <button type="button" aria-label="6枚目"></button>
+      <button type="button" aria-label="7枚目"></button>
+      <button type="button" aria-label="8枚目"></button>
+      <button type="button" aria-label="9枚目"></button>
+      <button type="button" aria-label="10枚目"></button>
     </div>
     <div class="help-slides" id="helpSlides" tabindex="0" aria-label="手順の画像（横にスワイプで次の画像）">
       <img data-src="./help/help-1.webp" width="390" height="780" alt="①「動画を選択」をタップして動画を選ぶ">
@@ -1038,6 +1048,32 @@
         <p class="qa-answer"><b>iPhone</b>：iOS 16.4以降（iPhone 8以降）。Safari以外のブラウザでも使えます。</p>
         <p class="qa-answer"><b>Android</b>：Android 10以降の最新のChrome。Firefoxは非対応です。</p>
         <p class="qa-answer qa-note">※iOS 26より前は、AAC以外の音声は消えます（iPhone・Switchの動画はAACなので問題ありません）。</p>
+      </div>
+      <div class="help-card help-qa">
+        <span class="card-icon qa-icon" aria-hidden="true">Q</span>
+        <span class="card-title"><span>Q. 何分の動画まで</span><span>20MBに入りますか？</span></span>
+        <p class="qa-answer">A. 初期設定では、<b>720pで約1分55秒</b>、<b>1080pで約55秒</b>までが目安です（音声ありの場合）。</p>
+        <p class="qa-answer">長いときは、青い線で使う範囲を短くするか、720pにしてください。入らない長さのときは、何秒までなら入るかが画面に出ます。</p>
+      </div>
+      <div class="help-card help-qa">
+        <span class="card-icon qa-icon" aria-hidden="true">Q</span>
+        <span class="card-title"><span>Q. 圧縮中に</span><span>他のアプリを</span><span>開いてもいいですか？</span></span>
+        <p class="qa-answer">A. 圧縮が終わるまで、この画面を表示したまま待ってください。</p>
+        <p class="qa-answer">他のアプリに切り替えたり、画面をロックしたりすると、圧縮が止まることがあります。</p>
+      </div>
+      <div class="help-card help-qa">
+        <span class="card-icon qa-icon" aria-hidden="true">Q</span>
+        <span class="card-title"><span>Q. ホーム画面に</span><span>追加できますか？</span></span>
+        <p class="qa-answer">A. はい。アプリのように開けて、一度開いたあとはネットにつながっていなくても使えます。</p>
+        <p class="qa-answer"><b>iPhone</b>：共有ボタン →「ホーム画面に追加」</p>
+        <p class="qa-answer"><b>Android</b>：Chromeのメニュー（︙）→「ホーム画面に追加」</p>
+      </div>
+      <div class="help-card help-qa">
+        <span class="card-icon qa-icon" aria-hidden="true">Q</span>
+        <span class="card-title"><span>Q. うまく</span><span>動かないときは？</span></span>
+        <p class="qa-answer">A. まず、ページを一度閉じて開き直してください。</p>
+        <p class="qa-answer">それでも直らないときは、画面の下に出る「診断情報」を開いて「コピー」を押し、<a href="https://x.com/inkaroma0431" target="_blank" rel="noopener noreferrer">X（@inkaroma0431）</a>かDiscordに送ってください。</p>
+        <p class="qa-answer qa-note">※診断情報は端末の種類や処理の経過だけで、動画やファイル名は含みません。</p>
       </div>
     </div>
   </div>
