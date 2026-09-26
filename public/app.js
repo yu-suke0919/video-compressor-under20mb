@@ -265,8 +265,17 @@
   var naming = defaultNaming();
   // ファイル名に使えない記号・制御文字を外し、長さをそろえる
   function cleanName(v) {
-    return String(v || '').replace(/[\/\\:*?"<>|\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim()
-      .replace(/^\.+/, '').slice(0, NAME_TEXT_MAX);
+    var t = String(v || '').replace(/[\/\\:*?"<>|\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim().replace(/^\.+/, '');
+    return Array.from(t).slice(0, NAME_TEXT_MAX).join('').trim();   // 絵文字などを途中で切らないよう、文字単位で数える
+  }
+  // ファイル名は多くの端末で 255 バイトまでなので、拡張子のぶんを残して 200 バイトに収める
+  var NAME_MAX_BYTES = 200;
+  function limitBytes(t) {
+    var chars = Array.from(t);
+    var enc = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
+    var size = function (x) { return enc ? enc.encode(x).length : unescape(encodeURIComponent(x)).length; };
+    while (chars.length && size(chars.join('')) > NAME_MAX_BYTES) chars.pop();
+    return chars.join('');
   }
   function pad2(n) { return (n < 10 ? '0' : '') + n; }
   // ランダムな英数字4文字（数字だけだと意味があるように見えるため。見間違えやすい 0 o 1 l i は使わない）
@@ -316,7 +325,7 @@
     var parts = naming.order.filter(function (k) { return naming.enabled.indexOf(k) >= 0; })
       .map(function (k) { return namePart(k, ctx); })
       .filter(function (v) { return v; });
-    return parts.length ? parts.join('_') : null;
+    return parts.length ? limitBytes(parts.join('_')) : null;
   }
   function fileBase() { return String((state.file && state.file.name) || 'video').replace(/\.[^.]+$/, '') || 'video'; }
   // 元の動画のまま渡すときの名前（拡張子は元のまま）
