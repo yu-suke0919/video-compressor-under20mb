@@ -291,7 +291,7 @@
     var d = ctx.now;
     var ymd = d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate());
     if (key === 'date') return ymd;
-    if (key === 'datetime') return ymd + '-' + pad2(d.getHours()) + pad2(d.getMinutes());
+    if (key === 'datetime') return ymd + pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds());
     if (key === 'text1' || key === 'text2') return cleanName(naming.text[key]);
     if (key === 'rand') return ctx.rand;
     if (key === 'opt') {
