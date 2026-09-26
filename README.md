@@ -346,3 +346,5 @@ npm run build:vendor
 必要な部分を束ねただけで、ライブラリのコード自体は改変していません。元のソースコードは
 [GitHub](https://github.com/Vanilagy/mediabunny) と npm（`mediabunny@1.59.0`）で公開されています。
 公開サイトでも、同梱ファイルの先頭の注記と `public/vendor/README.txt` にライセンスとソースコードの入手先を書いています。
+
+Discord は Discord Inc. の商標です。本サイトは Discord 公式とは関係ありません（画面の下にも表示しています）。
