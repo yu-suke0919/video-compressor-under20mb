@@ -40,7 +40,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-26b';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-26c';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -78,6 +78,7 @@
     phase: $('phase'), pct: $('pct'),
     outVideo: $('outVideo'), outEmpty: $('outEmpty'), outInfo: $('outInfo'), outWarn: $('outWarn'),
     shareBtn: $('shareBtn'), saveBtn: $('saveBtn'),
+    nameOn: $('nameOn'), nameBox: $('nameBox'), nameList: $('nameList'), namePreview: $('namePreview'),
     diagBox: $('diagBox'), diagOut: $('diagOut'), diagCopy: $('diagCopy'), diagStatus: $('diagStatus')
   };
 
@@ -245,6 +246,126 @@
     };
   }
 
+  // ---------------------------------------------------------------- 書き出す動画のファイル名
+  // 詳細設定でオンにすると、選んだ項目を選んだ順に「_」でつないだ名前にする（全部オフなら今までの名前）
+  var NAME_PARTS = [
+    { key: 'date', label: '日付' },
+    { key: 'datetime', label: '日付+時間' },
+    { key: 'text1', label: '自由入力' },
+    { key: 'text2', label: '自由入力2' },
+    { key: 'rand', label: '乱数4桁' },
+    { key: 'opt', label: '圧縮オプション' },
+    { key: 'orig', label: '元のファイル名' }
+  ];
+  var NAME_KEYS = NAME_PARTS.map(function (p) { return p.key; });
+  var NAME_TEXT_MAX = 30;
+  function defaultNaming() {
+    return { on: false, order: NAME_KEYS.slice(), enabled: ['date', 'text1', 'opt'], text: { text1: '', text2: '' } };
+  }
+  var naming = defaultNaming();
+  // ファイル名に使えない記号・制御文字を外し、長さをそろえる
+  function cleanName(v) {
+    return String(v || '').replace(/[\/\\:*?"<>|\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim()
+      .replace(/^\.+/, '').slice(0, NAME_TEXT_MAX);
+  }
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function randDigits() { return String(Math.floor(Math.random() * 10000) + 10000).slice(1); }
+  // 並び順と使う項目を整える（知らない項目は捨て、日付と日付+時間はどちらか1つ）
+  function setNaming(on, enabledKeys, orderKeys) {
+    var enabled = [];
+    enabledKeys.forEach(function (k) {
+      if (NAME_KEYS.indexOf(k) < 0 || enabled.indexOf(k) >= 0) return;
+      if ((k === 'date' && enabled.indexOf('datetime') >= 0) || (k === 'datetime' && enabled.indexOf('date') >= 0)) return;
+      enabled.push(k);
+    });
+    var order = [];
+    (orderKeys || []).concat(enabled, NAME_KEYS).forEach(function (k) {
+      if (NAME_KEYS.indexOf(k) >= 0 && order.indexOf(k) < 0) order.push(k);
+    });
+    naming.on = !!on;
+    naming.enabled = enabled;
+    naming.order = order;
+  }
+  // kind: compressed（圧縮した）/ trimmed（トリミングのみ）/ copy（位置情報だけ除いた）/ original（元の動画のまま）
+  function namePart(key, ctx) {
+    var d = ctx.now;
+    var ymd = d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate());
+    if (key === 'date') return ymd;
+    if (key === 'datetime') return ymd + '-' + pad2(d.getHours()) + pad2(d.getMinutes());
+    if (key === 'text1' || key === 'text2') return cleanName(naming.text[key]);
+    if (key === 'rand') return ctx.rand;
+    if (key === 'opt') {
+      if (ctx.kind === 'original' || ctx.kind === 'copy') return '元のまま';
+      if (ctx.kind === 'trimmed') return 'トリミング';
+      var s = ctx.settings;
+      return (s.res === 'source' ? '元解像度' : s.res + 'p') + '-' + (s.mode === 'quality' ? 'なるべく' : s.targetMB + 'MB');
+    }
+    if (key === 'orig') return cleanName(ctx.base);
+    return '';
+  }
+  // 指定した名前（拡張子なし）。オフのとき・使う項目がないときは null（今までの名前にする）
+  function customName(ctx) {
+    if (!naming.on) return null;
+    var parts = naming.order.filter(function (k) { return naming.enabled.indexOf(k) >= 0; })
+      .map(function (k) { return namePart(k, ctx); })
+      .filter(function (v) { return v; });
+    return parts.length ? parts.join('_') : null;
+  }
+  function fileBase() { return String((state.file && state.file.name) || 'video').replace(/\.[^.]+$/, '') || 'video'; }
+  // 元の動画のまま渡すときの名前（拡張子は元のまま）
+  function passthroughName() {
+    var m = /\.[^.]+$/.exec((state.file && state.file.name) || '');
+    var name = customName({ kind: 'original', now: new Date(), rand: state.nameRand || randDigits(), base: fileBase(), settings: readSettings() });
+    return name ? name + (m ? m[0] : '.mp4') : ((state.file && state.file.name) || 'video.mp4');
+  }
+  // 詳細設定の項目の行を作り直す
+  function renderNameList() {
+    els.nameOn.checked = naming.on;
+    show(els.nameBox, naming.on);
+    els.nameList.textContent = '';
+    naming.order.forEach(function (key, i) {
+      var part = NAME_PARTS[NAME_KEYS.indexOf(key)];
+      var on = naming.enabled.indexOf(key) >= 0;
+      var li = document.createElement('li');
+      li.dataset.key = key;
+      var label = document.createElement('label');
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = on;
+      cb.className = 'name-use';
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(part.label));
+      li.appendChild(label);
+      [['up', '↑', i === 0], ['down', '↓', i === naming.order.length - 1]].forEach(function (b) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-sm name-move';
+        btn.dataset.move = b[0];
+        btn.textContent = b[1];
+        btn.disabled = b[2];
+        btn.setAttribute('aria-label', part.label + 'を' + (b[0] === 'up' ? '上へ' : '下へ'));
+        li.appendChild(btn);
+      });
+      if ((key === 'text1' || key === 'text2') && on) {
+        var input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'name-text';
+        input.maxLength = NAME_TEXT_MAX;
+        input.value = naming.text[key];
+        input.placeholder = key === 'text1' ? '例：クリップ' : '例：ゲーム名';
+        input.setAttribute('aria-label', part.label);
+        li.appendChild(input);
+      }
+      els.nameList.appendChild(li);
+    });
+    updateNamePreview();
+  }
+  var previewRand = randDigits();
+  function updateNamePreview() {
+    var name = customName({ kind: 'compressed', now: new Date(), rand: previewRand, base: state.file ? fileBase() : 'IMG_1234', settings: readSettings() });
+    els.namePreview.textContent = name ? name + '.mp4' : '（項目がないので今までの名前）' + (state.file ? fileBase() : 'IMG_1234') + '_compressed.mp4';
+  }
+
   // ---------------------------------------------------------------- 設定を覚える
   // 画面で設定を変えたらこの端末のブラウザ内に保存し、次に開いたときに戻す。
   // URL パラメータで開いたときの値は保存しない（画面で変えたときだけ保存する）
@@ -254,7 +375,8 @@
     var s = readSettings();
     var data = {
       res: wantSource ? 'source' : s.res, mode: s.mode, target: s.targetMB, min720: s.minBitrate['720'] / 1000, min1080: s.minBitrate['1080'] / 1000,
-      halfFps: s.halfFps, auto: s.autoRun, audio: s.audio
+      halfFps: s.halfFps, auto: s.autoRun, audio: s.audio,
+      name: { on: naming.on, order: naming.order, enabled: naming.enabled, text1: naming.text.text1, text2: naming.text.text2 }
     };
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(data)); } catch (e) { /* 保存できない環境では覚えない */ }
   }
@@ -273,6 +395,12 @@
     [['halfFps', els.halfFps], ['auto', els.autoRun], ['audio', els.audioOn]].forEach(function (pair) {
       if (typeof d[pair[0]] === 'boolean') pair[1].checked = d[pair[0]];
     });
+    var n = d.name;
+    if (n && typeof n === 'object' && Array.isArray(n.enabled) && Array.isArray(n.order)) {
+      setNaming(n.on === true, n.enabled, n.order);
+      naming.text.text1 = cleanName(n.text1);
+      naming.text.text2 = cleanName(n.text2);
+    }
   }
   function resetSettings() {
     try { localStorage.removeItem(SETTINGS_KEY); } catch (e) { /* noop */ }
@@ -285,10 +413,12 @@
     els.halfFps.checked = true;
     els.autoRun.checked = false;
     els.audioOn.checked = true;
+    naming = defaultNaming();
+    renderNameList();
     refresh();
   }
 
-  var SETTING_PARAMS = ['res', 'mode', 'target', 'fps', 'audio', 'min720', 'min1080', 'auto'];
+  var SETTING_PARAMS = ['res', 'mode', 'target', 'fps', 'audio', 'min720', 'min1080', 'auto', 'name', 'text1', 'text2'];
   function hasSettingParams() {
     try {
       var params = new URLSearchParams(window.location.search);
@@ -322,6 +452,16 @@
       var v = parseFloat(params.get(pair[0]));
       if (isFinite(v) && v >= MIN_KBPS_LIMITS[0] && v <= MIN_KBPS_LIMITS[1]) pair[1].value = String(Math.round(v));
     });
+    // ファイル名: name=date,text1,opt（使う項目を並べる順に。off で指定しない）、text1=… text2=…（自由入力）
+    if (params.has('name')) {
+      var nv = (params.get('name') || '').toLowerCase();
+      if (nv === 'off') naming.on = false;
+      else {
+        var keys = nv.split(',').map(function (k) { return k.trim(); });
+        setNaming(true, keys, keys);
+      }
+    }
+    ['text1', 'text2'].forEach(function (k) { if (params.has(k)) naming.text[k] = cleanName(params.get(k)); });
   }
 
   // ---------------------------------------------------------------- 対応判定
@@ -607,7 +747,12 @@
     // シークバーは圧縮後も元動画の確認に使えるようにする（圧縮中だけ止める）
     els.trimSeek.disabled = !hasFile || locked;
     [els.res720, els.res1080, els.resSource, els.modeQuality, els.modeSize, els.targetSize, els.halfFps, els.audioOn,
-      els.minRate720, els.minRate1080, els.autoRun].forEach(function (el) { el.disabled = state.running || done; });
+      els.minRate720, els.minRate1080, els.autoRun, els.nameOn].forEach(function (el) { el.disabled = state.running || done; });
+    Array.prototype.forEach.call(els.nameList.querySelectorAll('input, button'), function (el) {
+      el.disabled = state.running || done || (el.dataset.move === 'up' && !el.parentNode.previousSibling) ||
+        (el.dataset.move === 'down' && !el.parentNode.nextSibling);
+    });
+    updateNamePreview();
     els.repickBtn.disabled = locked;
     els.runBtn.textContent = state.running ? 'キャンセル' : done ? 'やり直す' : '圧縮する';
 
@@ -653,8 +798,9 @@
       !(state.meta && state.meta.hasLocation);
     if (canPass && (!state.out || state.out.original)) {
       if (!state.out) {
-        setOutput({ blob: state.file, name: state.file.name || 'video.mp4', type: state.file.type || 'video/mp4', original: true });
+        setOutput({ blob: state.file, name: passthroughName(), type: state.file.type || 'video/mp4', original: true });
       }
+      state.out.name = passthroughName();   // ファイル名の設定を変えたら、渡す名前も合わせる
       els.outInfo.textContent = '元の動画のまま・' + fmtBytes(state.file.size) + '（' + settings.targetMB + 'MB以下なので圧縮不要）';
       setAlert(els.outWarn, state.file.size > DISCORD_FREE_BYTES ? [MSG_OVER_DISCORD] : []);
     } else if (!canPass && state.out && state.out.original) {
@@ -1457,9 +1603,11 @@
   }
 
   function showResult(res, plan, engine, elapsed) {
-    var base = String(state.file.name || 'video').replace(/\.[^.]+$/, '') || 'video';
-    var suffix = !res.trimOnly ? '_compressed' : isFullTrimOf(plan) ? '' : '_trimmed';
-    setOutput({ blob: res.blob, name: base + suffix + '.mp4', type: 'video/mp4', original: false });
+    var base = fileBase();
+    var kind = !res.trimOnly ? 'compressed' : isFullTrimOf(plan) ? 'copy' : 'trimmed';
+    var suffix = kind === 'compressed' ? '_compressed' : kind === 'trimmed' ? '_trimmed' : '';
+    var name = customName({ kind: kind, now: new Date(), rand: randDigits(), base: base, settings: plan }) || base + suffix;
+    setOutput({ blob: res.blob, name: name + '.mp4', type: 'video/mp4', original: false });
 
     var size = res.blob.size;
     var ratio = state.file.size > 0 ? Math.round((1 - size / state.file.size) * 100) : 0;
@@ -1566,6 +1714,7 @@
     state.loadError = null;
     state.file = file;
     state.meta = null;
+    state.nameRand = randDigits();   // 元の動画のまま渡すときの乱数（同じ動画のあいだは変えない）
     state.compatAudio = null;
     clearOutput();
     setProgress(0, '');
@@ -1718,6 +1867,43 @@
   });
   SAVED_FIELDS.forEach(function (id) { $(id).addEventListener('change', function () { setTimeout(saveSettings, 0); }); });
   $('resetSettings').addEventListener('click', resetSettings);
+  // ファイル名の設定（変えたらすぐ保存する）
+  function nameChanged(rerender) {
+    if (rerender) renderNameList(); else updateNamePreview();
+    saveSettings();
+    refresh();
+  }
+  els.nameOn.addEventListener('change', function () { naming.on = els.nameOn.checked; nameChanged(true); });
+  els.nameList.addEventListener('change', function (e) {
+    if (!e.target.classList.contains('name-use')) return;
+    var key = e.target.closest('li').dataset.key;
+    var keys = naming.enabled.filter(function (k) { return k !== key; });
+    if (e.target.checked) {
+      // 日付と日付+時間は、どちらか1つだけ
+      keys = keys.filter(function (k) { return !((key === 'date' && k === 'datetime') || (key === 'datetime' && k === 'date')); });
+      keys.push(key);
+    }
+    setNaming(naming.on, keys, naming.order);
+    nameChanged(true);
+  });
+  els.nameList.addEventListener('input', function (e) {
+    if (!e.target.classList.contains('name-text')) return;
+    naming.text[e.target.closest('li').dataset.key] = e.target.value;
+    nameChanged(false);
+  });
+  els.nameList.addEventListener('change', function (e) {
+    if (e.target.classList.contains('name-text')) { e.target.value = naming.text[e.target.closest('li').dataset.key] = cleanName(e.target.value); nameChanged(false); }
+  });
+  els.nameList.addEventListener('click', function (e) {
+    var btn = e.target.closest('button[data-move]');
+    if (!btn) return;
+    var key = btn.closest('li').dataset.key;
+    var i = naming.order.indexOf(key), j = btn.dataset.move === 'up' ? i - 1 : i + 1;
+    if (j < 0 || j >= naming.order.length) return;
+    naming.order[i] = naming.order[j];
+    naming.order[j] = key;
+    nameChanged(true);
+  });
   els.runBtn.addEventListener('click', function () {
     if (state.running) cancelRun(); else if (isCompressed()) redo(); else run();
   });
@@ -1765,6 +1951,16 @@
     if (!s.halfFps) q.push('fps=source');
     if (s.autoRun) q.push('auto=on');
     if (!s.audio) q.push('audio=off');
+    if (naming.on) {
+      var keys = naming.order.filter(function (k) { return naming.enabled.indexOf(k) >= 0; });
+      if (keys.length) {
+        q.push('name=' + keys.join(','));
+        ['text1', 'text2'].forEach(function (k) {
+          var t = cleanName(naming.text[k]);
+          if (keys.indexOf(k) >= 0 && t) q.push(k + '=' + encodeURIComponent(t));
+        });
+      }
+    }
     // すべて初期値でも1つは付ける（URL に設定の項目がないと、開いたときに前回の設定が使われるため）
     if (!q.length) q.push('res=' + res);
     return location.origin + location.pathname + '?' + q.join('&');
@@ -1802,6 +1998,7 @@
   // （保存してある前回の設定は消さない。URL なしで開いたときは前回の設定で始まる）
   if (!hasSettingParams()) loadSavedSettings();
   applyUrlParams();
+  renderNameList();
   var missing = checkSupport();
   if (missing.length) {
     setAlert(els.unsupported, ['この環境では利用できません。次の機能に対応していません: ' + missing.join('、'),
