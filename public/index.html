@@ -291,6 +291,23 @@
     font-size: 14px;
     font-weight: 700;
   }
+  /* よくある質問のカード（答えは長いので左寄せ） */
+  .help-qa {
+    gap: 10px;
+  }
+  .help-qa .qa-icon {
+    background: linear-gradient(135deg, #34c759, #0a84ff);
+    color: #fff;
+    font-size: 34px;
+    font-weight: 800;
+  }
+  #helpDlg .help-qa .qa-answer {
+    margin: 0;
+    width: 100%;
+    font-size: 14px;
+    line-height: 1.6;
+    text-align: left;
+  }
   /* 初めて開いたときに、画像を少し横に揺らしてスワイプできることを知らせる */
   .help-slides.is-nudge > * {
     animation: helpNudge 1.1s ease-in-out .6s 2;
@@ -912,12 +929,13 @@
 
     <h3>基本の手順</h3>
     <!-- 画像は説明書を開いたときに読み込む（data-src → src）。アプリの起動時には読まない -->
-    <p class="help-hint" id="helpHint" aria-hidden="true"><span class="hint-arrow">‹</span><span>左右にスワイプ（全4枚）</span><span class="hint-arrow">›</span></p>
+    <p class="help-hint" id="helpHint" aria-hidden="true"><span class="hint-arrow">‹</span><span>左右にスワイプ（全5枚）</span><span class="hint-arrow">›</span></p>
     <div class="help-dots" id="helpDots">
       <button type="button" aria-label="1枚目" aria-current="true"></button>
       <button type="button" aria-label="2枚目"></button>
       <button type="button" aria-label="3枚目"></button>
       <button type="button" aria-label="4枚目"></button>
+      <button type="button" aria-label="5枚目"></button>
     </div>
     <div class="help-slides" id="helpSlides" tabindex="0" aria-label="手順の画像（横にスワイプで次の画像）">
       <img data-src="./help/help-1.webp" width="390" height="780" alt="①「動画を選択」をタップして動画を選ぶ">
@@ -934,6 +952,13 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg>
         </span>
       </a>
+      <!-- よくある質問（画像ではなく文字で書く。検索でも読まれるように） -->
+      <div class="help-card help-qa">
+        <span class="card-icon qa-icon" aria-hidden="true">Q</span>
+        <span class="card-title"><span>Q. 無料ですか？</span></span>
+        <p class="qa-answer">A. はい、無料です。登録不要で、透かしや回数の制限もありません。動画はアップロードされず、この端末の中だけで処理します。</p>
+        <p class="qa-answer">2026年9月現在、広告も付けていません。（利用者が多くなったら検討させてもらうよ！）</p>
+      </div>
     </div>
   </div>
 </dialog>
