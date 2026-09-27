@@ -327,6 +327,15 @@ test.describe('エンコーダーが可変ビットレートの指定を守ら�
     expect((await outputInfo(page)).size).toBeLessThan(1200 * 1000 * 10 / 8 * 1.5);
   });
 
+  test('なるべく圧縮で20秒より長いときは、時間がかかるので CBR で圧縮し直さない', async ({ page }) => {
+    await greedyVbr(page);
+    await open(page, '?mode=quality&audio=off');
+    await pick(page, '720p-60s.mp4');
+    await setTrim(page, 0, 25);
+    await compress(page);
+    expect((await ui(page)).diag).not.toContain('CBR）で圧縮し直し');
+  });
+
   test('なるべく圧縮で、指定を守るエンコーダーなら CBR で圧縮し直さない', async ({ page }) => {
     await open(page, '?mode=quality&audio=off');
     await pick(page, '720p-60s.mp4');
