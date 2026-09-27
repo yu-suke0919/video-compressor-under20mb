@@ -81,6 +81,29 @@ test.describe('別のアプリへの切り替え（iPhone で圧縮が壊れる�
     await expectRetriedFast(page);
   });
 
+  test('戻ってやり直しても止まったままなら、6秒で見切って互換モードに切り替える', async ({ page }) => {
+    await open(page, '?mode=quality');
+    // iPhone で、戻ったあとも高速モードが固まったままになる状況（1回目も2回目も進まない）
+    await page.evaluate(() => {
+      const C = window.Mediabunny.Conversion.prototype, orig = C.execute;
+      let n = 0;
+      C.execute = function () { return n++ < 2 ? new Promise(() => {}) : orig.call(this); };
+    });
+    await pick(page, 'small-5mb.mp4');
+    await page.click('#runBtn');
+    await page.waitForTimeout(800); await setVis(page, 'hidden');
+    await page.waitForTimeout(1500); await setVis(page, 'visible');
+    await page.waitForFunction(() => !window.__compressor.state.running, null, { timeout: 90000 });
+    const u = await ui(page);
+    expect(u.diag).toContain('画面に戻ってから最初からやり直し（fast・1回目）');
+    expect(u.diag).toContain('止めた処理の後片付け');
+    expect(u.diag).toContain('確認: 動画の読み込み OK');
+    expect(u.diag.split('進捗が6秒止まったため中断').length - 1).toBe(2);   // 2回目も20秒待たずに見切る
+    expect(u.diag).toContain('互換モードに切り替え');
+    expect(u.outInfo).toContain('互換モード');
+    expect(u.hasOut).toBe(true);
+  });
+
   test('知らせがないままページが止められていた場合も、やり直す', async ({ page }) => {
     await open(page, '?mode=quality');
     await failFirstConversion(page, 'fail');
