@@ -353,6 +353,7 @@ npm test -- strip.spec.js   # 一部だけ実行するとき
 | `edge.spec.js` | 小さい・短い・長い動画、4K、音声の種類（音声なし・MP3・Opus・5.1ch・読めない音声が一緒）、WebM、HEVC、壊れたファイル、ファイル名の指定 |
 | `strip.spec.js` | 位置情報・音声を取り除く必要があるときは元の動画をそのまま渡さないこと、全体かどうかの判定、トリミングのみ（再圧縮なし） |
 | `ui.spec.js` | 圧縮後・やり直し・キャンセルの画面の状態、ファイル名の例の更新、設定の保存、使い方の枚数 |
+| `settings.spec.js` | 設定の保存・読み込み・初期値に戻す、URL の読み取り（別名・範囲外の値を含む）と作成、以前の形式で保存した設定の読み込み |
 | `robustness.spec.js` | 別のアプリへの切り替え、Android で読めないとき、互換モードの失敗・キャンセル・待ち受けの後片付け、画面を暗くしない設定 |
 | `sw.spec.js` | Service Worker のキャッシュの削除範囲と、オフラインでの起動 |
 
@@ -365,7 +366,7 @@ npm test -- strip.spec.js   # 一部だけ実行するとき
 | ファイル | 内容 |
 | --- | --- |
 | `public/index.html` | 画面とスタイル（CSSは埋め込み。フレームワークは使っていません） |
-| `public/app.js` | 圧縮処理の本体 |
+| `public/app.js` | 圧縮処理の本体（画面の設定を足すときは、先頭近くの `SETTING_DEFS` に1つ足せば、保存・初期値に戻す・URL の読み取りと作成に反映される） |
 | `public/vendor/mediabunny.min.js` | Mediabunny の必要部分（MPL-2.0） |
 | `public/sw.js` | Service Worker（本番はキャッシュ優先、プレビューはネット優先。全アセットをキャッシュしてオフラインでも起動） |
 | `public/_headers` | Cloudflare Pages が付けるセキュリティ用のHTTPヘッダー（CSP など。読み込めるのはこのサイトのファイルだけ、他サイトへの埋め込みは禁止） |
