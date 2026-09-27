@@ -298,6 +298,10 @@
     font-size: 34px;
     font-weight: 800;
   }
+  /* 更新情報のカードは、質問のカードと見分けられるよう色を変える */
+  .help-news .qa-icon {
+    background: linear-gradient(135deg, #ff9f0a, #ff375f);
+  }
   #helpDlg .help-qa .qa-answer {
     margin: 0;
     width: 100%;
@@ -1012,7 +1016,7 @@
     <p>動画をDiscordに送れるサイズ（20MB以内）に小さくします。</p>
 
     <!-- 画像は説明書を開いたときに読み込む（data-src → src）。アプリの起動時には読まない -->
-    <p class="help-hint" id="helpHint" aria-hidden="true"><span class="hint-arrow">‹</span><span>左右にスワイプ（全14枚）</span><span class="hint-arrow">›</span></p>
+    <p class="help-hint" id="helpHint" aria-hidden="true"><span class="hint-arrow">‹</span><span>左右にスワイプ（全15枚）</span><span class="hint-arrow">›</span></p>
     <div class="help-dots" id="helpDots">
       <button type="button" aria-label="1枚目" aria-current="true"></button>
       <button type="button" aria-label="2枚目"></button>
@@ -1028,6 +1032,7 @@
       <button type="button" aria-label="12枚目"></button>
       <button type="button" aria-label="13枚目"></button>
       <button type="button" aria-label="14枚目"></button>
+      <button type="button" aria-label="15枚目"></button>
     </div>
     <div class="help-slides" id="helpSlides" tabindex="0" aria-label="手順の画像（横にスワイプで次の画像）">
       <img data-src="./help/help-1.webp" width="390" height="780" alt="①「動画を選択」をタップして動画を選ぶ">
@@ -1109,6 +1114,12 @@
         <p class="qa-answer">A. まず、ページを開き直してください。</p>
         <p class="qa-answer">直らないときは、画面の下の「診断情報」をコピーして、<a href="https://x.com/inkaroma0431" target="_blank" rel="noopener noreferrer">X（@inkaroma0431）</a>かDiscordに送ってください（動画やファイル名は含みません）。</p>
         <p class="qa-answer qa-note">※Googleフォトの、端末に保存されていない大きい動画は読み込めないことがあります。先に端末に保存してから選んでください。</p>
+      </div>
+      <!-- 更新情報（新しいものを上に1行ずつ足す） -->
+      <div class="help-card help-qa help-news">
+        <span class="card-icon qa-icon" aria-hidden="true">i</span>
+        <span class="card-title"><span>更新情報</span></span>
+        <p class="qa-answer"><b>2026年9月27日</b><br>サイト公開</p>
       </div>
     </div>
   </div>
