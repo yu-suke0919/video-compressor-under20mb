@@ -47,7 +47,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27zb';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27zc';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -655,6 +655,7 @@
   // 固まるとこのページからは直せず、Safari（ホーム画面のアプリ）を開き直すまで動画を読み込めない
   var MSG_CODEC_STUCK = 'この端末の動画の処理が止まったままになっています。ブラウザ（ホーム画面に追加した場合はそのアプリ）をいったん完全に閉じて開き直してから、もう一度お試しください（iPhone は、アプリの切り替え画面で上にスワイプすると閉じられます）。';
   var MSG_KILL_BROWSER = 'ブラウザをタスクキルしてください！';
+  var MSG_PLAY_LOW_POWER = '動画を再生できませんでした。低電力モードがオンのときは再生できないことがあるので、オフにしてからもう一度お試しください。';
   // 読み込み・圧縮のエラーの赤枠に出す行（デコーダーが固まったときは、先に太字でタスクキルを促す）
   function errorLines(message) {
     return message === MSG_CODEC_STUCK ? [{ bold: MSG_KILL_BROWSER }, message] : [message];
@@ -1564,8 +1565,9 @@
         Promise.resolve(videoEl.play()).then(function () {
           videoEl.requestVideoFrameCallback(onFrame);
         }, function (e) {
-          log('再生できない ' + errText(e));   // NotAllowedError なら、端末が再生を許可しなかった（低電力モードなど）
-          fail(new Error('動画を再生できませんでした。画面を表示したまま、もう一度お試しください。'));
+          log('再生できない ' + errText(e));
+          // iPhone は、低電力モードのとき、音を消した動画でも再生させない（NotAllowedError）
+          fail(new Error(isIOS() && e && e.name === 'NotAllowedError' ? MSG_PLAY_LOW_POWER : '動画を再生できませんでした。画面を表示したまま、もう一度お試しください。'));
         });
       }
       videoEl.addEventListener('seeked', begin, { once: true });
