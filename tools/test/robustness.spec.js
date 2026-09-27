@@ -104,6 +104,27 @@ test.describe('別のアプリへの切り替え（iPhone で圧縮が壊れる�
     expect(u.hasOut).toBe(true);
   });
 
+  test('戻ったときにデコーダーが固まっていたら、互換モードを試さず、開き直すよう案内する', async ({ page }) => {
+    await open(page, '?mode=quality');
+    await failFirstConversion(page, 'hang');
+    await pick(page, 'small-5mb.mp4');
+    // 裏に回ったらデコーダーが固まる（iPhone の実機で、Safari を開き直すまで応答しなくなった）
+    await page.evaluate(() => {
+      const orig = VideoDecoder.isConfigSupported.bind(VideoDecoder);
+      VideoDecoder.isConfigSupported = c => (window.__vis === 'hidden' || window.__stuck) ? (window.__stuck = true, new Promise(() => {})) : orig(c);
+      document.addEventListener('visibilitychange', () => { if (window.__vis === 'hidden') window.__stuck = true; });
+    });
+    await page.click('#runBtn');
+    await page.waitForTimeout(800); await setVis(page, 'hidden');
+    await page.waitForTimeout(1500); await setVis(page, 'visible');
+    await page.waitForFunction(() => !window.__compressor.state.running, null, { timeout: 40000 });
+    const u = await ui(page);
+    expect(u.diag).toContain('確認: デコーダー 応答なし');
+    expect(u.diag).not.toContain('互換モードに切り替え');
+    expect(u.outWarn).toContain('開き直してから');
+    expect(u.hasOut).toBe(false);
+  });
+
   test('知らせがないままページが止められていた場合も、やり直す', async ({ page }) => {
     await open(page, '?mode=quality');
     await failFirstConversion(page, 'fail');
@@ -137,6 +158,58 @@ test.describe('別のアプリへの切り替え（iPhone で圧縮が壊れる�
     const u = await ui(page);
     expect(u.hasOut).toBe(false);
     expect(u.diag).toContain('キャンセル');
+  });
+});
+
+test.describe('iPhone：画面が隠れたら、デコーダーが固まる前に止める', () => {
+  test.use(PROFILES.ios);
+  test.beforeEach(async ({ page }) => { await controllableVisibility(page); });
+
+  test('隠れたらすぐ止め、戻ったら最初からやり直して最後まで圧縮する', async ({ page }) => {
+    await open(page, '?mode=quality');
+    await pick(page, '720p-60s.mp4');
+    await page.click('#runBtn');
+    await page.waitForFunction(() => /進捗 10%/.test(document.getElementById('diagOut').value), null, { timeout: 30000 });
+    await setVis(page, 'hidden');
+    await page.waitForTimeout(300);
+    expect((await ui(page)).diag).toContain('画面から離れたため、動画の処理をいったん止める');
+    await page.waitForTimeout(2000);
+    await setVis(page, 'visible');
+    await page.waitForFunction(() => !window.__compressor.state.running, null, { timeout: 120000 });
+    const u = await ui(page);
+    expect(u.diag).toContain('画面に戻ってから最初からやり直し（fast・1回目）');
+    expect(u.diag).toContain('確認: デコーダー OK');
+    expect(u.outInfo).not.toContain('互換モード');
+    expect(u.hasOut).toBe(true);
+  });
+
+  test('何度切り替えても、そのたびにやり直す（回数の上限で互換モードにしない）', async ({ page }) => {
+    await open(page, '?mode=quality');
+    await pick(page, '720p-60s.mp4');
+    await page.click('#runBtn');
+    for (let i = 0; i < 4; i++) {
+      await page.waitForTimeout(1000);
+      await setVis(page, 'hidden');
+      await page.waitForTimeout(300);
+      await setVis(page, 'visible');
+    }
+    await page.waitForFunction(() => !window.__compressor.state.running, null, { timeout: 120000 });
+    const u = await ui(page);
+    expect(u.diag).toContain('最初からやり直し（fast・4回目）');
+    expect(u.outInfo).not.toContain('互換モード');
+    expect(u.hasOut).toBe(true);
+  });
+});
+
+test.describe('動画を選んだときにデコーダーが固まっている', () => {
+  test('解析で止まり続けず、開き直すよう案内する', async ({ page }) => {
+    await page.addInitScript(() => { VideoDecoder.isConfigSupported = () => new Promise(() => {}); });
+    await open(page);
+    await pick(page, 'small-5mb.mp4');
+    const u = await ui(page);
+    expect(u.planWarn).toContain('開き直してから');
+    expect(u.engine).not.toBe('compat');
+    expect(u.pickVisible).toBe(true);
   });
 });
 

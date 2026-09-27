@@ -42,13 +42,14 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27n';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27o';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、互換モードに切り替える
   var BG_STALL_MS = 6000;                // 別のアプリから戻ったあと、進捗がこれだけ止まっていたら、最初からやり直す
   var CLEANUP_WAIT_MS = 3000;            // やり直す前に、止めた処理の後片付けを待つ上限
+  var DECODER_CHECK_MS = 5000;           // デコーダーがこれだけ応答しなければ、固まっているとみなす
   var FAIL_SETTLE_MS = 1500;             // 失敗してから、別のアプリに切り替えたかを見極めるまで待つ時間
   var FROZEN_GAP_MS = 3000;              // 1秒ごとの見回りの間がこれより空いたら、ページが止められていた（裏に回っていた）とみなす
   var MAX_BG_RETRIES = 3;                // 別のアプリに切り替えたために失敗したとき、やり直す回数の上限
@@ -605,7 +606,7 @@
       meta.width = vt.displayWidth;
       meta.height = vt.displayHeight;
       meta.videoCodec = vt.codec;
-      return Promise.all([input.computeDuration(), vt.computePacketStats(120), vt.canDecode(), input.getPrimaryAudioTrack(),
+      return Promise.all([input.computeDuration(), vt.computePacketStats(120), withinDecoderCheck(vt.canDecode()), input.getPrimaryAudioTrack(),
         vt.getCodecParameterString().catch(function () { return null; }),
         vt.hasHighDynamicRange().catch(function () { return null; }),
         input.getMetadataTags().catch(function () { return null; })]);
@@ -620,7 +621,10 @@
       var at = r[3];
       if (!at) { meta.audio = null; return meta; }
       // 音声をこの端末で読み込めるか（読み込めない音声は、変換しようとしても外されて無音になるので、先に知らせる）
-      return Promise.all([at.computePacketStats(200), at.canDecode().catch(function () { return null; })]).then(function (r2) {
+      return Promise.all([at.computePacketStats(200), withinDecoderCheck(at.canDecode()).catch(function (e) {
+        if (e && e.stuck) throw e;
+        return null;
+      })]).then(function (r2) {
         meta.audio = { codec: at.codec, bitrate: r2[0].averageBitrate || 0, canDecode: r2[1] };
         return meta;
       });
@@ -638,6 +642,14 @@
   // 端末によっては一時的に読み込めず、もう一度選ぶと読み込めることがあるので、まず選び直してもらう
   var MSG_READ_FAIL = '動画をうまく受け取れませんでした（端末側で一時的に読み込めないことがあります）。「動画を選択」からもう一度同じ動画を選んでください。';
   var MSG_PICK_AGAIN = '一時的に読み込めないこともあるので、まずは「動画を選択」からもう一度選び直してください。';
+  // iPhone は、動画の処理中に別のアプリに切り替えると、動画のデコーダーが固まることがある。
+  // 固まるとこのページからは直せず、Safari（ホーム画面のアプリ）を開き直すまで動画を読み込めない
+  var MSG_CODEC_STUCK = 'この端末の動画の処理が止まったままになっています。ブラウザ（ホーム画面に追加した場合はそのアプリ）をいったん完全に閉じて開き直してから、もう一度お試しください。';
+  function codecStuckError() { var e = new Error(MSG_CODEC_STUCK); e.stuck = true; return e; }
+  // デコーダーへの問い合わせに時間制限を付ける（応答がなければ codecStuckError）
+  function withinDecoderCheck(promise) {
+    return Promise.race([promise, sleep(DECODER_CHECK_MS).then(function () { throw codecStuckError(); })]);
+  }
   function loadFailMessage(codec) {
     if (!codec) return '動画を読み込めませんでした。' + MSG_PICK_AGAIN + '何度選んでも読み込めないときは、ファイルが壊れているか、対応していない形式です（MP4・MOVに対応しています）。';
     return 'この端末は、この動画の映像形式（' + (CODEC_NAMES[codec] || codec) + '）の読み込みに対応していない可能性があります。' + MSG_PICK_AGAIN +
@@ -1572,7 +1584,8 @@
   // ページが止められていたこと（1秒ごとの見回りの間が空いた）でも見分ける
   //   onStall(limit, done) … 止まったとみなしたとき（limit: 待った時間（ミリ秒）、done: そこまでの進捗 0〜1）。見回りはそこで止まる
   //   quick … 最初から早めに見切る（別のアプリから戻ってやり直すとき）
-  function watchAttempt(onStall, quick) {
+  //   onHide() … 画面が隠れた知らせが届いたとき
+  function watchAttempt(onStall, quick, onHide) {
     var lastVal = -1, idleMs = 0, lastTick = Date.now(), hidden = false;
     function markHidden(why) {
       if (!hidden) log('画面から離れた（' + why + '）');
@@ -1584,10 +1597,10 @@
       if (gap > FROZEN_GAP_MS) markHidden('ページが' + (gap / 1000).toFixed(1) + '秒止まっていた');
     }
     function onVisibility() {
-      if (document.visibilityState !== 'visible') { markHidden('visibilitychange'); return; }
+      if (document.visibilityState !== 'visible') { markHidden('visibilitychange'); if (onHide) onHide(); return; }
       idleMs = 0;   // 戻ってからの時間で、止まっているかを判断する
     }
-    function onLeave(e) { markHidden(e.type); }
+    function onLeave(e) { markHidden(e.type); if (onHide) onHide(); }
 
     if (document.visibilityState !== 'visible') markHidden('開始時に非表示');
     document.addEventListener('visibilitychange', onVisibility);
@@ -1622,24 +1635,30 @@
     };
   }
 
-  // 別のアプリから戻ったあと、動画の読み込みとデコーダーが応答するかを診断情報に書く（結果は待たない）
-  function probeAfterBackground() {
+  // 別のアプリから戻ったあと、動画の読み込みとデコーダーが応答するかを確かめ、診断情報に書く。
+  // デコーダーが応答しなければ codecStuckError で失敗する（やり直しても互換モードでも進まないので、開き直してもらう）
+  function checkAfterBackground() {
     var t = Date.now();
     function check(what, start) {
       var p;
       try { p = Promise.resolve(start()); } catch (e) { p = Promise.reject(e); }
-      Promise.race([
+      return Promise.race([
         p.then(function () { return 'OK'; }, function (e) { return '失敗 ' + errText(e); }),
-        sleep(CLEANUP_WAIT_MS).then(function () { return '応答なし'; })
-      ]).then(function (r) { log('確認: ' + what + ' ' + r + '（' + ((Date.now() - t) / 1000).toFixed(1) + '秒）'); });
-    }
-    check('動画の読み込み', function () { return state.file.slice(0, 65536).arrayBuffer(); });
-    var codec = state.meta && state.meta.codecString;
-    if (codec && typeof VideoDecoder !== 'undefined') {
-      check('デコーダー', function () {
-        return VideoDecoder.isConfigSupported({ codec: codec, codedWidth: state.meta.width, codedHeight: state.meta.height });
+        sleep(DECODER_CHECK_MS).then(function () { return '応答なし'; })
+      ]).then(function (r) {
+        log('確認: ' + what + ' ' + r + '（' + ((Date.now() - t) / 1000).toFixed(1) + '秒）');
+        return r;
       });
     }
+    var codec = state.meta && state.meta.codecString;
+    return Promise.all([
+      check('動画の読み込み', function () { return state.file.slice(0, 65536).arrayBuffer(); }),
+      codec && typeof VideoDecoder !== 'undefined' ? check('デコーダー', function () {
+        return VideoDecoder.isConfigSupported({ codec: codec, codedWidth: state.meta.width, codedHeight: state.meta.height });
+      }) : null
+    ]).then(function (r) {
+      if (r[1] === '応答なし') throw codecStuckError();
+    });
   }
 
   function run() {
@@ -1668,11 +1687,19 @@
       // 1回ぶんの処理（進まなくなったらこれだけ止めて、別の方式でやり直す）
       var aj = state.attemptJob = newJob();
       var t0 = Date.now(), nextLog = 0;
+      var stoppedOnHide = false;   // 画面が隠れたので、こちらから止めた（iPhone）
       var watch = watchAttempt(function (limit, done) {
         log('進捗が' + Math.round(limit / 1000) + '秒止まったため中断（' + Math.round(done * 100) + '%）');
         if (!watch.wentHidden()) showDiag(true);   // 別のアプリに切り替えたせいなら、やり直すだけなので開かない
         stopJob(aj, STALLED);
-      }, afterBg);
+      }, afterBg, function () {
+        // iPhone は、動画の処理中に裏に回ると、デコーダーが固まって Safari を開き直すまで直らないことがある。
+        // 裏に回されて止まる前にこちらから止めてデコーダーを閉じ、戻ったら最初からやり直す（トリミングのみはデコーダーを使わない）
+        if (!isIOS() || engine === 'copy' || aj.cancelled) return;
+        stoppedOnHide = true;
+        log('画面から離れたため、動画の処理をいったん止める（戻ったら最初からやり直す）');
+        stopJob(aj, STALLED);
+      });
       // キャンセル後に古い処理から届く進捗は無視する
       var onProgress = function (p) {
         if (job.cancelled || aj.cancelled) return;
@@ -1745,7 +1772,8 @@
       function afterFailure(err, stalled) {
         // 途中で別のアプリに切り替えていたら、失敗・停止は動画のせいではない（iPhone は裏に回ると読み込み・書き出しを壊す）。
         // 別の方式に切り替えず、画面に戻るのを待ってから同じ方式で最初からやり直す
-        if (watch.wentHidden() && bgRetries < MAX_BG_RETRIES) {
+        // （こちらから止めたときは、切り替えるたびに何度でもやり直す）
+        if (watch.wentHidden() && (stoppedOnHide || bgRetries < MAX_BG_RETRIES)) {
           bgRetries++;
           log('別のアプリに切り替えていたため、画面に戻ってから最初からやり直し（' + engine + '・' + bgRetries + '回目）');
           setProgress(0, MSG_BG_RETRY);
@@ -1760,7 +1788,10 @@
             ]).then(function (r) { log('止めた処理の後片付け ' + r + '（' + ((Date.now() - t) / 1000).toFixed(1) + '秒）'); });
           }).then(function () {
             throwIfCancelled(job);
-            probeAfterBackground();
+            if (engine === 'copy') return null;   // トリミングのみはデコーダーを使わない
+            return Promise.race([checkAfterBackground(), job.aborted]);
+          }).then(function () {
+            throwIfCancelled(job);
             return attempt(index, prevSize, MSG_BG_RETRY, true);
           });
         }
@@ -2063,6 +2094,8 @@
     }).catch(function (err) {
       console.warn('高速モードで読み込めないため互換モードを使います:', err);
       log('高速モードで読み込めない ' + errText(err));
+      // デコーダーが固まっているときは、互換モードも動かないので試さない
+      if (err && err.stuck) throw err;
       // 端末から受け取れなかったときは、形式の問題ではないので互換モードは試さず、選び直してもらう
       if (isReadError(err)) throw new Error(MSG_READ_FAIL);
       var codec = err && err.codec;   // 中身は読めたが、映像の形式に対応していないとき
