@@ -42,7 +42,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27j';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27k';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -538,9 +538,11 @@
     return bestErr < 0.08 ? best : Math.round(fps * 10) / 10;
   }
 
-  // 撮影場所（GPS）の情報が入っているか。Android は ©xyz、iPhone は com.apple.quicktime.location.ISO6709 などに入る
+  // 撮影場所（GPS）の情報が入っているか。Android は ©xyz、iPhone は com.apple.quicktime.location.ISO6709 などに入る。
+  // メタデータを読めなかったときは null（不明）を返す。不明なときは「なし」と同じに扱わない（元の動画をそのまま渡さない）
   function hasLocationTag(tags) {
-    var raw = tags && tags.raw;
+    if (!tags) return null;
+    var raw = tags.raw;
     if (!raw) return false;
     return Object.keys(raw).some(function (k) { return /xyz|location|gps/i.test(k); });
   }
@@ -843,7 +845,7 @@
     els.audioLabel.textContent = '音声を残す（' + plan.audio.label + '）';
     var trimEst = trimOnlyEstimate(plan);
     els.planInfo.textContent = trimEst
-      ? '→ ' + (isFullTrimOf(plan) ? '位置情報だけ除いて元のまま' : 'トリミングのみ') + '（再圧縮なし）・' +
+      ? '→ ' + copyLabel(plan) + '（再圧縮なし）・' +
         plan.width + '×' + plan.height + '・予想' + fmtBytes(trimEst)
       : '→ ' + plan.width + '×' + plan.height + '・' + fmtFps(plan.outFps) + '・' +
         fmtRate(plan.videoBitrate) + '・予想' + fmtBytes(plan.estBytes);
@@ -856,7 +858,7 @@
       warns.push(resLabel(plan) + 'なら' + fmtDuration(fitSec) + 'まで' + plan.targetMB + 'MBに収められます。');
     }
     if (plan.audio.note) warns.push(plan.audio.note);   // 音声を残せないとき（圧縮する前に知らせる）
-    if (state.meta.hasLocation) warns.push(MSG_LOCATION);
+    if (state.meta.hasLocation === true) warns.push(MSG_LOCATION);
     // 目標サイズに収まらないと出しているときは、同じ内容になる20MB超えの注意は重ねない
     if (!(plan.mode === 'size' && plan.unreachable && !trimEst) && (trimEst ? trimEst > DISCORD_FREE_BYTES : plan.overDiscord)) {
       warns.push(MSG_OVER_DISCORD);
@@ -864,17 +866,26 @@
     setAlert(els.planWarn, warns);
 
     // 目標サイズを超えるのが分かっているときは実行させない（処理中はキャンセル、圧縮後はやり直すボタンなので有効のまま）
-    els.runBtn.disabled = !state.running && !done && (state.busy || (plan.mode === 'size' && plan.unreachable));
+    // （再圧縮では収まらなくても、トリミングのみ（再圧縮なし）で収まる見込みなら実行できる）
+    els.runBtn.disabled = !state.running && !done && (state.busy || (plan.mode === 'size' && plan.unreachable && !trimEst));
 
     updatePassthrough(s);
   }
 
+  // 元の動画から取り除く必要があるもの（元の動画をそのまま渡してはいけない理由）
+  //   location … 位置情報が入っている、または入っているか分からない
+  //   audio    … 「音声を残す」がオフなのに、元の動画に音声が入っている（または入っているか分からない）
+  function stripNeeds(settings) {
+    var meta = state.meta || {};
+    return { location: meta.hasLocation !== false, audio: !settings.audio && meta.audio !== null };
+  }
   // すでに目標サイズ以下なら、圧縮せずそのまま共有・保存できるようにする
   function updatePassthrough(settings) {
     if (state.running) return;
-    // 位置情報が入っている動画は、元の動画をそのまま渡さない（「圧縮する」で位置情報を除いて書き出す）
+    // 位置情報や音声を取り除く必要がある動画は、元の動画をそのまま渡さない（「圧縮する」で取り除いて書き出す）
+    var need = stripNeeds(settings);
     var canPass = settings.mode === 'size' && isFullTrim() && state.file.size < settings.targetBytes &&
-      !(state.meta && state.meta.hasLocation);
+      !need.location && !need.audio;
     if (canPass && (!state.out || state.out.original)) {
       if (!state.out) {
         setOutput({ blob: state.file, name: passthroughName(), type: state.file.type || 'video/mp4', original: true });
@@ -1104,6 +1115,14 @@
     return !(conv.utilizedTracks || []).some(function (t) { return t && t.type === 'audio'; });
   }
 
+  // 再圧縮せずに書き出すときの説明（全体なら何を除いたか、一部ならトリミングのみ）
+  function copyLabel(plan) {
+    if (!isFullTrimOf(plan)) return 'トリミングのみ';
+    var need = stripNeeds(readSettings());
+    if (need.audio && need.location) return '位置情報と音声を除いて元のまま';
+    return need.audio ? '音声を除いて元のまま' : '位置情報を除いて元のまま';
+  }
+
   function isFullTrimOf(plan) {
     return plan.trimStart <= 0.05 && plan.trimEnd >= state.meta.duration - 0.05;
   }
@@ -1113,8 +1132,9 @@
   // 再エンコードせずに切り出すだけにする（画質は元のまま）。見込みのサイズを返し、対象外なら 0
   function trimOnlyEstimate(plan) {
     if (!state.meta || !state.file || state.engine !== 'fast' || plan.mode !== 'size') return 0;
-    // 全体のときは「元の動画のまま」で扱う。ただし位置情報があるときは、位置情報だけ除いてそのまま書き出す
-    if (isFullTrimOf(plan) && !state.meta.hasLocation) return 0;
+    // 全体のときは「元の動画のまま」で扱う。ただし位置情報や音声を取り除く必要があるときは、それだけ除いてそのまま書き出す
+    var need = stripNeeds(readSettings());
+    if (isFullTrimOf(plan) && !need.location && !need.audio) return 0;
     if (plan.width !== state.meta.width || plan.height !== state.meta.height || plan.fpsChanged) return 0;
     if (!(state.meta.duration > 0)) return 0;
     var est = Math.round(state.file.size * plan.duration / state.meta.duration);
@@ -1166,7 +1186,7 @@
   }
 
   // ---------------------------------------------------------------- 互換モード（再生しながら取り込み）
-  function findCompatVideoConfig(plan) {
+  function findCompatVideoConfig(plan, job) {
     var cands = [];
     ['prefer-hardware', 'no-preference'].forEach(function (accel) {
       ['variable', 'constant'].forEach(function (mode) {
@@ -1183,6 +1203,7 @@
     });
     return (function next(i) {
       if (i >= cands.length) return Promise.resolve(null);
+      if (job && job.cancelled) return Promise.reject(new Error(CANCELLED));   // キャンセルされたら残りの候補は試さない
       var c = cands[i];
       return Promise.resolve()
         .then(function () { return VideoEncoder.isConfigSupported(c.config); })
@@ -1191,7 +1212,11 @@
             ' → ' + ((res && res.supported) ? '使える' : '使えない'));
           return (res && res.supported) ? { config: res.config || c.config, mb: c.mb } : next(i + 1);
         })
-        .catch(function (e) { log('互換エンコード設定の確認に失敗 ' + errText(e)); return next(i + 1); });
+        .catch(function (e) {
+          if (isCancel(job, e)) throw e;   // キャンセルはそのまま伝える
+          log('互換エンコード設定の確認に失敗 ' + errText(e));
+          return next(i + 1);
+        });
     })(0);
   }
 
@@ -1295,6 +1320,8 @@
 
   // 映像: <video> をトリミング範囲だけ再生し、フレームを取り出してエンコードする
   function encodeCompatVideo(videoEl, plan, config, onPacket, onProgress, job) {
+    // キャンセル済みなら、プレビューの動画（ミュート・再生位置など）に触れずに終える
+    if (job.cancelled) return Promise.reject(new Error(CANCELLED));
     var width = plan.width, height = plan.height;
     function makeCanvas(offscreen) {
       var c;
@@ -1432,7 +1459,8 @@
 
     return audioPromise.then(function (audio) {
       throwIfCancelled(job);
-      return findCompatVideoConfig(plan).then(function (found) {
+      return findCompatVideoConfig(plan, job).then(function (found) {
+        throwIfCancelled(job);   // 設定を確かめている間にキャンセルされていたら、先へ進まない
         if (!found) throw new Error('この端末では動画のエンコード（H.264）に対応していません。');
         var output = new M.Output({ format: new M.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new M.BufferTarget() });
         var vsrc = new M.EncodedVideoPacketSource(found.mb);
@@ -1443,6 +1471,10 @@
           output.addAudioTrack(asrc);
         }
         return output.start().then(function () {
+          if (job.cancelled) {   // 出力の準備中にキャンセルされていたら、作りかけの出力を捨てる
+            try { output.cancel(); } catch (e) { /* noop */ }
+            throw new Error(CANCELLED);
+          }
           // 映像と音声をタイムスタンプ順に交互に渡す
           var chain = Promise.resolve(), ai = 0;
           function pushAudioUntil(t) {
@@ -1762,7 +1794,7 @@
     var ratio = state.file.size > 0 ? Math.round((1 - size / state.file.size) * 100) : 0;
     if (res.trimOnly) {
       els.outInfo.textContent = fmtBytes(state.file.size) + ' → ' + fmtBytes(size) + '（-' + Math.max(0, ratio) + '%）・' +
-        plan.width + '×' + plan.height + '・' + (isFullTrimOf(plan) ? '位置情報だけ除いて元のまま' : 'トリミングのみ') +
+        plan.width + '×' + plan.height + '・' + copyLabel(plan) +
         '（再圧縮なし）・' + fmtDuration(elapsed) +
         (res.audioDropped ? '・音声なし' : '');
       setAlert(els.outWarn, size > DISCORD_FREE_BYTES ? [MSG_OVER_DISCORD] : []);
@@ -1910,7 +1942,10 @@
       log('解析（高速） ' + meta.width + 'x' + meta.height + ' ' + meta.fps + 'fps ' + (meta.duration || 0).toFixed(1) + 's codec=' +
         (meta.codecString || meta.videoCodec) + ' hdr=' + meta.hdr + ' decode=' + meta.canDecode +
         ' audio=' + (meta.audio ? meta.audio.codec + '/' + Math.round(meta.audio.bitrate / 1000) + 'kbps' + (meta.audio.canDecode === false ? '（読み込めない）' : '') : 'なし'));
-      if (!meta.canDecode) { var e = new Error('decode'); e.codec = meta.videoCodec; throw e; }
+      if (!meta.canDecode) {
+        // 互換モードでは位置情報を調べられないので、ここで分かった有無を引き継ぐ
+        var e = new Error('decode'); e.codec = meta.videoCodec; e.hasLocation = meta.hasLocation; throw e;
+      }
       state.engine = 'fast';
       return meta;
     }).catch(function (err) {
@@ -1922,7 +1957,9 @@
       if (!state.caps.compat) throw new Error(loadFailMessage(codec));
       state.engine = 'compat';
       els.srcInfo.textContent = '解析中…';
-      return loadMetaCompat(els.srcVideo, codec);
+      // 位置情報は高速モードで分かっていれば引き継ぎ、分からなければ不明（null）にする
+      var hasLocation = (err && typeof err.hasLocation === 'boolean') ? err.hasLocation : null;
+      return loadMetaCompat(els.srcVideo, codec).then(function (meta) { meta.hasLocation = hasLocation; return meta; });
     }).then(function (meta) {
       if (state.file !== file) return;
       state.meta = meta;
