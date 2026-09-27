@@ -44,12 +44,14 @@
   // 次の再圧縮から固定ビットレート（CBR）にする
   var CBR_OVERSHOOT = 1.2;
   var MIN_SHRINK = 0.05;
-  // 「なるべく圧縮」（目標サイズなし）では、VBR の結果が指定の約2倍以上になったときだけ、CBR でもう一度圧縮して小さい方を使う
+  // 「なるべく圧縮」（目標サイズなし）では、VBR の結果が指定の約2倍以上になったときだけ、CBR でもう一度圧縮して小さい方を使う。
+  // CBR はソフトウェアのエンコーダーになることがあり、時間が2〜3倍かかるので、短い動画（この秒数以内）だけにする
   var QUALITY_CBR_OVERSHOOT = 1.8;
+  var QUALITY_CBR_MAX_SECONDS = 20;
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27ze';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27zf';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1852,7 +1854,8 @@
           plan.audioBitrate = 0;
         }
         // 「なるべく圧縮」で、VBR なのに指定の約2倍以上の大きさになったら、CBR でもう一度圧縮する（小さい方を使う）
-        if (plan.mode === 'quality' && engine === 'fast' && !preferCbr && res.rateMode === 'variable' && !isIOS() && index + 1 < MAX_ATTEMPTS) {
+        if (plan.mode === 'quality' && engine === 'fast' && !preferCbr && res.rateMode === 'variable' && !isIOS() &&
+            plan.duration <= QUALITY_CBR_MAX_SECONDS && index + 1 < MAX_ATTEMPTS) {
           var qAudioBytes = plan.audioBitrate * plan.duration / 8;
           var qBps = Math.round((res.blob.size - qAudioBytes) * 8 / plan.duration);
           if (qBps >= plan.videoBitrate * QUALITY_CBR_OVERSHOOT) {
