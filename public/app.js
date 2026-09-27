@@ -42,7 +42,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27u';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27v';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -2460,6 +2460,7 @@
     makePlan: makePlan, nextBitrate: nextBitrate, readSettings: readSettings,
     estimateFps: estimateFps, snapFps: snapFps, audioStrategy: audioStrategy,
     state: state,
+    pickFile: function (file) { onFileChosen(file); },   // 自己テスト（selftest.html）から動画を渡す
     constants: {
       SIZE_SAFETY: SIZE_SAFETY, AUDIO_BITRATE: AUDIO_BITRATE, DEFAULT_MIN_KBPS: DEFAULT_MIN_KBPS,
       DISCORD_FREE_BYTES: DISCORD_FREE_BYTES, MAX_ATTEMPTS: MAX_ATTEMPTS, MB: MB
