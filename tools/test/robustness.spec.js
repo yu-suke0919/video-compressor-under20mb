@@ -431,6 +431,23 @@ test.describe('互換モード', () => {
     expect(audio).toEqual({ codec: 'mp4a.40.2', rate: 48000, ch: 2 });
   });
 
+  test.describe('iPhone の低電力モード', () => {
+    test.use(PROFILES.ios);
+    test('動画の再生を断られたら、低電力モードをオフにするよう案内する', async ({ page }) => {
+      // 低電力モードの iPhone と同じく、音を消していても再生させない
+      await page.addInitScript(() => {
+        HTMLMediaElement.prototype.play = () => Promise.reject(new DOMException('The request is not allowed by the user agent', 'NotAllowedError'));
+      });
+      await open(page, '?mode=quality');
+      await pick(page, 'small-5mb.mp4');
+      await page.evaluate(() => { window.__compressor.state.engine = 'compat'; });
+      await compress(page);
+      const u = await ui(page);
+      expect(u.diag).toContain('再生できない NotAllowedError');
+      expect(u.outWarn).toContain('低電力モードがオンのときは再生できないことがあるので、オフにしてから');
+    });
+  });
+
   test('動画を選び直しても、読み込みの待ち受けが溜まらない', async ({ page }) => {
     await page.addInitScript(() => {
       window.__listeners = {};
