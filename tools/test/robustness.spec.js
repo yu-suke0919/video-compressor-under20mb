@@ -69,7 +69,7 @@ test.describe('別のアプリへの切り替え（iPhone で圧縮が壊れる�
     await expectRetriedFast(page);
   });
 
-  test('戻っても止まったままなら、6秒で見切ってやり直す', async ({ page }) => {
+  test('戻っても止まったままなら、3秒で見切ってやり直す', async ({ page }) => {
     await open(page, '?mode=quality');
     await failFirstConversion(page, 'hang');
     await pick(page, 'small-5mb.mp4');
@@ -77,11 +77,11 @@ test.describe('別のアプリへの切り替え（iPhone で圧縮が壊れる�
     await page.waitForTimeout(800); await setVis(page, 'hidden');
     await page.waitForTimeout(1500); await setVis(page, 'visible');
     await page.waitForFunction(() => !window.__compressor.state.running, null, { timeout: 30000 });
-    expect((await ui(page)).diag).toContain('進捗が6秒止まったため中断');
+    expect((await ui(page)).diag).toContain('進捗が3秒止まったため中断');
     await expectRetriedFast(page);
   });
 
-  test('戻ってやり直しても止まったままなら、6秒で見切って互換モードに切り替える', async ({ page }) => {
+  test('戻ってやり直しても止まったままなら、3秒で見切って互換モードに切り替える', async ({ page }) => {
     await open(page, '?mode=quality');
     // iPhone で、戻ったあとも高速モードが固まったままになる状況（1回目も2回目も進まない）
     await page.evaluate(() => {
@@ -98,7 +98,7 @@ test.describe('別のアプリへの切り替え（iPhone で圧縮が壊れる�
     expect(u.diag).toContain('画面に戻ってから最初からやり直し（fast・1回目）');
     expect(u.diag).toContain('止めた処理の後片付け');
     expect(u.diag).toContain('確認: 動画の読み込み OK');
-    expect(u.diag.split('進捗が6秒止まったため中断').length - 1).toBe(2);   // 2回目も20秒待たずに見切る
+    expect(u.diag.split('進捗が3秒止まったため中断').length - 1).toBe(2);   // 2回目も20秒待たずに見切る
     expect(u.diag).toContain('互換モードに切り替え');
     expect(u.outInfo).toContain('互換モード');
     expect(u.hasOut).toBe(true);
@@ -121,7 +121,7 @@ test.describe('別のアプリへの切り替え（iPhone で圧縮が壊れる�
     const u = await ui(page);
     expect(u.diag).toContain('確認: デコーダー 応答なし');
     expect(u.diag).toContain('画面に戻ったあと、デコーダーが応答しない');
-    expect(u.diag).not.toContain('進捗が6秒止まった');   // 止まったと判断する（6秒）のを待たずに案内する
+    expect(u.diag).not.toContain('進捗が3秒止まった');   // 止まったと判断するのを待たずに案内する
     expect(u.diag).not.toContain('互換モードに切り替え');
     expect(u.outWarn).toContain('開き直してから');
     expect(u.hasOut).toBe(false);
@@ -180,7 +180,7 @@ test.describe('デコーダーを確かめている間に裏に回った', () =>
     await page.evaluate(() => { window.__hangDecoder = true; });
     await setVis(page, 'hidden');
     await page.waitForTimeout(1500); await setVis(page, 'visible');
-    // 6秒で見切ってやり直す → 確かめ始める（応答しない）
+    // 戻ったら確かめ始める（応答しない）
     await page.waitForFunction(() => /画面に戻った/.test(document.getElementById('diagOut').value), null, { timeout: 20000 });
     await page.waitForTimeout(1000);
     await setVis(page, 'hidden');    // 確かめている途中で、また裏に回る

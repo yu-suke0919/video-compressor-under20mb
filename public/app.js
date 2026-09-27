@@ -42,14 +42,14 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27r';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27s';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
   var STALL_MS = 20000;                  // 画面を表示しているのに進捗がこれだけ止まったら、互換モードに切り替える
-  var BG_STALL_MS = 6000;                // 別のアプリから戻ったあと、進捗がこれだけ止まっていたら、最初からやり直す
+  var BG_STALL_MS = 3000;                // 別のアプリから戻ったあと、進捗がこれだけ止まっていたら、最初からやり直す（動いていれば戻って1秒以内に進む）
   var CLEANUP_WAIT_MS = 3000;            // やり直す前に、止めた処理の後片付けを待つ上限
-  var DECODER_CHECK_MS = 5000;           // デコーダーがこれだけ応答しなければ、固まっているとみなす
+  var DECODER_CHECK_MS = 2000;           // デコーダーがこれだけ応答しなければ、固まっているとみなす（普段はすぐ応答し、固まると全く応答しない）
   var FAIL_SETTLE_MS = 1500;             // 失敗してから、別のアプリに切り替えたかを見極めるまで待つ時間
   var FROZEN_GAP_MS = 3000;              // 1秒ごとの見回りの間がこれより空いたら、ページが止められていた（裏に回っていた）とみなす
   var MAX_BG_RETRIES = 3;                // 別のアプリに切り替えたために失敗したとき、やり直す回数の上限
@@ -1641,13 +1641,17 @@
   }
 
   // 選んだ動画のデコーダーが応答するか（応答しなければ codecStuckError。対応していないなどの失敗はここでは問わない）
-  function decoderResponds() {
+  // job がキャンセルされていたら、結果は書かない
+  function decoderResponds(job) {
     var codec = state.meta && state.meta.codecString;
     if (!codec || typeof VideoDecoder === 'undefined') return Promise.resolve();
     var p;
     try { p = VideoDecoder.isConfigSupported({ codec: codec, codedWidth: state.meta.width, codedHeight: state.meta.height }); } catch (e) { return Promise.resolve(); }
     return withinDecoderCheck(p).then(function () { /* noop */ }, function (e) {
-      if (e && e.stuck) { log('デコーダーが応答しない（' + DECODER_CHECK_MS / 1000 + '秒）'); throw e; }
+      if (e && e.stuck) {
+        if (!job.cancelled) log('デコーダーが応答しない（' + DECODER_CHECK_MS / 1000 + '秒）');
+        throw e;
+      }
     });
   }
 
@@ -1730,7 +1734,7 @@
         if (!watch.wentHidden()) showDiag(true);   // 別のアプリに切り替えたせいなら、やり直すだけなので開かない
         stopJob(aj, STALLED);
       }, afterBg, function () {
-        // 戻ったらすぐデコーダーを確かめる。固まっていれば、止まったと判断する（6秒）のを待たずに、開き直すよう案内する
+        // 戻ったらすぐデコーダーを確かめる。固まっていれば、止まったと判断するのを待たずに、開き直すよう案内する
         if (engine === 'copy') return;   // トリミングのみはデコーダーを使わない
         var progressAtReturn = watch.lastProgress();
         checkAfterBackground(aj).then(null, function (e) {
@@ -1858,7 +1862,7 @@
     }
 
     // デコーダーが固まったまま（iPhone で、前の圧縮中に別のアプリに切り替えたときなど）なら、始める前に開き直すよう案内する
-    var ready = engine === 'copy' ? Promise.resolve() : Promise.race([decoderResponds(), job.aborted]);
+    var ready = engine === 'copy' ? Promise.resolve() : Promise.race([decoderResponds(job), job.aborted]);
     return ready.then(function () {
       throwIfCancelled(job);
       return attempt(0);
