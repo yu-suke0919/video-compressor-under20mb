@@ -369,6 +369,44 @@ test.describe('互換モード', () => {
     expect((await ui(page)).running).toBe(false);
   });
 
+  test('iPhone の AudioEncoder が AAC の設定データの代わりに esds ごと出しても、正しい AAC として書き出す', async ({ page }) => {
+    // iPhone の Safari と同じく、description に esds の中身（39バイト）を入れてくる AudioEncoder
+    await page.addInitScript(() => {
+      const ESDS = new Uint8Array([0x03, 0x80, 0x80, 0x80, 0x22, 0, 0, 0, 0x04, 0x80, 0x80, 0x80, 0x14, 0x40, 0x14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0x05, 0x80, 0x80, 0x80, 0x02, 0x11, 0x90, 0x06, 0x80, 0x80, 0x80, 0x01, 0x02]);
+      class SafariLikeAudioEncoder {
+        constructor(init) { this.init = init; this.state = 'unconfigured'; this.first = true; }
+        get encodeQueueSize() { return 0; }
+        configure(c) { this.c = c; this.state = 'configured'; }
+        encode(ad) {
+          const chunk = new EncodedAudioChunk({ type: 'key', timestamp: ad.timestamp, duration: Math.round(ad.numberOfFrames / ad.sampleRate * 1e6), data: new Uint8Array([0x21, 0x10, 0x04, 0x60, 0x8c, 0x1c]) });
+          const meta = this.first ? { decoderConfig: { codec: 'mp4a.40.2', sampleRate: this.c.sampleRate, numberOfChannels: this.c.numberOfChannels, description: ESDS } } : undefined;
+          this.first = false;
+          this.init.output(chunk, meta);
+        }
+        flush() { return Promise.resolve(); }
+        close() { this.state = 'closed'; }
+        static isConfigSupported(c) { return Promise.resolve({ supported: true, config: c }); }
+      }
+      window.AudioEncoder = SafariLikeAudioEncoder;
+    });
+    await open(page, '?mode=quality');
+    await pick(page, '720p-60s.mp4');
+    await setTrim(page, 0, 4);
+    await page.evaluate(() => { window.__compressor.state.engine = 'compat'; });   // 互換モードで圧縮する
+    await compress(page);
+    const u = await ui(page);
+    expect(u.outInfo).toContain('互換モード');
+    expect(u.diag).toContain('音声の設定データを作り直した（エンコーダーが出したもの: 39バイト）');
+    const audio = await page.evaluate(async () => {
+      const M = window.Mediabunny, o = window.__compressor.state.out;
+      const input = new M.Input({ source: new M.BlobSource(o.blob), formats: [M.MP4, M.QTFF] });
+      const a = await input.getPrimaryAudioTrack();
+      return a ? { codec: await a.getCodecParameterString(), rate: a.sampleRate, ch: a.numberOfChannels } : null;
+    });
+    expect(audio).toEqual({ codec: 'mp4a.40.2', rate: 48000, ch: 2 });
+  });
+
   test('動画を選び直しても、読み込みの待ち受けが溜まらない', async ({ page }) => {
     await page.addInitScript(() => {
       window.__listeners = {};
