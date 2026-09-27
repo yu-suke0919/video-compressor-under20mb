@@ -120,6 +120,8 @@ test.describe('別のアプリへの切り替え（iPhone で圧縮が壊れる�
     await page.waitForFunction(() => !window.__compressor.state.running, null, { timeout: 40000 });
     const u = await ui(page);
     expect(u.diag).toContain('確認: デコーダー 応答なし');
+    expect(u.diag).toContain('画面に戻ったあと、デコーダーが応答しない');
+    expect(u.diag).not.toContain('進捗が6秒止まった');   // 止まったと判断する（6秒）のを待たずに案内する
     expect(u.diag).not.toContain('互換モードに切り替え');
     expect(u.outWarn).toContain('開き直してから');
     expect(u.hasOut).toBe(false);
