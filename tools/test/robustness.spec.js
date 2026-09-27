@@ -3,7 +3,7 @@
 'use strict';
 
 const { test, expect } = require('@playwright/test');
-const { PROFILES, open, pick, compress, ui, outputInfo, setTrim } = require('./helpers');
+const { PROFILES, open, pick, compress, ui, outputInfo, setTrim, canEncodeAac } = require('./helpers');
 
 // 画面の表示・非表示を、テストから切り替えられるようにする
 async function controllableVisibility(page) {
@@ -313,6 +313,27 @@ test.describe('エンコーダーが可変ビットレートの指定を守ら�
     expect((await outputInfo(page)).size).toBeLessThan(3 * 1000 * 1000);
   });
 
+  test('なるべく圧縮で約2倍以上になったら、CBR でもう一度圧縮して小さい方を使う', async ({ page }) => {
+    await greedyVbr(page);
+    await open(page, '?mode=quality&audio=off');
+    await pick(page, '720p-60s.mp4');
+    await setTrim(page, 0, 10);
+    await compress(page);
+    const u = await ui(page);
+    expect(u.diag).toContain('→ 固定ビットレート（CBR）で圧縮し直し');
+    expect(u.outInfo).toContain('CBR');
+    // 指定（1200kbps）の3倍で書き出した VBR の結果より、かなり小さい
+    expect((await outputInfo(page)).size).toBeLessThan(1200 * 1000 * 10 / 8 * 1.5);
+  });
+
+  test('なるべく圧縮で、指定を守るエンコーダーなら CBR で圧縮し直さない', async ({ page }) => {
+    await open(page, '?mode=quality&audio=off');
+    await pick(page, '720p-60s.mp4');
+    await setTrim(page, 0, 10);
+    await compress(page);
+    expect((await ui(page)).diag).not.toContain('CBR）で圧縮し直し');
+  });
+
   test('指定を守るエンコーダーなら、可変ビットレート（VBR）のまま', async ({ page }) => {
     await open(page, '?mode=size&target=3&audio=off');
     await pick(page, '720p-60s.mp4');
@@ -321,6 +342,38 @@ test.describe('エンコーダーが可変ビットレートの指定を守ら�
     const u = await ui(page);
     expect(u.diag).not.toContain('固定ビットレート（CBR）に切り替え');
     expect((await outputInfo(page)).size).toBeLessThan(3 * 1000 * 1000);
+  });
+});
+
+test.describe('元の音声をそのままコピーできない（音声の設定データが壊れた動画など）', () => {
+  test('互換モードにせず、音声を作り直すか外して、高速モードのままやり直す', async ({ page }) => {
+    await open(page, '?mode=quality');
+    // 音声をそのままコピーする変換だけ、Mediabunny が音声の形式を不正として止める（自己テストで実際に起きた失敗）
+    await page.evaluate(() => {
+      const C = window.Mediabunny.Conversion, init = C.init.bind(C);
+      C.init = async opts => {
+        const conv = await init(opts);
+        if (opts.audio && opts.audio.codec === 'aac' && !opts.audio.forceTranscode) {
+          conv.execute = () => Promise.reject(new TypeError('Audio chunk metadata decoder configuration codec string for AAC must be a valid AAC codec string'));
+        }
+        return conv;
+      };
+    });
+    await pick(page, '720p-60s.mp4');
+    await setTrim(page, 0, 5);
+    await compress(page);
+    const u = await ui(page);
+    expect(u.diag).toContain('失敗（fast）TypeError: Audio chunk');
+    expect(u.diag).toMatch(/元の音声をそのまま使えないため、(音声を AAC に作り直して|音声を外して)高速モードでやり直し/);
+    expect(u.diag).not.toContain('互換モードに切り替え');
+    expect(u.hasOut).toBe(true);
+    const info = await outputInfo(page);
+    if (await canEncodeAac(page)) {
+      expect(info.audioCodec).toBe('aac');   // 作り直した
+    } else {
+      expect(info.audioCodec).toBe(null);    // 外した（この Chrome は AAC で書き出せない）
+      expect(u.outWarn).toContain('元の動画の音声をそのまま使えなかったため、音声なしで圧縮しました。');
+    }
   });
 });
 

@@ -44,10 +44,12 @@
   // 次の再圧縮から固定ビットレート（CBR）にする
   var CBR_OVERSHOOT = 1.2;
   var MIN_SHRINK = 0.05;
+  // 「なるべく圧縮」（目標サイズなし）では、VBR の結果が指定の約2倍以上になったときだけ、CBR でもう一度圧縮して小さい方を使う
+  var QUALITY_CBR_OVERSHOOT = 1.8;
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27zc';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27zd';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -655,6 +657,7 @@
   // 固まるとこのページからは直せず、Safari（ホーム画面のアプリ）を開き直すまで動画を読み込めない
   var MSG_CODEC_STUCK = 'この端末の動画の処理が止まったままになっています。ブラウザ（ホーム画面に追加した場合はそのアプリ）をいったん完全に閉じて開き直してから、もう一度お試しください（iPhone は、アプリの切り替え画面で上にスワイプすると閉じられます）。';
   var MSG_KILL_BROWSER = 'ブラウザをタスクキルしてください！';
+  var MSG_AUDIO_COPY_FAILED = '元の動画の音声をそのまま使えなかったため、音声なしで圧縮しました。';
   var MSG_PLAY_LOW_POWER = '動画を再生できませんでした。低電力モードがオンのときは再生できないことがあるので、オフにしてからもう一度お試しください。';
   // 読み込み・圧縮のエラーの赤枠に出す行（デコーダーが固まったときは、先に太字でタスクキルを促す）
   function errorLines(message) {
@@ -1776,6 +1779,8 @@
     log('圧縮開始 ' + describePlan(plan) + ' engine=' + engine);
     var bgRetries = 0;   // 別のアプリに切り替えたためにやり直した回数
     var preferCbr = false;   // VBR では指定のサイズに収まらなかったので、CBR を優先する
+    var vbrResult = null;    // 「なるべく圧縮」で CBR を試す前の VBR の結果（CBR の方が大きければ、こちらを使う）
+    var audioRetried = false;   // 元の音声をそのまま使えず、音声を作り直す（外す）やり直しをした
 
     // prevSize: 前回の圧縮結果のサイズ（再圧縮のときに表示する）。note: 進捗の欄に出す補足
     // afterBg: 別のアプリから戻ってのやり直し（iPhone は戻ったあとも動画の読み込み・書き出しが固まったままのことがあるので、
@@ -1843,6 +1848,17 @@
           plan.audio = { mode: 'none', bps: 0, label: 'なし', note: null };
           plan.audioBitrate = 0;
         }
+        // 「なるべく圧縮」で、VBR なのに指定の約2倍以上の大きさになったら、CBR でもう一度圧縮する（小さい方を使う）
+        if (plan.mode === 'quality' && engine === 'fast' && !preferCbr && res.rateMode === 'variable' && !isIOS() && index + 1 < MAX_ATTEMPTS) {
+          var qAudioBytes = plan.audioBitrate * plan.duration / 8;
+          var qBps = Math.round((res.blob.size - qAudioBytes) * 8 / plan.duration);
+          if (qBps >= plan.videoBitrate * QUALITY_CBR_OVERSHOOT) {
+            preferCbr = plan.preferCbr = true;
+            vbrResult = res;
+            log('指定より大きく書き出した（映像 ' + fmtRate(qBps) + '／指定 ' + fmtRate(plan.videoBitrate) + '）→ 固定ビットレート（CBR）で圧縮し直し');
+            return attempt(index + 1, res.blob.size, '指定より大きくなったため、固定ビットレートで圧縮し直し中');
+          }
+        }
         if (plan.mode === 'size' && res.blob.size >= plan.targetBytes && index + 1 < MAX_ATTEMPTS) {
           var audioBytes = plan.audioBitrate * plan.duration / 8;
           var next = nextBitrate(plan, res.blob.size - audioBytes, audioBytes);
@@ -1868,6 +1884,10 @@
             log('再圧縮 映像 ' + fmtRate(plan.videoBitrate) + (preferCbr ? '（CBR）' : ''));
             return attempt(index + 1, res.blob.size);
           }
+        }
+        if (vbrResult && vbrResult.blob.size <= res.blob.size) {
+          log('CBR の方が小さくならなかったため、最初の結果を使う');
+          res = vbrResult;
         }
         res.attempts = index + 1;
         return res;
@@ -1918,6 +1938,19 @@
             throwIfCancelled(job);
             return attempt(index, prevSize, MSG_BG_RETRY, true);
           });
+        }
+        // 元の音声をそのままコピーして失敗したときは（音声の設定データが壊れた動画など）、互換モードにせず、
+        // 音声を AAC に作り直すか（読めて、AAC で書き出せるとき）、音声だけ外して、高速モードのままやり直す
+        if (engine === 'fast' && plan.audio.mode === 'copy' && !stalled && !audioRetried) {
+          audioRetried = true;
+          var src = state.meta.audio || {};
+          var audio = state.caps.aac && src.canDecode !== false
+            ? { mode: 'aac', bps: AUDIO_BITRATE, label: 'AAC ' + fmtRate(AUDIO_BITRATE), note: null }
+            : { mode: 'none', bps: 0, label: 'なし', note: MSG_AUDIO_COPY_FAILED, afterFailure: true };
+          log('元の音声をそのまま使えないため、' + (audio.mode === 'aac' ? '音声を AAC に作り直して' : '音声を外して') + '高速モードでやり直し');
+          plan = replan(plan, { audio: audio });
+          plan.preferCbr = preferCbr;
+          return attempt(0);
         }
         // トリミングのみがうまくいかなければ、通常の圧縮でやり直す
         if (engine === 'copy') {
@@ -2086,6 +2119,7 @@
       // 60fpsのままだと、エンコーダが下限ビットレートまで下げきれず目標を超えることがある
       if (plan.outFps > 40 && !plan.halfFps) warns.push(MSG_HALF_FPS_HINT);
     }
+    if (plan.audio.afterFailure && plan.audio.note) warns.push(plan.audio.note);
     if (size > DISCORD_FREE_BYTES) warns.push(MSG_OVER_DISCORD);
     setAlert(els.outWarn, warns);
   }
