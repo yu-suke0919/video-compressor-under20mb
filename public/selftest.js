@@ -64,7 +64,7 @@
       } catch (e) { continue; }
       var packets = [], err = null;
       var enc = new AudioEncoder({
-        output: function (chunk, meta) { packets.push({ packet: M.EncodedPacket.fromEncodedChunk(chunk), meta: meta }); },
+        output: function (chunk, meta) { packets.push({ packet: M.EncodedPacket.fromEncodedChunk(chunk), meta: fixAudioMeta(meta, cand) }); },
         error: function (e) { err = e; }
       });
       try {
@@ -89,6 +89,23 @@
       if (!err && packets.length) return { packets: packets, mb: cand.mb, name: cand.name };
     }
     return null;
+  }
+
+  // iPhone の Safari の AudioEncoder は、形式の文字列（codec）に正しくない値を入れてくることがある。
+  // そのまま書くと、その動画の音声を読めず、音声をコピーしようとしたときに失敗するので、頼んだ形式の文字列に直す
+  var rawAudioCodec = null;   // エンコーダーが入れてきた文字列（結果に書く）
+  function fixAudioMeta(meta, cand) {
+    if (!meta || !meta.decoderConfig) return meta;
+    var dc = meta.decoderConfig;
+    if (rawAudioCodec === null) rawAudioCodec = String(dc.codec);
+    return {
+      decoderConfig: {
+        codec: cand.config.codec,
+        sampleRate: dc.sampleRate || cand.config.sampleRate,
+        numberOfChannels: dc.numberOfChannels || cand.config.numberOfChannels,
+        description: dc.description
+      }
+    };
   }
 
   // 1コマ描く（色が変わり、丸が動くので、圧縮にそれなりの情報量が要る）
@@ -335,6 +352,8 @@
       r.diag = appText('diagOut');
       return;
     }
+    // テスト用の動画の音声をアプリが読めないなら、アプリではなくテスト用の動画の問題
+    var badSource = source.audio && s.meta.audio && s.meta.audio.canDecode === false;
     if (c.trim) setTrim(c.trim[0], c.trim[1]);
     var t0 = Date.now();
     if (!c.noRun) await runInApp(COMPRESS_TIMEOUT_MS);
@@ -358,6 +377,7 @@
       if (e.duration && Math.abs(info.duration - e.duration) > (e.durationTol || 0.6)) problems.push('長さが ' + info.duration.toFixed(1) + '秒（正しくは約' + e.duration + '秒）');
       if (s.engine === 'compat' || /互換モード/.test(appText('outInfo'))) warns.push('互換モードで処理した');
     }
+    if (badSource) problems.unshift('テスト用の動画の音声（' + source.audio + '）をアプリが読めない（テスト用の動画の問題）');
     r.status = problems.length ? 'ng' : warns.length ? 'warn' : 'ok';
     if (problems.length || warns.length) r.detail = problems.concat(warns).join('／') + (r.detail ? '（' + r.detail + '）' : '');
     if (r.status !== 'ok') r.diag = appText('diagOut');
@@ -492,7 +512,8 @@
   // ---------------------------------------------------------------- 結果のコピー
   function resultText() {
     var mark = { ok: '✓', ng: '✗', warn: '!', run: '…', wait: '・' };
-    var lines = ['自己テストの結果 ' + new Date().toLocaleString('ja-JP'), $('device').textContent, $('summary').textContent, ''];
+    var lines = ['自己テストの結果 ' + new Date().toLocaleString('ja-JP'), $('device').textContent,
+      'テスト用の音声のエンコーダーが入れてきた形式: ' + (rawAudioCodec || '（音声なし）'), $('summary').textContent, ''];
     results.forEach(function (r) {
       lines.push(mark[r.status] + ' ' + r.title + (r.detail ? '\n    ' + r.detail : ''));
     });
