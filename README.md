@@ -326,6 +326,40 @@ npm run build:vendor
 
 含める機能は `tools/mediabunny-entry.js`、ビルド設定は `package.json` にあります。
 
+### テスト
+
+実際のブラウザでアプリを動かし、動画を圧縮して結果を確かめるテストがあります（`tools/test/`。[Playwright](https://playwright.dev/) を使用）。
+コードを直したら、公開する前に実行してください。
+
+必要なもの：Node.js、ffmpeg（テスト用の動画を作る）、H.264 と AAC を扱える Chrome（パソコンの Google Chrome など。オープンソース版の Chromium では動きません）
+
+```sh
+npm install
+npm run test:videos   # テスト用の動画を tools/test/videos/ に作る（最初の1回だけ。約2分・約470MB）
+npm test              # すべてのテストを実行（約15分）
+npm test -- strip.spec.js   # 一部だけ実行するとき
+```
+
+| 環境変数 | 内容 |
+| --- | --- |
+| `FFMPEG` | ffmpeg の場所（既定は PATH の `ffmpeg`） |
+| `CHROME_PATH` | 使う Chrome の実行ファイル（既定はインストールした Google Chrome） |
+| `CHROME_ARGS` | Chrome に足す引数（GPU のない Linux では `--disable-gpu` を付けると縮小が速い） |
+| `WORKERS` | 同時に動かすテストの数（既定は1。変換が重いため） |
+
+| ファイル | 確かめること |
+| --- | --- |
+| `matrix.spec.js` | 端末（PC・Android・iPhone の画面）× 動画（720p・1080p・縦長・回転情報つき・画面録画）で、20MB未満・正しい大きさ・音声ありになる |
+| `edge.spec.js` | 小さい・短い・長い動画、4K、音声の種類（音声なし・MP3・Opus・5.1ch・読めない音声が一緒）、WebM、HEVC、壊れたファイル、ファイル名の指定 |
+| `strip.spec.js` | 位置情報・音声を取り除く必要があるときは元の動画をそのまま渡さないこと、全体かどうかの判定、トリミングのみ（再圧縮なし） |
+| `ui.spec.js` | 圧縮後・やり直し・キャンセルの画面の状態、ファイル名の例の更新、設定の保存、使い方の枚数 |
+| `robustness.spec.js` | 別のアプリへの切り替え、Android で読めないとき、互換モードの失敗・キャンセル・待ち受けの後片付け、画面を暗くしない設定 |
+| `sw.spec.js` | Service Worker のキャッシュの削除範囲と、オフラインでの起動 |
+
+- 中身の処理は、テストを動かす Chrome のものです。Android・iPhone は画面の大きさと名乗りを似せているだけなので、実機での確認は別に必要です。
+- 別のアプリへの切り替えや、端末が動画を読ませてくれない状況などは、ブラウザの関数を差し替えて同じ状況を作っています。
+- AAC で書き出せるか（Linux の Chrome はできない）、HEVC を読めるかは端末によって違うので、どちらでも正しい結果になるように確かめています。
+
 ### ファイル構成
 
 | ファイル | 内容 |
@@ -339,7 +373,8 @@ npm run build:vendor
 | `public/icons/` | アイコン（PNG） |
 | `public/help/` | 説明書の画像（WebP。説明書を開いたときだけ読み込む） |
 | `public/shortcut.html` | iPhoneのショートカットを併用した使い方のページ（説明書のカードから開く。画像は `public/help/sc-*.webp`） |
-| `package.json` / `tools/` | 同梱ライブラリを作り直すときだけ使う設定（公開はされない） |
+| `package.json` / `tools/mediabunny-entry.js` | 同梱ライブラリを作り直すときと、テストに使う設定（公開はされない） |
+| `tools/test/` | テスト（テスト用の動画の作成、テスト用サーバー、各テスト） |
 
 ---
 

@@ -1,1 +1,5 @@
 node_modules/
+# テスト用の動画とテスト結果（npm run test:videos / npm test で作られる）
+tools/test/videos/
+tools/test/test-results/
+playwright-report/
