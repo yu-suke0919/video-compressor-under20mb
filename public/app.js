@@ -47,7 +47,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27z';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27za';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1100,14 +1100,20 @@
   function pickFastEncoding(plan) {
     // 可変ビットレート（VBR）を優先し、使えなければ固定ビットレート（CBR）にする。
     // plan.preferCbr（VBR では指定のサイズに収まらなかった）なら CBR を優先する
-    var modes = plan.preferCbr ? ['constant', 'variable'] : ['variable', 'constant'];
+    // （CBR を優先するときは、ハードウェアの CBR が使えなければ、ハードウェアの VBR より先にソフトウェアの CBR を試す。
+    //   Android の実機で、ハードウェアは VBR しか使えず、VBR ではビットレートを下げても小さくならなかった）
+    var hws = ['prefer-hardware', 'no-preference'];
     var cands = [];
     FAST_VIDEO_CODECS.forEach(function (codec) {
-      ['prefer-hardware', 'no-preference'].forEach(function (hw) {
-        modes.forEach(function (bm) {
-          cands.push({ codec: codec, hw: hw, bitrateMode: bm });
+      if (plan.preferCbr) {
+        ['constant', 'variable'].forEach(function (bm) {
+          hws.forEach(function (hw) { cands.push({ codec: codec, hw: hw, bitrateMode: bm }); });
         });
-      });
+      } else {
+        hws.forEach(function (hw) {
+          ['variable', 'constant'].forEach(function (bm) { cands.push({ codec: codec, hw: hw, bitrateMode: bm }); });
+        });
+      }
     });
     return (function next(i) {
       if (i >= cands.length) return Promise.resolve(null);

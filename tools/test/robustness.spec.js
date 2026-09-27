@@ -289,6 +289,30 @@ test.describe('エンコーダーが可変ビットレートの指定を守ら�
     expect(await page.evaluate(() => window.__modes.includes('constant'))).toBe(true);
   });
 
+  test('ハードウェアの CBR が使えない端末では、ソフトウェアの CBR に切り替える', async ({ page }) => {
+    await greedyVbr(page);
+    // その Android と同じく、ハードウェアは VBR だけ使える（テストの Chrome にはハードウェアがないので、ソフトウェアで代わりに動かす）
+    await page.addInitScript(() => {
+      const soft = c => Object.assign({}, c, { hardwareAcceleration: 'no-preference' });
+      const orig = VideoEncoder.isConfigSupported.bind(VideoEncoder);
+      VideoEncoder.isConfigSupported = c => {
+        if (c.hardwareAcceleration !== 'prefer-hardware') return orig(c);
+        if (c.bitrateMode === 'constant') return Promise.resolve({ supported: false, config: c });
+        return orig(soft(c)).then(r => Object.assign({}, r, { config: c }));
+      };
+      const configure = VideoEncoder.prototype.configure;
+      VideoEncoder.prototype.configure = function (c) { return configure.call(this, c.hardwareAcceleration === 'prefer-hardware' ? soft(c) : c); };
+    });
+    await open(page, '?mode=size&target=3&audio=off');
+    await pick(page, '720p-60s.mp4');
+    await setTrim(page, 0, 10);
+    await compress(page);
+    const u = await ui(page);
+    expect(u.diag).toContain('エンコード設定 avc/prefer-hardware/constant → 使えない');
+    expect(u.diag).toContain('エンコード設定 avc/no-preference/constant → 使える');
+    expect((await outputInfo(page)).size).toBeLessThan(3 * 1000 * 1000);
+  });
+
   test('指定を守るエンコーダーなら、可変ビットレート（VBR）のまま', async ({ page }) => {
     await open(page, '?mode=size&target=3&audio=off');
     await pick(page, '720p-60s.mp4');
