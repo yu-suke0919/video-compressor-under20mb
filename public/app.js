@@ -42,7 +42,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27o';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27p';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1636,8 +1636,31 @@
   }
 
   // 別のアプリから戻ったあと、動画の読み込みとデコーダーが応答するかを確かめ、診断情報に書く。
-  // デコーダーが応答しなければ codecStuckError で失敗する（やり直しても互換モードでも進まないので、開き直してもらう）
-  function checkAfterBackground() {
+  // デコーダーが応答しなければ codecStuckError で失敗する（やり直しても互換モードでも進まないので、開き直してもらう）。
+  // 裏に回っている間はデコーダーが応答しないのが普通なので、確かめている間ずっと画面を表示していたときだけ判断する
+  function checkAfterBackground(job) {
+    return waitVisible(job).then(function () {
+      var leftDuring = false, lastTick = Date.now();
+      function onVisibility() { if (document.visibilityState !== 'visible') leftDuring = true; }
+      // 知らせがないままページが止められていたことも見分ける（1秒ごとの見回りの間が空いた）
+      var ticker = setInterval(function () {
+        if (Date.now() - lastTick > FROZEN_GAP_MS) leftDuring = true;
+        lastTick = Date.now();
+      }, 1000);
+      document.addEventListener('visibilitychange', onVisibility);
+      return checkResponses().then(function (r) {
+        clearInterval(ticker);
+        document.removeEventListener('visibilitychange', onVisibility);
+        if (Date.now() - lastTick > FROZEN_GAP_MS) leftDuring = true;
+        if (leftDuring || document.visibilityState !== 'visible') {
+          log('確かめている間に画面から離れたため、戻ってから確かめ直す');
+          return checkAfterBackground(job);
+        }
+        if (r[1] === '応答なし') throw codecStuckError();
+      });
+    });
+  }
+  function checkResponses() {
     var t = Date.now();
     function check(what, start) {
       var p;
@@ -1656,9 +1679,7 @@
       codec && typeof VideoDecoder !== 'undefined' ? check('デコーダー', function () {
         return VideoDecoder.isConfigSupported({ codec: codec, codedWidth: state.meta.width, codedHeight: state.meta.height });
       }) : null
-    ]).then(function (r) {
-      if (r[1] === '応答なし') throw codecStuckError();
-    });
+    ]);
   }
 
   function run() {
@@ -1778,6 +1799,7 @@
           log('別のアプリに切り替えていたため、画面に戻ってから最初からやり直し（' + engine + '・' + bgRetries + '回目）');
           setProgress(0, MSG_BG_RETRY);
           return waitVisible(job).then(function () {
+            log('画面に戻った');
             // 止めた処理が動画の読み込み・書き出しを使ったままだと、やり直しが進まないことがあるので、後片付けを少し待つ
             if (!aj.stopped) return;
             var t = Date.now();
@@ -1789,7 +1811,7 @@
           }).then(function () {
             throwIfCancelled(job);
             if (engine === 'copy') return null;   // トリミングのみはデコーダーを使わない
-            return Promise.race([checkAfterBackground(), job.aborted]);
+            return Promise.race([checkAfterBackground(job), job.aborted]);
           }).then(function () {
             throwIfCancelled(job);
             return attempt(index, prevSize, MSG_BG_RETRY, true);

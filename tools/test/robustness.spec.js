@@ -183,6 +183,33 @@ test.describe('iPhone：画面が隠れたら、デコーダーが固まる前�
     expect(u.hasOut).toBe(true);
   });
 
+  test('デコーダーを確かめている間に裏に回ったら、固まったと決めつけず、戻ってから確かめ直す', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__hangDecoder = false;
+      const orig = VideoDecoder.isConfigSupported.bind(VideoDecoder);
+      VideoDecoder.isConfigSupported = c => window.__hangDecoder ? new Promise(() => {}) : orig(c);   // 裏では応答しない
+    });
+    await open(page, '?mode=quality');
+    await pick(page, '720p-60s.mp4');
+    await page.click('#runBtn');
+    await page.waitForFunction(() => /進捗 10%/.test(document.getElementById('diagOut').value), null, { timeout: 30000 });
+    await page.evaluate(() => { window.__hangDecoder = true; });
+    await setVis(page, 'hidden');
+    await page.waitForTimeout(300);
+    await setVis(page, 'visible');   // 確かめ始める（応答しない）
+    await page.waitForTimeout(1000);
+    await setVis(page, 'hidden');    // 確かめている途中で、また裏に回る
+    await page.evaluate(() => { window.__hangDecoder = false; });
+    await page.waitForTimeout(300);
+    await setVis(page, 'visible');
+    await page.waitForFunction(() => !window.__compressor.state.running, null, { timeout: 120000 });
+    const u = await ui(page);
+    expect(u.diag).toContain('確かめている間に画面から離れたため、戻ってから確かめ直す');
+    expect(u.diag).toContain('確認: デコーダー OK');
+    expect(u.outWarn).not.toContain('開き直して');
+    expect(u.hasOut).toBe(true);
+  });
+
   test('何度切り替えても、そのたびにやり直す（回数の上限で互換モードにしない）', async ({ page }) => {
     await open(page, '?mode=quality');
     await pick(page, '720p-60s.mp4');
