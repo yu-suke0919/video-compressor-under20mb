@@ -6,7 +6,8 @@
   "scripts": {
     "build:vendor": "esbuild tools/mediabunny-entry.js --bundle --minify --format=iife --global-name=Mediabunny --target=safari16 --legal-comments=eof \"--banner:js=/*! Mediabunny v1.59.0 (https://mediabunny.dev/) の必要部分だけを束ねたもの（改変なし）。MPL-2.0: vendor/mediabunny.LICENSE.txt ソースコード: https://github.com/Vanilagy/mediabunny/tree/v1.59.0 */\" --outfile=public/vendor/mediabunny.min.js",
     "test:videos": "node tools/test/make-videos.js",
-    "test": "playwright test -c tools/test"
+    "test": "playwright test -c tools/test",
+    "bump": "node tools/bump-version.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
