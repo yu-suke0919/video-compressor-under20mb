@@ -47,7 +47,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27y';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27z';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1356,11 +1356,38 @@
     });
   }
 
+  // iPhone の Safari（WebKit）の AudioEncoder は、AAC の設定データ（AudioSpecificConfig）の代わりに、
+  // MP4 の入れ物（esds）ごと入れてくる（https://bugs.webkit.org/show_bug.cgi?id=302253）。
+  // そのまま書くと、書き出した動画の音声が正しく読めないので、Mediabunny と同じく、設定データを作り直す
+  var AAC_RATES = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+  function aacSpecificConfig(sampleRate, channels) {
+    // 種類（2: AAC-LC）5ビット・サンプリング周波数の番号 4ビット（一覧にないときは 15 と周波数 24ビット）・チャンネル数 4ビット・残り3ビットは0
+    var bits = [], idx = AAC_RATES.indexOf(sampleRate);
+    function put(v, n) { for (var i = n - 1; i >= 0; i--) bits.push((v >> i) & 1); }
+    put(2, 5);
+    if (idx >= 0) put(idx, 4); else { put(15, 4); put(sampleRate, 24); }
+    put(channels, 4);
+    put(0, 3);
+    var out = new Uint8Array(Math.ceil(bits.length / 8));
+    bits.forEach(function (b, i) { if (b) out[i >> 3] |= 0x80 >> (i & 7); });
+    return out;
+  }
+  function fixAacMeta(meta) {
+    var dc = meta && meta.decoderConfig;
+    if (!dc) return meta;
+    var d = dc.description, bytes = null;
+    if (d) bytes = d instanceof ArrayBuffer ? new Uint8Array(d) : new Uint8Array(d.buffer, d.byteOffset, d.byteLength);
+    if (bytes && bytes.length >= 2 && (bytes[0] >> 3) !== 0) return meta;   // 種類が入っている（正しい設定データ）
+    log('音声の設定データを作り直した（エンコーダーが出したもの: ' + (bytes ? bytes.length + 'バイト' : 'なし') + '）');
+    return { decoderConfig: { codec: dc.codec, sampleRate: dc.sampleRate, numberOfChannels: dc.numberOfChannels,
+      description: aacSpecificConfig(dc.sampleRate, dc.numberOfChannels) } };
+  }
+
   function runAudioEncoder(audioBuffer, from, to, channels, sampleRate, config, onProgress, job) {
     return new Promise(function (resolve, reject) {
       var packets = [];
       var encoder = new AudioEncoder({
-        output: function (chunk, meta) { packets.push({ packet: M.EncodedPacket.fromEncodedChunk(chunk), meta: meta }); },
+        output: function (chunk, meta) { packets.push({ packet: M.EncodedPacket.fromEncodedChunk(chunk), meta: fixAacMeta(meta) }); },
         error: function (e) { reject(e); }
       });
       encoder.configure(config);

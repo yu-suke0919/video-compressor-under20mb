@@ -288,11 +288,16 @@
     try {
       var v = await input.getPrimaryVideoTrack();
       var a = await input.getPrimaryAudioTrack();
-      var fps = null;
+      var fps = null, audioOk = null, audioCodec = null;
       if (v) { try { fps = (await v.computePacketStats(120)).averagePacketRate; } catch (e) { fps = null; } }
+      // 音声が入っていれば、この端末で読める形式になっているか（iPhone の AAC の設定データの問題が起きると読めない）
+      if (a) {
+        audioCodec = await a.getCodecParameterString().catch(function () { return null; });
+        audioOk = await a.canDecode().catch(function () { return false; });
+      }
       return {
         size: blob.size, w: v ? v.displayWidth : null, h: v ? v.displayHeight : null,
-        fps: fps, audio: a ? a.codec : null, duration: await input.computeDuration()
+        fps: fps, audio: a ? a.codec : null, audioCodec: audioCodec, audioOk: audioOk, duration: await input.computeDuration()
       };
     } finally {
       try { input.dispose(); } catch (e) { /* noop */ }
@@ -319,7 +324,9 @@
     { title: '縦長 → 720p', video: 'vVert', query: 'res=720&mode=quality', expect: { w: 720, h: 1280, audio: true } },
     { title: '縦長 → 1080p', video: 'vVert', query: 'res=1080&mode=quality', expect: { w: 1080, h: 1920, audio: true } },
     { title: '小さい動画（拡大しない）', video: 'vSmall', query: 'res=720&mode=quality', expect: { w: 320, h: 240 } },
-    { title: 'とても短い動画（0.4秒）', video: 'vShort', query: 'res=720&mode=quality', expect: { w: 1280, h: 720 } }
+    { title: 'とても短い動画（0.4秒）', video: 'vShort', query: 'res=720&mode=quality', expect: { w: 1280, h: 720 } },
+    // 高速モードで扱えない動画のときに使う、再生しながら処理する方式（音声はアプリが自分で AAC にする）
+    { title: '互換モード', video: 'v720', query: 'res=720&mode=quality', compat: true, expect: { w: 1280, h: 720, audio: true } }
   ];
 
   // ---------------------------------------------------------------- 結果の表示
@@ -378,6 +385,7 @@
     // テスト用の動画の音声をアプリが読めないなら、アプリではなくテスト用の動画の問題
     var badSource = source.audio && s.meta.audio && s.meta.audio.canDecode === false;
     if (c.trim) setTrim(c.trim[0], c.trim[1]);
+    if (c.compat) s.engine = 'compat';   // 互換モードを試す（画面からは選べない）
     var t0 = Date.now();
     if (!c.noRun) await runInApp(COMPRESS_TIMEOUT_MS);
     var sec = ((Date.now() - t0) / 1000).toFixed(1);
@@ -396,9 +404,11 @@
       if (e.audio === true && source.audio && (source.audio === 'AAC' || s.caps.aac) && !info.audio) problems.push('音声が消えた');
       if (e.maxBytes && info.size >= e.maxBytes) problems.push('目標サイズ（' + fmtMB(e.maxBytes) + '）を超えた');
       if (e.original !== undefined && !!out.original !== e.original) problems.push(e.original ? '元の動画のまま渡されなかった' : '元の動画のまま渡された');
+      if (info.audio && info.audioOk === false) problems.push('書き出した音声を読めない（' + (info.audioCodec || info.audio) + '）');
       if (e.trimOnly && !/再圧縮なし/.test(appText('outInfo'))) problems.push('トリミングのみにならなかった');
       if (e.duration && Math.abs(info.duration - e.duration) > (e.durationTol || 0.6)) problems.push('長さが ' + info.duration.toFixed(1) + '秒（正しくは約' + e.duration + '秒）');
-      if (s.engine === 'compat' || /互換モード/.test(appText('outInfo'))) warns.push('互換モードで処理した');
+      if (c.compat && s.engine !== 'compat') problems.push('互換モードにならなかった');
+      if (!c.compat && (s.engine === 'compat' || /互換モード/.test(appText('outInfo')))) warns.push('互換モードで処理した');
     }
     if (badSource) problems.unshift('テスト用の動画の音声（' + source.audio + '）をアプリが読めない（テスト用の動画の問題）');
     r.status = problems.length ? 'ng' : warns.length ? 'warn' : 'ok';

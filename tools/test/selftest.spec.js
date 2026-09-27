@@ -12,7 +12,7 @@ test('自動テストが最後まで動き、失敗がない', async ({ page }) 
   const failed = results.filter(r => r.status === 'ng');
   if (failed.length) console.log(await page.evaluate(() => window.__selftest.resultText()));
   expect(failed).toEqual([]);
-  expect(results.length).toBe(12);
+  expect(results.length).toBe(13);
   expect(await page.isDisabled('#copyBtn')).toBe(false);
 });
 
