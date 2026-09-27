@@ -30,7 +30,8 @@ http.createServer((req, res) => {
   let p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
   if (p.endsWith('/')) p += 'index.html';
   const file = path.normalize(path.join(ROOT, p));
-  if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+  // public/ の外は読ませない（「public-other」のような似た名前のフォルダも外として扱う）
+  if (!file.startsWith(ROOT + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     return res.end('not found');
   }
