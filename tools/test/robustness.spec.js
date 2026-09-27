@@ -3,7 +3,7 @@
 'use strict';
 
 const { test, expect } = require('@playwright/test');
-const { PROFILES, open, pick, compress, ui } = require('./helpers');
+const { PROFILES, open, pick, compress, ui, outputInfo, setTrim } = require('./helpers');
 
 // 画面の表示・非表示を、テストから切り替えられるようにする
 async function controllableVisibility(page) {
@@ -260,6 +260,43 @@ test.describe('圧縮中の注意（別のアプリに切り替えない）', ()
     await page.waitForTimeout(500);
     expect(await noteVisible(page)).toBe(false);
     await page.click('#runBtn');
+  });
+});
+
+test.describe('エンコーダーが可変ビットレートの指定を守らない（Android の実機であった）', () => {
+  // VBR のときだけ、指定の3倍のビットレートで書き出すエンコーダー
+  const greedyVbr = page => page.addInitScript(() => {
+    window.__modes = [];
+    const orig = VideoEncoder.prototype.configure;
+    VideoEncoder.prototype.configure = function (c) {
+      window.__modes.push(c.bitrateMode || 'variable');
+      if (c.bitrateMode !== 'constant' && c.bitrate) c = Object.assign({}, c, { bitrate: c.bitrate * 3 });
+      return orig.call(this, c);
+    };
+  });
+
+  test('目標を超えたら、固定ビットレート（CBR）に切り替えて目標に収める', async ({ page }) => {
+    await greedyVbr(page);
+    await open(page, '?mode=size&target=3&audio=off');
+    await pick(page, '720p-60s.mp4');
+    await setTrim(page, 0, 10);
+    await compress(page);
+    const u = await ui(page);
+    expect(u.diag).toContain('→ 固定ビットレート（CBR）に切り替え');
+    expect(u.diag).toMatch(/再圧縮 映像 .+（CBR）/);
+    const info = await outputInfo(page);
+    expect(info.size).toBeLessThan(3 * 1000 * 1000);
+    expect(await page.evaluate(() => window.__modes.includes('constant'))).toBe(true);
+  });
+
+  test('指定を守るエンコーダーなら、可変ビットレート（VBR）のまま', async ({ page }) => {
+    await open(page, '?mode=size&target=3&audio=off');
+    await pick(page, '720p-60s.mp4');
+    await setTrim(page, 0, 10);
+    await compress(page);
+    const u = await ui(page);
+    expect(u.diag).not.toContain('固定ビットレート（CBR）に切り替え');
+    expect((await outputInfo(page)).size).toBeLessThan(3 * 1000 * 1000);
   });
 });
 

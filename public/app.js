@@ -39,10 +39,15 @@
   var DEFAULT_FPS = 30;
   var MAX_FPS = 60;
   var MAX_ATTEMPTS = 3;                  // 初回 + 最大2回の再圧縮
+  // 可変ビットレート（VBR）で書き出した結果が、指定のビットレートよりこれ以上大きい、
+  // または圧縮し直しても MIN_SHRINK 以上小さくならないなら、エンコーダーが指定を守っていない（Android の実機であった）。
+  // 次の再圧縮から固定ビットレート（CBR）にする
+  var CBR_OVERSHOOT = 1.2;
+  var MIN_SHRINK = 0.05;
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27x';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27y';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1093,11 +1098,13 @@
   // ---------------------------------------------------------------- 高速モード（Mediabunny Conversion）
   function encKey(c) { return c.codec + '/' + c.hw + '/' + c.bitrateMode; }
   function pickFastEncoding(plan) {
-    // 可変ビットレート（VBR）を優先し、使えなければ固定ビットレート（CBR）にする
+    // 可変ビットレート（VBR）を優先し、使えなければ固定ビットレート（CBR）にする。
+    // plan.preferCbr（VBR では指定のサイズに収まらなかった）なら CBR を優先する
+    var modes = plan.preferCbr ? ['constant', 'variable'] : ['variable', 'constant'];
     var cands = [];
     FAST_VIDEO_CODECS.forEach(function (codec) {
       ['prefer-hardware', 'no-preference'].forEach(function (hw) {
-        ['variable', 'constant'].forEach(function (bm) {
+        modes.forEach(function (bm) {
           cands.push({ codec: codec, hw: hw, bitrateMode: bm });
         });
       });
@@ -1732,6 +1739,7 @@
     showDiag(false);
     log('圧縮開始 ' + describePlan(plan) + ' engine=' + engine);
     var bgRetries = 0;   // 別のアプリに切り替えたためにやり直した回数
+    var preferCbr = false;   // VBR では指定のサイズに収まらなかったので、CBR を優先する
 
     // prevSize: 前回の圧縮結果のサイズ（再圧縮のときに表示する）。note: 進捗の欄に出す補足
     // afterBg: 別のアプリから戻ってのやり直し（iPhone は戻ったあとも動画の読み込み・書き出しが固まったままのことがあるので、
@@ -1804,8 +1812,24 @@
           var next = nextBitrate(plan, res.blob.size - audioBytes, audioBytes);
           // 下限を下回る値は下限に揃え、それ以上下げられないならやめる
           if (next) next = Math.max(next, plan.floorBitrate);
-          if (next && next < plan.videoBitrate) {
+          // VBR で、指定より大きく書き出した・圧縮し直しても小さくならないなら、ビットレートを下げても減らない見込みなので CBR にする
+          // （CBR にするときは、同じビットレート（下限）でもやり直す）
+          var switchCbr = false;
+          // （iPhone の Safari は CBR/VBR の指定をエンコーダーに渡さないので、切り替えても変わらない）
+          if (engine === 'fast' && !preferCbr && res.rateMode === 'variable' && !isIOS()) {
+            var actualBps = Math.round((res.blob.size - audioBytes) * 8 / plan.duration);
+            var overshoot = actualBps > plan.videoBitrate * CBR_OVERSHOOT;
+            var noShrink = index > 0 && prevSize > 0 && res.blob.size > prevSize * (1 - MIN_SHRINK);
+            if (overshoot || noShrink) {
+              switchCbr = preferCbr = true;
+              log((overshoot ? '指定より大きく書き出した（映像 ' + fmtRate(actualBps) + '／指定 ' + fmtRate(plan.videoBitrate) + '）'
+                : '圧縮し直しても小さくならない') + '→ 固定ビットレート（CBR）に切り替え');
+            }
+          }
+          if (next && (next < plan.videoBitrate || switchCbr)) {
             plan = replan(plan, { bitrate: next });
+            plan.preferCbr = preferCbr;
+            log('再圧縮 映像 ' + fmtRate(plan.videoBitrate) + (preferCbr ? '（CBR）' : ''));
             return attempt(index + 1, res.blob.size);
           }
         }
