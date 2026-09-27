@@ -42,7 +42,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27s';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27t';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -171,12 +171,16 @@
   }
   function throwIfCancelled(job) { if (job && job.cancelled) throw new Error(CANCELLED); }
   function isCancel(job, err) { return !!(job && job.cancelled) || !!(err && err.message === CANCELLED); }
+  // lines の各行は文字、または太字にする行 { bold: 文字 }
   function setAlert(el, lines, danger) {
     el.classList.toggle('danger', !!danger);
     el.innerHTML = '';
     lines = (lines || []).filter(Boolean);
     lines.forEach(function (t) {
-      var p = document.createElement('p'); p.textContent = t; el.appendChild(p);
+      var p = document.createElement('p');
+      if (typeof t === 'object') { var b = document.createElement('b'); b.textContent = t.bold; p.appendChild(b); }
+      else p.textContent = t;
+      el.appendChild(p);
     });
     show(el, lines.length > 0);
   }
@@ -645,6 +649,11 @@
   // iPhone は、動画の処理中に別のアプリに切り替えると、動画のデコーダーが固まることがある。
   // 固まるとこのページからは直せず、Safari（ホーム画面のアプリ）を開き直すまで動画を読み込めない
   var MSG_CODEC_STUCK = 'この端末の動画の処理が止まったままになっています。ブラウザ（ホーム画面に追加した場合はそのアプリ）をいったん完全に閉じて開き直してから、もう一度お試しください（iPhone は、アプリの切り替え画面で上にスワイプすると閉じられます）。';
+  var MSG_KILL_BROWSER = 'ブラウザをタスクキルしてください！';
+  // 読み込み・圧縮のエラーの赤枠に出す行（デコーダーが固まったときは、先に太字でタスクキルを促す）
+  function errorLines(message) {
+    return message === MSG_CODEC_STUCK ? [{ bold: MSG_KILL_BROWSER }, message] : [message];
+  }
   function codecStuckError() { var e = new Error(MSG_CODEC_STUCK); e.stuck = true; return e; }
   // デコーダーへの問い合わせに時間制限を付ける（応答がなければ codecStuckError）
   function withinDecoderCheck(promise) {
@@ -895,7 +904,7 @@
       els.runBtn.disabled = !state.running;
       els.planInfo.textContent = '';
       // 読み込みに失敗したときは、その理由を出したままにする
-      setAlert(els.planWarn, state.loadError ? [state.loadError] : [], true);
+      setAlert(els.planWarn, state.loadError ? errorLines(state.loadError) : [], true);
       return;
     }
 
@@ -1173,6 +1182,13 @@
             forceTranscode: true, allowTransformationMetadata: false
           };
           if (plan.fpsChanged) video.frameRate = plan.outFps;
+          // iPhone で解像度を変えないとき、デコーダーが取り出したコマをそのままエンコーダーに渡すと、
+          // 圧縮中に別のアプリに切り替えたときにデコーダーが固まり、Safari を開き直すまで直らないことがある
+          // （縮小するときは一度描き直すので、エラーになるだけで、戻ってからやり直せる）。
+          // 全体を切り抜く指定にして、縮小するときと同じく描き直す（見た目は変わらない）
+          if (isIOS() && state.meta && state.meta.width && state.meta.height) {
+            video.crop = { left: 0, top: 0, width: Math.round(state.meta.width), height: Math.round(state.meta.height) };
+          }
           var audio;
           if (plan.audio.mode === 'aac') {
             audio = { codec: FAST_AUDIO_CODEC, quality: new M.Quality({ bitrate: AUDIO_BITRATE }), forceTranscode: true };
@@ -1876,6 +1892,7 @@
       if (isCancel(job, err)) { log('キャンセル'); return; }
       console.error(err);
       log('エラーで終了 ' + errText(err));
+      if (err && err.stuck) { setAlert(els.outWarn, errorLines(err.message), true); return; }   // 直し方は決まっているので、診断情報は開かない
       setAlert(els.outWarn, ['エラー: ' + ((err && err.message) || String(err)),
         'うまくいかないときは、画面のいちばん下の「診断情報」をコピーして、X（@inkaroma0431）あるいはDiscordに送ってください。'], true);
       showDiag(true);
@@ -2179,7 +2196,7 @@
       show(els.pickBtn, true);
       show(els.repickBtn, false);
       state.loadError = (err && err.message) || String(err);
-      setAlert(els.planWarn, [state.loadError], true);
+      setAlert(els.planWarn, errorLines(state.loadError), true);
     }).then(function () {
       state.busy = false;
       refresh();

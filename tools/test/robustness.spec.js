@@ -205,6 +205,7 @@ test.describe('デコーダーが固まっている（iPhone で、圧縮中に�
     await pick(page, 'small-5mb.mp4');
     const u = await ui(page);
     expect(u.planWarn).toContain('開き直してから');
+    expect(await page.textContent('#planWarn b')).toBe('ブラウザをタスクキルしてください！');   // 太字で先に出す
     expect(u.engine).not.toBe('compat');
     expect(u.pickVisible).toBe(true);
   });
@@ -221,6 +222,7 @@ test.describe('デコーダーが固まっている（iPhone で、圧縮中に�
     expect(u.diag).toContain('デコーダーが応答しない');
     expect(u.diag).not.toContain('互換モードに切り替え');
     expect(u.outWarn).toContain('開き直してから');
+    expect(await page.textContent('#outWarn b')).toBe('ブラウザをタスクキルしてください！');
   });
 
   test('圧縮を始めるときの確認中でも、キャンセルはすぐ効く', async ({ page }) => {
