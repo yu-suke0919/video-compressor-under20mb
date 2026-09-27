@@ -161,75 +161,43 @@ test.describe('別のアプリへの切り替え（iPhone で圧縮が壊れる�
   });
 });
 
-test.describe('iPhone：画面が隠れたら、デコーダーが固まる前に止める', () => {
-  test.use(PROFILES.ios);
+test.describe('デコーダーを確かめている間に裏に回った', () => {
   test.beforeEach(async ({ page }) => { await controllableVisibility(page); });
 
-  test('隠れたらすぐ止め、戻ったら最初からやり直して最後まで圧縮する', async ({ page }) => {
-    await open(page, '?mode=quality');
-    await pick(page, '720p-60s.mp4');
-    await page.click('#runBtn');
-    await page.waitForFunction(() => /進捗 10%/.test(document.getElementById('diagOut').value), null, { timeout: 30000 });
-    await setVis(page, 'hidden');
-    await page.waitForTimeout(300);
-    expect((await ui(page)).diag).toContain('画面から離れたため、動画の処理をいったん止める');
-    await page.waitForTimeout(2000);
-    await setVis(page, 'visible');
-    await page.waitForFunction(() => !window.__compressor.state.running, null, { timeout: 120000 });
-    const u = await ui(page);
-    expect(u.diag).toContain('画面に戻ってから最初からやり直し（fast・1回目）');
-    expect(u.diag).toContain('確認: デコーダー OK');
-    expect(u.outInfo).not.toContain('互換モード');
-    expect(u.hasOut).toBe(true);
-  });
-
-  test('デコーダーを確かめている間に裏に回ったら、固まったと決めつけず、戻ってから確かめ直す', async ({ page }) => {
+  test('固まったと決めつけず、戻ってから確かめ直す', async ({ page }) => {
     await page.addInitScript(() => {
       window.__hangDecoder = false;
       const orig = VideoDecoder.isConfigSupported.bind(VideoDecoder);
       VideoDecoder.isConfigSupported = c => window.__hangDecoder ? new Promise(() => {}) : orig(c);   // 裏では応答しない
     });
     await open(page, '?mode=quality');
-    await pick(page, '720p-60s.mp4');
+    await failFirstConversion(page, 'hang');
+    await pick(page, 'small-5mb.mp4');
     await page.click('#runBtn');
-    await page.waitForFunction(() => /進捗 10%/.test(document.getElementById('diagOut').value), null, { timeout: 30000 });
+    await page.waitForTimeout(800);
     await page.evaluate(() => { window.__hangDecoder = true; });
     await setVis(page, 'hidden');
-    await page.waitForTimeout(300);
-    await setVis(page, 'visible');   // 確かめ始める（応答しない）
+    await page.waitForTimeout(1500); await setVis(page, 'visible');
+    // 6秒で見切ってやり直す → 確かめ始める（応答しない）
+    await page.waitForFunction(() => /画面に戻った/.test(document.getElementById('diagOut').value), null, { timeout: 20000 });
     await page.waitForTimeout(1000);
     await setVis(page, 'hidden');    // 確かめている途中で、また裏に回る
     await page.evaluate(() => { window.__hangDecoder = false; });
     await page.waitForTimeout(300);
     await setVis(page, 'visible');
-    await page.waitForFunction(() => !window.__compressor.state.running, null, { timeout: 120000 });
+    await page.waitForFunction(() => !window.__compressor.state.running, null, { timeout: 60000 });
     const u = await ui(page);
     expect(u.diag).toContain('確かめている間に画面から離れたため、戻ってから確かめ直す');
     expect(u.diag).toContain('確認: デコーダー OK');
     expect(u.outWarn).not.toContain('開き直して');
     expect(u.hasOut).toBe(true);
   });
-
-  test('何度切り替えても、そのたびにやり直す（回数の上限で互換モードにしない）', async ({ page }) => {
-    await open(page, '?mode=quality');
-    await pick(page, '720p-60s.mp4');
-    await page.click('#runBtn');
-    for (let i = 0; i < 4; i++) {
-      await page.waitForTimeout(1000);
-      await setVis(page, 'hidden');
-      await page.waitForTimeout(300);
-      await setVis(page, 'visible');
-    }
-    await page.waitForFunction(() => !window.__compressor.state.running, null, { timeout: 120000 });
-    const u = await ui(page);
-    expect(u.diag).toContain('最初からやり直し（fast・4回目）');
-    expect(u.outInfo).not.toContain('互換モード');
-    expect(u.hasOut).toBe(true);
-  });
 });
 
-test.describe('動画を選んだときにデコーダーが固まっている', () => {
-  test('解析で止まり続けず、開き直すよう案内する', async ({ page }) => {
+test.describe('デコーダーが固まっている（iPhone で、圧縮中に別のアプリに切り替えたあと）', () => {
+  const hangDecoder = page => page.evaluate(() => { VideoDecoder.isConfigSupported = () => new Promise(() => {}); });
+
+  test('動画を選んだとき：解析で止まり続けず、開き直すよう案内する', async ({ page }) => {
     await page.addInitScript(() => { VideoDecoder.isConfigSupported = () => new Promise(() => {}); });
     await open(page);
     await pick(page, 'small-5mb.mp4');
@@ -237,6 +205,57 @@ test.describe('動画を選んだときにデコーダーが固まっている',
     expect(u.planWarn).toContain('開き直してから');
     expect(u.engine).not.toBe('compat');
     expect(u.pickVisible).toBe(true);
+  });
+
+  test('圧縮を始めるとき：準備で止まり続けず、互換モードも試さず、開き直すよう案内する', async ({ page }) => {
+    await open(page, '?mode=quality');
+    await pick(page, 'small-5mb.mp4');
+    await hangDecoder(page);
+    const t0 = Date.now();
+    await page.click('#runBtn');
+    await page.waitForFunction(() => !window.__compressor.state.running, null, { timeout: 20000 });
+    expect(Date.now() - t0).toBeLessThan(10000);
+    const u = await ui(page);
+    expect(u.diag).toContain('デコーダーが応答しない');
+    expect(u.diag).not.toContain('互換モードに切り替え');
+    expect(u.outWarn).toContain('開き直してから');
+  });
+
+  test('圧縮を始めるときの確認中でも、キャンセルはすぐ効く', async ({ page }) => {
+    await open(page, '?mode=quality');
+    await pick(page, 'small-5mb.mp4');
+    await hangDecoder(page);
+    await page.click('#runBtn');
+    await page.waitForTimeout(500);
+    await page.click('#runBtn');
+    await page.waitForFunction(() => !window.__compressor.state.running, null, { timeout: 3000 });
+    expect((await ui(page)).outWarn).not.toContain('開き直して');
+  });
+});
+
+test.describe('圧縮中の注意（別のアプリに切り替えない）', () => {
+  const noteVisible = page => page.evaluate(() => {
+    const el = document.getElementById('progressNote');
+    return !el.classList.contains('hidden') && el.offsetParent !== null;
+  });
+  test.describe('iPhone', () => {
+    test.use(PROFILES.ios);
+    test('圧縮中は出す', async ({ page }) => {
+      await open(page);
+      await pick(page, '1080p60-45s.mp4');
+      await page.click('#runBtn');
+      await page.waitForTimeout(500);
+      expect(await noteVisible(page)).toBe(true);
+      await page.click('#runBtn');   // キャンセル
+    });
+  });
+  test('iPhone 以外では出さない', async ({ page }) => {
+    await open(page);
+    await pick(page, '1080p60-45s.mp4');
+    await page.click('#runBtn');
+    await page.waitForTimeout(500);
+    expect(await noteVisible(page)).toBe(false);
+    await page.click('#runBtn');
   });
 });
 
