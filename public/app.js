@@ -42,7 +42,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27q';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27r';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1584,7 +1584,8 @@
   // ページが止められていたこと（1秒ごとの見回りの間が空いた）でも見分ける
   //   onStall(limit, done) … 止まったとみなしたとき（limit: 待った時間（ミリ秒）、done: そこまでの進捗 0〜1）。見回りはそこで止まる
   //   quick … 最初から早めに見切る（別のアプリから戻ってやり直すとき）
-  function watchAttempt(onStall, quick) {
+  //   onReturn() … 別のアプリから画面に戻ったとき
+  function watchAttempt(onStall, quick, onReturn) {
     var lastVal = -1, idleMs = 0, lastTick = Date.now(), hidden = false;
     function markHidden(why) {
       if (!hidden) log('画面から離れた（' + why + '）');
@@ -1598,6 +1599,10 @@
     function onVisibility() {
       if (document.visibilityState !== 'visible') { markHidden('visibilitychange'); return; }
       idleMs = 0;   // 戻ってからの時間で、止まっているかを判断する
+      if (hidden) {
+        log('画面に戻った');
+        if (onReturn) onReturn();
+      }
     }
     function onLeave(e) { markHidden(e.type); }
 
@@ -1622,6 +1627,7 @@
 
     return {
       progress: function (p) { if (p > lastVal + 0.0005) { lastVal = p; idleMs = 0; } },   // 進捗が届いたとき
+      lastProgress: function () { return lastVal; },
       wentHidden: function () { return hidden; },   // この処理の途中で別のアプリに切り替えたか
       checkFrozen: checkFrozen,
       stopTimer: function () { clearInterval(timer); },   // 見回りだけ止める
@@ -1718,11 +1724,23 @@
       // 1回ぶんの処理（進まなくなったらこれだけ止めて、別の方式でやり直す）
       var aj = state.attemptJob = newJob();
       var t0 = Date.now(), nextLog = 0;
+      var stuckErr = null;   // 戻ったときにデコーダーが固まっていた
       var watch = watchAttempt(function (limit, done) {
         log('進捗が' + Math.round(limit / 1000) + '秒止まったため中断（' + Math.round(done * 100) + '%）');
         if (!watch.wentHidden()) showDiag(true);   // 別のアプリに切り替えたせいなら、やり直すだけなので開かない
         stopJob(aj, STALLED);
-      }, afterBg);
+      }, afterBg, function () {
+        // 戻ったらすぐデコーダーを確かめる。固まっていれば、止まったと判断する（6秒）のを待たずに、開き直すよう案内する
+        if (engine === 'copy') return;   // トリミングのみはデコーダーを使わない
+        var progressAtReturn = watch.lastProgress();
+        checkAfterBackground(aj).then(null, function (e) {
+          if (!e || !e.stuck || aj.cancelled || job.cancelled) return;
+          if (watch.lastProgress() > progressAtReturn) return;   // 進み始めていれば、固まっていない
+          log('画面に戻ったあと、デコーダーが応答しない');
+          stuckErr = e;
+          stopJob(aj, STALLED);
+        });
+      });
       // キャンセル後に古い処理から届く進捗は無視する
       var onProgress = function (p) {
         if (job.cancelled || aj.cancelled) return;
@@ -1778,6 +1796,8 @@
         // 見回りは止めるが、画面が隠れた知らせは下で少し待つあいだも受け取る
         watch.stopTimer();
         if (job.cancelled || (!aj.cancelled && isCancel(null, err))) { watch.end(); throw new Error(CANCELLED); }
+        // デコーダーが固まっていたら、やり直しても互換モードでも進まないので、開き直すよう案内する
+        if (stuckErr) { watch.end(); throw stuckErr; }
         var stalled = aj.cancelled;
         if (!stalled) log('失敗（' + engine + '）' + errText(err));
         // iPhone では、別のアプリに切り替え始めた瞬間に読み込みが壊れて失敗し、画面が隠れた知らせはその直後に届く。
@@ -1799,8 +1819,9 @@
           bgRetries++;
           log('別のアプリに切り替えていたため、画面に戻ってから最初からやり直し（' + engine + '・' + bgRetries + '回目）');
           setProgress(0, MSG_BG_RETRY);
+          var waited = document.visibilityState !== 'visible';
           return waitVisible(job).then(function () {
-            log('画面に戻った');
+            if (waited) log('画面に戻った');
             // 止めた処理が動画の読み込み・書き出しを使ったままだと、やり直しが進まないことがあるので、後片付けを少し待つ
             if (!aj.stopped) return;
             var t = Date.now();
