@@ -42,7 +42,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27l';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27m';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1564,6 +1564,61 @@
   }
 
   // ---------------------------------------------------------------- 実行
+  // 1回ぶんの処理の見張り。別のアプリに切り替えたかと、進捗が止まったままかを見る。
+  // iPhone は裏に回ると動画の読み込み・書き出しを止めたり壊したりする。
+  // iPhone でブラウザを閉じた（ホーム画面に戻った）ときは、画面が隠れた知らせが届かないか、戻ってから遅れて届くことがあるので、
+  // ページが止められていたこと（1秒ごとの見回りの間が空いた）でも見分ける
+  //   onStall(limit, done) … 止まったとみなしたとき（limit: 待った時間（ミリ秒）、done: そこまでの進捗 0〜1）。見回りはそこで止まる
+  function watchAttempt(onStall) {
+    var lastVal = -1, idleMs = 0, lastTick = Date.now(), hidden = false;
+    function markHidden(why) {
+      if (!hidden) log('画面から離れた（' + why + '）');
+      hidden = true;
+    }
+    // ページが止められていたか（見回りは1秒ごとなので、それより大きく間が空いたら止められていた）
+    function checkFrozen() {
+      var gap = Date.now() - lastTick;
+      if (gap > FROZEN_GAP_MS) markHidden('ページが' + (gap / 1000).toFixed(1) + '秒止まっていた');
+    }
+    function onVisibility() {
+      if (document.visibilityState !== 'visible') { markHidden('visibilitychange'); return; }
+      idleMs = 0;   // 戻ってからの時間で、止まっているかを判断する
+    }
+    function onLeave(e) { markHidden(e.type); }
+
+    if (document.visibilityState !== 'visible') markHidden('開始時に非表示');
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', onLeave);
+    document.addEventListener('freeze', onLeave);
+    // 画面を表示しているのに進捗が止まったままなら、止まったとみなす（裏に回っていた時間は数えない）
+    var timer = setInterval(function () {
+      checkFrozen();
+      var now = Date.now(), dt = now - lastTick;
+      lastTick = now;
+      if (document.visibilityState !== 'visible' || dt > 5000) return;
+      idleMs += dt;
+      // 別のアプリから戻ったあとは、止まっていたら早めに見切る（裏に回って処理が止まったままのことがある）
+      var limit = hidden ? BG_STALL_MS : STALL_MS;
+      if (idleMs >= limit) {
+        clearInterval(timer);
+        onStall(limit, Math.max(0, lastVal));
+      }
+    }, 1000);
+
+    return {
+      progress: function (p) { if (p > lastVal + 0.0005) { lastVal = p; idleMs = 0; } },   // 進捗が届いたとき
+      wentHidden: function () { return hidden; },   // この処理の途中で別のアプリに切り替えたか
+      checkFrozen: checkFrozen,
+      stopTimer: function () { clearInterval(timer); },   // 見回りだけ止める
+      end: function () {   // 見張りをすべてやめる
+        clearInterval(timer);
+        document.removeEventListener('visibilitychange', onVisibility);
+        window.removeEventListener('pagehide', onLeave);
+        document.removeEventListener('freeze', onLeave);
+      }
+    };
+  }
+
   function run() {
     if (!state.file || state.running) return;
     var plan = currentPlan();
@@ -1587,68 +1642,29 @@
       setProgress(0, label);
       // 1回ぶんの処理（進まなくなったらこれだけ止めて、別の方式でやり直す）
       var aj = state.attemptJob = newJob();
-      var t0 = Date.now(), lastVal = -1, idleMs = 0, lastTick = Date.now(), nextLog = 0;
-      // この処理の途中で別のアプリに切り替えたか（iPhone は裏に回ると動画の読み込み・書き出しを止めたり壊したりする）。
-      // iPhone でブラウザを閉じた（ホーム画面に戻った）ときは、画面が隠れた知らせが届かないか、戻ってから遅れて届くことがあるので、
-      // ページが止められていたこと（1秒ごとの見回りの間が空いた）でも見分ける
-      var wentHidden = false;
-      var markHidden = function (why) {
-        if (!wentHidden) log('画面から離れた（' + why + '）');
-        wentHidden = true;
-      };
-      if (document.visibilityState !== 'visible') markHidden('開始時に非表示');
-      var onVisibility = function () {
-        if (document.visibilityState !== 'visible') { markHidden('visibilitychange'); return; }
-        idleMs = 0;   // 戻ってからの時間で、止まっているかを判断する
-      };
-      var onLeave = function (e) { markHidden(e.type); };
-      document.addEventListener('visibilitychange', onVisibility);
-      window.addEventListener('pagehide', onLeave);
-      document.addEventListener('freeze', onLeave);
-      var endAttempt = function () {
-        clearInterval(watchdog);
-        document.removeEventListener('visibilitychange', onVisibility);
-        window.removeEventListener('pagehide', onLeave);
-        document.removeEventListener('freeze', onLeave);
-      };
-      // ページが止められていたか（見回りは1秒ごとなので、それより大きく間が空いたら止められていた）
-      var checkFrozen = function () {
-        var gap = Date.now() - lastTick;
-        if (gap > FROZEN_GAP_MS) markHidden('ページが' + (gap / 1000).toFixed(1) + '秒止まっていた');
-      };
+      var t0 = Date.now(), nextLog = 0;
+      var watch = watchAttempt(function (limit, done) {
+        log('進捗が' + Math.round(limit / 1000) + '秒止まったため中断（' + Math.round(done * 100) + '%）');
+        if (!watch.wentHidden()) showDiag(true);   // 別のアプリに切り替えたせいなら、やり直すだけなので開かない
+        stopJob(aj, STALLED);
+      });
       // キャンセル後に古い処理から届く進捗は無視する
       var onProgress = function (p) {
         if (job.cancelled || aj.cancelled) return;
-        if (p > lastVal + 0.0005) { lastVal = p; idleMs = 0; }
+        watch.progress(p);
         if (p >= nextLog) {
           log('進捗 ' + Math.round(p * 100) + '%（' + ((Date.now() - t0) / 1000).toFixed(1) + '秒）');
           nextLog = Math.floor(p * 10 + 1) / 10;
         }
         setProgress(p, label);
       };
-      // 画面を表示しているのに進捗が止まったままなら、止まったとみなす（裏に回っていた時間は数えない）
-      var watchdog = setInterval(function () {
-        checkFrozen();
-        var now = Date.now(), dt = now - lastTick;
-        lastTick = now;
-        if (document.visibilityState !== 'visible' || dt > 5000) return;
-        idleMs += dt;
-        // 別のアプリから戻ったあとは、止まっていたら早めに見切る（裏に回って処理が止まったままのことがある）
-        var limit = wentHidden ? BG_STALL_MS : STALL_MS;
-        if (idleMs >= limit) {
-          clearInterval(watchdog);
-          log('進捗が' + Math.round(limit / 1000) + '秒止まったため中断（' + Math.round(Math.max(0, lastVal) * 100) + '%）');
-          if (!wentHidden) showDiag(true);   // 別のアプリに切り替えたせいなら、やり直すだけなので開かない
-          stopJob(aj, STALLED);
-        }
-      }, 1000);
       var task = engine === 'copy' ? convertCopy(plan, onProgress, aj)
         : engine === 'fast' ? convertFast(plan, onProgress, aj) : convertCompat(plan, onProgress, aj);
       task.catch(function () { /* 競争に負けた側の失敗は無視する */ });
 
       // キャンセルしたら、ライブラリ側が止まりきるのを待たずにすぐ抜ける
       return Promise.race([task, job.aborted, aj.aborted]).then(function (res) {
-        endAttempt();
+        watch.end();
         throwIfCancelled(job);
         log('完了 ' + fmtBytes(res.blob.size) + '（' + ((Date.now() - t0) / 1000).toFixed(1) + '秒）');
         if (engine === 'copy') {
@@ -1659,8 +1675,7 @@
             // 予想を超えたのは、切り出した部分がファイル全体の平均より重いから。
             // 全体の平均の80%で頭打ちにすると必要以上に小さくなるので、切り出した部分の実測値を上限にして計画し直す
             var copyVideoBps = Math.floor(res.blob.size * 8 / plan.duration) - Math.round(plan.audio.bps || 0);
-            plan = makePlan(state.meta, { start: plan.trimStart, end: plan.trimEnd }, planSettings(plan),
-              plan.audio, state.file.size, null, copyVideoBps);
+            plan = replan(plan, { cap: copyVideoBps });
             log('計画し直し ' + describePlan(plan));
             return attempt(0, 0, 'トリミングのみでは' + (res.blob.size / MB).toFixed(2) + 'MBで目標超過→圧縮中');
           }
@@ -1677,25 +1692,25 @@
           // 下限を下回る値は下限に揃え、それ以上下げられないならやめる
           if (next) next = Math.max(next, plan.floorBitrate);
           if (next && next < plan.videoBitrate) {
-            plan = makePlan(state.meta, { start: plan.trimStart, end: plan.trimEnd }, planSettings(plan),
-              plan.audio, state.file.size, next, plan.videoCapBps);
+            plan = replan(plan, { bitrate: next });
             return attempt(index + 1, res.blob.size);
           }
         }
         res.attempts = index + 1;
         return res;
       }, function (err) {
-        checkFrozen();   // 止められていたページが再開した直後に失敗が届くことがある（見回りより先に）
-        clearInterval(watchdog);
-        if (job.cancelled || (!aj.cancelled && isCancel(null, err))) { endAttempt(); throw new Error(CANCELLED); }
+        watch.checkFrozen();   // 止められていたページが再開した直後に失敗が届くことがある（見回りより先に）
+        // 見回りは止めるが、画面が隠れた知らせは下で少し待つあいだも受け取る
+        watch.stopTimer();
+        if (job.cancelled || (!aj.cancelled && isCancel(null, err))) { watch.end(); throw new Error(CANCELLED); }
         var stalled = aj.cancelled;
         if (!stalled) log('失敗（' + engine + '）' + errText(err));
         // iPhone では、別のアプリに切り替え始めた瞬間に読み込みが壊れて失敗し、画面が隠れた知らせはその直後に届く。
         // すぐには決めず、少し待ってから別のアプリに切り替えたかを見る（切り替えていなければ、少し遅れて互換モードにするだけ）
-        var settle = wentHidden ? Promise.resolve() : sleep(FAIL_SETTLE_MS);
+        var settle = watch.wentHidden() ? Promise.resolve() : sleep(FAIL_SETTLE_MS);
         return Promise.race([settle, job.aborted]).then(function () {   // 待っている間のキャンセルはすぐ効かせる
-          checkFrozen();
-          endAttempt();
+          watch.checkFrozen();
+          watch.end();
           throwIfCancelled(job);
           return afterFailure(err, stalled);
         });
@@ -1705,7 +1720,7 @@
       function afterFailure(err, stalled) {
         // 途中で別のアプリに切り替えていたら、失敗・停止は動画のせいではない（iPhone は裏に回ると読み込み・書き出しを壊す）。
         // 別の方式に切り替えず、画面に戻るのを待ってから同じ方式で最初からやり直す
-        if (wentHidden && bgRetries < MAX_BG_RETRIES) {
+        if (watch.wentHidden() && bgRetries < MAX_BG_RETRIES) {
           bgRetries++;
           log('別のアプリに切り替えていたため、画面に戻ってから最初からやり直し（' + engine + '・' + bgRetries + '回目）');
           setProgress(0, MSG_BG_RETRY);
@@ -1721,8 +1736,7 @@
           console.warn('高速モードに失敗したため互換モードに切り替えます:', err);
           log('互換モードに切り替え');
           engine = 'compat';
-          plan = makePlan(state.meta, { start: plan.trimStart, end: plan.trimEnd }, planSettings(plan),
-            audioStrategy(state.meta, readSettings().audio, 'compat'), state.file.size, null, plan.videoCapBps);
+          plan = replan(plan, { audio: audioStrategy(state.meta, readSettings().audio, 'compat') });
           return attempt(0, 0, stalled ? '処理が進まないため、互換モードでやり直し中' : null);
         }
         if (stalled) throw new Error('圧縮が進まなくなりました。画面を表示したまま、もう一度お試しください。');
@@ -1761,6 +1775,15 @@
       mode: plan.mode, res: plan.res, halfFps: plan.halfFps,
       targetMB: plan.targetMB, targetBytes: plan.targetBytes, minBitrate: plan.minBitrate
     };
+  }
+  // 同じ範囲・同じ設定のまま、一部だけ変えて計画し直す（再圧縮・互換モードへの切り替え・トリミングのみからの切り替え）
+  //   changes.audio   … 音声の扱い（省略時は今のまま）
+  //   changes.bitrate … 映像ビットレートを直接決める（再圧縮のとき）
+  //   changes.cap     … 映像ビットレートの上限（省略時は今のまま）
+  function replan(plan, changes) {
+    return makePlan(state.meta, { start: plan.trimStart, end: plan.trimEnd }, planSettings(plan),
+      changes.audio || plan.audio, state.file.size, changes.bitrate || null,
+      changes.cap !== undefined ? changes.cap : plan.videoCapBps);
   }
 
   function finishRun() {
