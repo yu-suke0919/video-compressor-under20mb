@@ -64,11 +64,11 @@
       } catch (e) { continue; }
       var packets = [], err = null;
       var enc = new AudioEncoder({
-        output: function (chunk, meta) { packets.push({ packet: M.EncodedPacket.fromEncodedChunk(chunk), meta: fixAudioMeta(meta, cand) }); },
+        output: function (chunk, meta) { packets.push({ packet: fixAudioPacket(M.EncodedPacket.fromEncodedChunk(chunk), cand), meta: fixAudioMeta(meta, cand) }); },
         error: function (e) { err = e; }
       });
       try {
-        enc.configure(cand.config);
+        enc.configure(cand.mb === 'aac' ? Object.assign({ aac: { format: 'aac' } }, cand.config) : cand.config);
         var rate = 48000, ch = 2, total = Math.round(dur * rate), CHUNK = 1024;
         for (var pos = 0; pos < total; pos += CHUNK) {
           var len = Math.min(CHUNK, total - pos);
@@ -91,21 +91,44 @@
     return null;
   }
 
-  // iPhone の Safari の AudioEncoder は、形式の文字列（codec）に正しくない値を入れてくることがある。
-  // そのまま書くと、その動画の音声を読めず、音声をコピーしようとしたときに失敗するので、頼んだ形式の文字列に直す
-  var rawAudioCodec = null;   // エンコーダーが入れてきた文字列（結果に書く）
+  // iPhone の Safari の AudioEncoder が書き出す AAC は、そのまま MP4 に書くと、読み直したときに形式がおかしく見える
+  // （アプリが「読み込めない」と判断し、音声をコピーしようとして失敗する）。
+  // 設定データ（AudioSpecificConfig）が付いていなければ作り、ADTS のヘッダーが付いていれば外して、正しい AAC として書く
+  var audioDiag = null;   // エンコーダーが出してきたもの（結果に書く）
+  function hex(bytes, n) {
+    return Array.prototype.slice.call(bytes, 0, n).map(function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+  }
+  function bufferBytes(buf) {
+    if (!buf) return null;
+    return buf instanceof ArrayBuffer ? new Uint8Array(buf) : new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+  }
+  // AAC-LC の AudioSpecificConfig（種類 2・サンプリング周波数の番号・チャンネル数）
+  var AAC_RATES = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+  function aacConfig(rate, channels) {
+    var idx = Math.max(0, AAC_RATES.indexOf(rate));
+    return new Uint8Array([(2 << 3) | (idx >> 1), ((idx & 1) << 7) | (channels << 3)]);
+  }
   function fixAudioMeta(meta, cand) {
     if (!meta || !meta.decoderConfig) return meta;
     var dc = meta.decoderConfig;
-    if (rawAudioCodec === null) rawAudioCodec = String(dc.codec);
-    return {
-      decoderConfig: {
-        codec: cand.config.codec,
-        sampleRate: dc.sampleRate || cand.config.sampleRate,
-        numberOfChannels: dc.numberOfChannels || cand.config.numberOfChannels,
-        description: dc.description
-      }
-    };
+    var rate = dc.sampleRate || cand.config.sampleRate, ch = dc.numberOfChannels || cand.config.numberOfChannels;
+    var desc = bufferBytes(dc.description);
+    if (audioDiag === null) audioDiag = 'codec=' + dc.codec + ' description=' + (desc ? hex(desc, 16) + '（' + desc.length + 'バイト）' : 'なし');
+    // 設定データがない・短い・種類（先頭5ビット）が AAC-LC / HE-AAC 以外なら、AAC-LC の設定データを作る
+    var aot = desc && desc.length >= 2 ? desc[0] >> 3 : 0;
+    if (cand.mb === 'aac' && [2, 5, 29].indexOf(aot) < 0) desc = aacConfig(rate, ch);
+    return { decoderConfig: { codec: cand.config.codec, sampleRate: rate, numberOfChannels: ch, description: desc || undefined } };
+  }
+  var audioFirstBytes = null;
+  function fixAudioPacket(packet, cand) {
+    var d = packet.data;
+    if (audioFirstBytes === null) audioFirstBytes = hex(d, 8);
+    // ADTS のヘッダー（0xFFF で始まる）が付いていたら外す
+    if (cand.mb === 'aac' && d.length > 9 && d[0] === 0xff && (d[1] & 0xf0) === 0xf0) {
+      var headerLen = (d[1] & 1) ? 7 : 9;
+      return new M.EncodedPacket(d.subarray(headerLen), packet.type, packet.timestamp, packet.duration);
+    }
+    return packet;
   }
 
   // 1コマ描く（色が変わり、丸が動くので、圧縮にそれなりの情報量が要る）
@@ -513,7 +536,7 @@
   function resultText() {
     var mark = { ok: '✓', ng: '✗', warn: '!', run: '…', wait: '・' };
     var lines = ['自己テストの結果 ' + new Date().toLocaleString('ja-JP'), $('device').textContent,
-      'テスト用の音声のエンコーダーが入れてきた形式: ' + (rawAudioCodec || '（音声なし）'), $('summary').textContent, ''];
+      'テスト用の音声のエンコーダーが出したもの: ' + (audioDiag ? audioDiag + ' 最初のデータ=' + audioFirstBytes : '（音声なし）'), $('summary').textContent, ''];
     results.forEach(function (r) {
       lines.push(mark[r.status] + ' ' + r.title + (r.detail ? '\n    ' + r.detail : ''));
     });
