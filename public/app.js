@@ -49,7 +49,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27zd';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27ze';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1640,6 +1640,9 @@
   }
 
   // ---------------------------------------------------------------- 実行
+  // 音声のことで失敗したか（Mediabunny の音声の形式の検査など）
+  function isAudioError(err) { return /audio|aac|mp4a/i.test(errText(err)); }
+
   // 1回ぶんの処理の見張り。別のアプリに切り替えたかと、進捗が止まったままかを見る。
   // iPhone は裏に回ると動画の読み込み・書き出しを止めたり壊したりする。
   // iPhone でブラウザを閉じた（ホーム画面に戻った）ときは、画面が隠れた知らせが届かないか、戻ってから遅れて届くことがあるので、
@@ -1939,9 +1942,10 @@
             return attempt(index, prevSize, MSG_BG_RETRY, true);
           });
         }
-        // 元の音声をそのままコピーして失敗したときは（音声の設定データが壊れた動画など）、互換モードにせず、
-        // 音声を AAC に作り直すか（読めて、AAC で書き出せるとき）、音声だけ外して、高速モードのままやり直す
-        if (engine === 'fast' && plan.audio.mode === 'copy' && !stalled && !audioRetried) {
+        // 元の音声をそのままコピーして、音声のことで失敗したときは（音声の設定データが壊れた動画など）、互換モードにせず、
+        // 音声を AAC に作り直すか（読めて、AAC で書き出せるとき）、音声だけ外して、高速モードのままやり直す。
+        // 映像の失敗（Decoder failure など）では音声を外さない（一時的な失敗で音声を失わないため）
+        if (engine === 'fast' && plan.audio.mode === 'copy' && !stalled && !audioRetried && isAudioError(err)) {
           audioRetried = true;
           var src = state.meta.audio || {};
           var audio = state.caps.aac && src.canDecode !== false
