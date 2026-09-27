@@ -42,7 +42,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27p';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27q';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -83,7 +83,7 @@
     targetSize: $('targetSize'), halfFps: $('halfFps'), audioOn: $('audioOn'), audioLabel: $('audioLabel'),
     minRate720: $('minRate720'), minRate1080: $('minRate1080'), autoRun: $('autoRun'), capLabel: $('capLabel'),
     urlCopy: $('urlCopy'), urlStatus: $('urlStatus'),
-    runBtn: $('runBtn'), progressWrap: $('progressWrap'), progressBar: $('progressBar'),
+    runBtn: $('runBtn'), progressWrap: $('progressWrap'), progressBar: $('progressBar'), progressNote: $('progressNote'),
     phase: $('phase'), pct: $('pct'),
     outVideo: $('outVideo'), outEmpty: $('outEmpty'), outInfo: $('outInfo'), outWarn: $('outWarn'),
     shareBtn: $('shareBtn'), saveBtn: $('saveBtn'),
@@ -644,7 +644,7 @@
   var MSG_PICK_AGAIN = '一時的に読み込めないこともあるので、まずは「動画を選択」からもう一度選び直してください。';
   // iPhone は、動画の処理中に別のアプリに切り替えると、動画のデコーダーが固まることがある。
   // 固まるとこのページからは直せず、Safari（ホーム画面のアプリ）を開き直すまで動画を読み込めない
-  var MSG_CODEC_STUCK = 'この端末の動画の処理が止まったままになっています。ブラウザ（ホーム画面に追加した場合はそのアプリ）をいったん完全に閉じて開き直してから、もう一度お試しください。';
+  var MSG_CODEC_STUCK = 'この端末の動画の処理が止まったままになっています。ブラウザ（ホーム画面に追加した場合はそのアプリ）をいったん完全に閉じて開き直してから、もう一度お試しください（iPhone は、アプリの切り替え画面で上にスワイプすると閉じられます）。';
   function codecStuckError() { var e = new Error(MSG_CODEC_STUCK); e.stuck = true; return e; }
   // デコーダーへの問い合わせに時間制限を付ける（応答がなければ codecStuckError）
   function withinDecoderCheck(promise) {
@@ -1584,8 +1584,7 @@
   // ページが止められていたこと（1秒ごとの見回りの間が空いた）でも見分ける
   //   onStall(limit, done) … 止まったとみなしたとき（limit: 待った時間（ミリ秒）、done: そこまでの進捗 0〜1）。見回りはそこで止まる
   //   quick … 最初から早めに見切る（別のアプリから戻ってやり直すとき）
-  //   onHide() … 画面が隠れた知らせが届いたとき
-  function watchAttempt(onStall, quick, onHide) {
+  function watchAttempt(onStall, quick) {
     var lastVal = -1, idleMs = 0, lastTick = Date.now(), hidden = false;
     function markHidden(why) {
       if (!hidden) log('画面から離れた（' + why + '）');
@@ -1597,10 +1596,10 @@
       if (gap > FROZEN_GAP_MS) markHidden('ページが' + (gap / 1000).toFixed(1) + '秒止まっていた');
     }
     function onVisibility() {
-      if (document.visibilityState !== 'visible') { markHidden('visibilitychange'); if (onHide) onHide(); return; }
+      if (document.visibilityState !== 'visible') { markHidden('visibilitychange'); return; }
       idleMs = 0;   // 戻ってからの時間で、止まっているかを判断する
     }
-    function onLeave(e) { markHidden(e.type); if (onHide) onHide(); }
+    function onLeave(e) { markHidden(e.type); }
 
     if (document.visibilityState !== 'visible') markHidden('開始時に非表示');
     document.addEventListener('visibilitychange', onVisibility);
@@ -1633,6 +1632,17 @@
         document.removeEventListener('freeze', onLeave);
       }
     };
+  }
+
+  // 選んだ動画のデコーダーが応答するか（応答しなければ codecStuckError。対応していないなどの失敗はここでは問わない）
+  function decoderResponds() {
+    var codec = state.meta && state.meta.codecString;
+    if (!codec || typeof VideoDecoder === 'undefined') return Promise.resolve();
+    var p;
+    try { p = VideoDecoder.isConfigSupported({ codec: codec, codedWidth: state.meta.width, codedHeight: state.meta.height }); } catch (e) { return Promise.resolve(); }
+    return withinDecoderCheck(p).then(function () { /* noop */ }, function (e) {
+      if (e && e.stuck) { log('デコーダーが応答しない（' + DECODER_CHECK_MS / 1000 + '秒）'); throw e; }
+    });
   }
 
   // 別のアプリから戻ったあと、動画の読み込みとデコーダーが応答するかを確かめ、診断情報に書く。
@@ -1708,19 +1718,11 @@
       // 1回ぶんの処理（進まなくなったらこれだけ止めて、別の方式でやり直す）
       var aj = state.attemptJob = newJob();
       var t0 = Date.now(), nextLog = 0;
-      var stoppedOnHide = false;   // 画面が隠れたので、こちらから止めた（iPhone）
       var watch = watchAttempt(function (limit, done) {
         log('進捗が' + Math.round(limit / 1000) + '秒止まったため中断（' + Math.round(done * 100) + '%）');
         if (!watch.wentHidden()) showDiag(true);   // 別のアプリに切り替えたせいなら、やり直すだけなので開かない
         stopJob(aj, STALLED);
-      }, afterBg, function () {
-        // iPhone は、動画の処理中に裏に回ると、デコーダーが固まって Safari を開き直すまで直らないことがある。
-        // 裏に回されて止まる前にこちらから止めてデコーダーを閉じ、戻ったら最初からやり直す（トリミングのみはデコーダーを使わない）
-        if (!isIOS() || engine === 'copy' || aj.cancelled) return;
-        stoppedOnHide = true;
-        log('画面から離れたため、動画の処理をいったん止める（戻ったら最初からやり直す）');
-        stopJob(aj, STALLED);
-      });
+      }, afterBg);
       // キャンセル後に古い処理から届く進捗は無視する
       var onProgress = function (p) {
         if (job.cancelled || aj.cancelled) return;
@@ -1793,8 +1795,7 @@
       function afterFailure(err, stalled) {
         // 途中で別のアプリに切り替えていたら、失敗・停止は動画のせいではない（iPhone は裏に回ると読み込み・書き出しを壊す）。
         // 別の方式に切り替えず、画面に戻るのを待ってから同じ方式で最初からやり直す
-        // （こちらから止めたときは、切り替えるたびに何度でもやり直す）
-        if (watch.wentHidden() && (stoppedOnHide || bgRetries < MAX_BG_RETRIES)) {
+        if (watch.wentHidden() && bgRetries < MAX_BG_RETRIES) {
           bgRetries++;
           log('別のアプリに切り替えていたため、画面に戻ってから最初からやり直し（' + engine + '・' + bgRetries + '回目）');
           setProgress(0, MSG_BG_RETRY);
@@ -1835,7 +1836,12 @@
       }
     }
 
-    return attempt(0).then(function (res) {
+    // デコーダーが固まったまま（iPhone で、前の圧縮中に別のアプリに切り替えたときなど）なら、始める前に開き直すよう案内する
+    var ready = engine === 'copy' ? Promise.resolve() : Promise.race([decoderResponds(), job.aborted]);
+    return ready.then(function () {
+      throwIfCancelled(job);
+      return attempt(0);
+    }).then(function (res) {
       setProgress(1, '完了');
       finishRun();
       showResult(res, plan, engine, (Date.now() - started) / 1000);
@@ -2319,6 +2325,8 @@
   // iOSは共有シートの「ビデオを保存」で写真アプリに保存できるので、ボタンを1つにまとめる
   function setupIOSButtons() {
     if (!isIOS()) return;
+    // 圧縮中に別のアプリに切り替えると、動画の処理が止まって Safari を開き直すまで使えなくなることがあるので、先に伝える
+    show(els.progressNote, true);
     els.app.classList.add('is-ios');
     els.shareBtn.innerHTML =
       '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
