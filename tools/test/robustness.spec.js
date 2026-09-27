@@ -327,6 +327,42 @@ test.describe('エンコーダーが可変ビットレートの指定を守ら�
     expect((await outputInfo(page)).size).toBeLessThan(1200 * 1000 * 10 / 8 * 1.5);
   });
 
+  test('CBR での圧縮し直しに失敗しても、エラーにせず最初の結果を使う', async ({ page }) => {
+    await greedyVbr(page);
+    await open(page, '?mode=quality&audio=off');
+    await page.evaluate(() => {   // 2回目（CBR）の変換だけ失敗させる
+      const C = window.Mediabunny.Conversion.prototype, orig = C.execute;
+      let n = 0;
+      C.execute = function () { return ++n === 2 ? Promise.reject(new Error('encoder failed')) : orig.call(this); };
+    });
+    await pick(page, '720p-60s.mp4');
+    await setTrim(page, 0, 10);
+    await compress(page);
+    const u = await ui(page);
+    expect(u.diag).toContain('→ 固定ビットレート（CBR）で圧縮し直し');
+    expect(u.diag).toContain('圧縮し直しに失敗したため、前の結果を使う');
+    expect(u.diag).not.toContain('互換モードに切り替え');
+    expect(u.hasOut).toBe(true);
+    expect(u.outWarn).not.toContain('エラー');
+  });
+
+  test('◯MB以内に圧縮で圧縮し直しに失敗したら、前の結果を使い、目標を超えたことを知らせる', async ({ page }) => {
+    await greedyVbr(page);
+    await open(page, '?mode=size&target=3&audio=off');
+    await page.evaluate(() => {
+      const C = window.Mediabunny.Conversion.prototype, orig = C.execute;
+      let n = 0;
+      C.execute = function () { return ++n === 2 ? Promise.reject(new Error('encoder failed')) : orig.call(this); };
+    });
+    await pick(page, '720p-60s.mp4');
+    await setTrim(page, 0, 10);
+    await compress(page);
+    const u = await ui(page);
+    expect(u.diag).toContain('圧縮し直しに失敗したため、前の結果を使う');
+    expect(u.hasOut).toBe(true);
+    expect(u.outWarn).toContain('目標サイズに圧縮できません');
+  });
+
   test('なるべく圧縮で20秒より長いときは、時間がかかるので CBR で圧縮し直さない', async ({ page }) => {
     await greedyVbr(page);
     await open(page, '?mode=quality&audio=off');

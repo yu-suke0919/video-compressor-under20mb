@@ -51,7 +51,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-27zf';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-27zg';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1785,6 +1785,7 @@
     var bgRetries = 0;   // 別のアプリに切り替えたためにやり直した回数
     var preferCbr = false;   // VBR では指定のサイズに収まらなかったので、CBR を優先する
     var vbrResult = null;    // 「なるべく圧縮」で CBR を試す前の VBR の結果（CBR の方が大きければ、こちらを使う）
+    var lastGood = null;     // 圧縮し直す前にできた結果と、その計画（圧縮し直しに失敗したら、こちらを使う）
     var audioRetried = false;   // 元の音声をそのまま使えず、音声を作り直す（外す）やり直しをした
 
     // prevSize: 前回の圧縮結果のサイズ（再圧縮のときに表示する）。note: 進捗の欄に出す補足
@@ -1861,6 +1862,7 @@
           if (qBps >= plan.videoBitrate * QUALITY_CBR_OVERSHOOT) {
             preferCbr = plan.preferCbr = true;
             vbrResult = res;
+            lastGood = { res: res, plan: plan };
             log('指定より大きく書き出した（映像 ' + fmtRate(qBps) + '／指定 ' + fmtRate(plan.videoBitrate) + '）→ 固定ビットレート（CBR）で圧縮し直し');
             return attempt(index + 1, res.blob.size, '指定より大きくなったため、固定ビットレートで圧縮し直し中');
           }
@@ -1885,6 +1887,7 @@
             }
           }
           if (next && (next < plan.videoBitrate || switchCbr)) {
+            lastGood = { res: res, plan: plan };
             plan = replan(plan, { bitrate: next });
             plan.preferCbr = preferCbr;
             log('再圧縮 映像 ' + fmtRate(plan.videoBitrate) + (preferCbr ? '（CBR）' : ''));
@@ -1944,6 +1947,13 @@
             throwIfCancelled(job);
             return attempt(index, prevSize, MSG_BG_RETRY, true);
           });
+        }
+        // 圧縮し直している途中で失敗したら、その前にできた結果を使う（目標を超えていれば、結果の欄でそのことを知らせる）
+        if (index > 0 && lastGood) {
+          log('圧縮し直しに失敗したため、前の結果を使う');
+          plan = lastGood.plan;
+          lastGood.res.attempts = index;
+          return lastGood.res;
         }
         // 元の音声をそのままコピーして、音声のことで失敗したときは（音声の設定データが壊れた動画など）、互換モードにせず、
         // 音声を AAC に作り直すか（読めて、AAC で書き出せるとき）、音声だけ外して、高速モードのままやり直す。
