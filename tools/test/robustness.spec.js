@@ -146,6 +146,7 @@ test.describe('別のアプリへの切り替え（iPhone で圧縮が壊れる�
     const u = await ui(page);
     expect(u.diag).toContain('互換モードに切り替え');
     expect(u.outInfo).toContain('互換モード');
+    expect(u.diag).not.toContain('元の音声をそのまま使えない');   // 映像の失敗では音声を外さない
   });
 
   test('やり直しを待っている間のキャンセルは、すぐ効く', async ({ page }) => {
