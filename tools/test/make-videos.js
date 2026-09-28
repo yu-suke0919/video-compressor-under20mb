@@ -40,7 +40,10 @@ const VIDEOS = {
     '-map', '0:v', '-map', '[a]', '-t', '10', ...x264('3M'), '-c:a', 'aac', '-b:a', '384k'],
   'vp9.webm': [...noisy('1280x720', 30), ...tone(), '-t', '12', '-c:v', 'libvpx-vp9', '-deadline', 'realtime', '-cpu-used', '8', '-b:v', '6M',
     '-c:a', 'libopus', '-b:a', '128k'],
-  'odd-1279x719.mp4': [...noisy('1279x719', 30), ...tone(), '-t', '10', ...x264('8M'), ...aac()],
+  // 奇数の大きさ：testsrc2 と yuv420p（色の間引き）は奇数にできず、偶数に直されてしまう。
+  // 偶数で作ってから奇数に縮め、色を間引かない yuv444p（H.264 High 4:4:4）で書く
+  'odd-1279x719.mp4': ['-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=30,scale=1279:719,setsar=1,noise=alls=12:allf=t,format=yuv444p',
+    ...tone(), '-t', '10', '-c:v', 'libx264', '-preset', 'ultrafast', '-b:v', '8M', '-maxrate', '8M', '-bufsize', '8M', ...aac()],
   '4k-15s.mp4': [...noisy('3840x2160', 30), ...tone(), '-t', '15', ...x264('25M'), ...aac()],
   'hevc-portrait.mov': [...noisy('1080x1920', 30), ...tone(), '-t', '10', '-c:v', 'libx265', '-preset', 'ultrafast', '-tag:v', 'hvc1',
     '-pix_fmt', 'yuv420p', '-x265-params', 'log-level=error', '-b:v', '8M', ...aac()],
@@ -78,4 +81,22 @@ for (const [name, make] of Object.entries(derived)) {
   make();
   console.log((fs.statSync(path.join(OUT, name)).size / 1e6).toFixed(1) + 'MB');
 }
+// 名前に大きさ（例: 1279x719）が入っている動画は、本当にその大きさで作れたかを確かめる（テストの前提が崩れていないか）
+function videoSize(file) {
+  let text = '';
+  try { execFileSync(FFMPEG, ['-hide_banner', '-i', file], { stdio: 'pipe' }); } catch (e) { text = String(e.stderr || ''); }
+  const m = /Video: .*?, (\d+)x(\d+)/.exec(text);
+  return m ? m[1] + 'x' + m[2] : null;
+}
+let wrong = 0;
+for (const name of fs.readdirSync(OUT)) {
+  const want = /(\d+)x(\d+)/.exec(name);
+  if (!want) continue;
+  const got = videoSize(path.join(OUT, name));
+  if (got !== want[0]) {
+    wrong++;
+    console.error('大きさが違う: ' + name + ' → ' + got + '（このファイルを消して、もう一度 npm run test:videos を実行してください）');
+  }
+}
+if (wrong) process.exit(1);
 console.log('テスト用の動画: ' + OUT);

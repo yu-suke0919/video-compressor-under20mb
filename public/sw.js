@@ -9,7 +9,7 @@
 'use strict';
 
 var CACHE_PREFIX = 'video-compressor-under20mb-';   // このアプリのキャッシュ名の頭（同じドメインの別アプリのキャッシュは消さない）
-var CACHE = CACHE_PREFIX + 'v125';
+var CACHE = CACHE_PREFIX + 'v126';
 var NETWORK_TIMEOUT_MS = 3000;   // ネット優先のとき、ネットの応答をこれだけ待ってからキャッシュを使う
 
 // Cloudflare Pages のプレビュー（<ブランチ名>.<プロジェクト名>.pages.dev）と手元の確認環境だけネット優先にする
@@ -63,7 +63,11 @@ self.addEventListener('fetch', function (event) {
   // Service Worker を通さずネットから直接読む（動画はキャッシュしないので、オフラインでは再生できない）
   if (req.headers.has('range') || /\.mp4$/i.test(url.pathname)) return;
 
-  event.respondWith(NETWORK_FIRST ? networkFirst(req) : cacheFirst(req));
+  // ネットから取ってきてキャッシュを更新する処理。応答を返したあとも、キャッシュに保存し終わるまで
+  // Service Worker を止めないようにブラウザに伝える（止められると、更新や初めて開いた画像が保存されない）
+  var net = fetchAndStore(req);
+  event.waitUntil(net.stored);
+  event.respondWith(NETWORK_FIRST ? networkFirst(req, net.response) : cacheFirst(req, net.response));
 });
 
 // キャッシュに無いときの代わり（ページ遷移はトップに逃がす）
@@ -82,20 +86,22 @@ function offlineResponse() {
     headers: { 'Content-Type': 'text/plain; charset=utf-8' }
   });
 }
-// 取得できたらキャッシュも更新する
+// ネットから取得し、取得できたらキャッシュも更新する。
+//   response … ネットの応答（取得できなければ失敗する）
+//   stored   … キャッシュへの保存が終わる（保存しないとき・保存に失敗したときも終わる。失敗はしない）
 function fetchAndStore(req) {
-  return fetch(req).then(function (res) {
-    if (res && res.status === 200 && res.type === 'basic') {   // 一部だけの応答（206）はキャッシュできない
-      var copy = res.clone();
-      caches.open(CACHE).then(function (cache) { cache.put(req, copy); });
-    }
-    return res;
-  });
+  var response = fetch(req);
+  var stored = response.then(function (res) {
+    if (!(res && res.status === 200 && res.type === 'basic')) return;   // 一部だけの応答（206）はキャッシュできない
+    var copy = res.clone();
+    return caches.open(CACHE).then(function (cache) { return cache.put(req, copy); });
+  }).catch(function () { /* 取得できない・容量不足などで保存できなくても、画面の表示は失敗させない */ });
+  return { response: response, stored: stored };
 }
 
 // キャッシュ優先（本番）: キャッシュがあればすぐ返し、裏でキャッシュを更新する（次に開いたときに反映）
-function cacheFirst(req) {
-  var network = fetchAndStore(req).catch(function () { return null; });
+function cacheFirst(req, response) {
+  var network = response.catch(function () { return null; });
   return caches.match(req, { ignoreSearch: true }).then(function (cached) {
     if (cached) return cached;
     return network.then(function (res) {
@@ -106,7 +112,7 @@ function cacheFirst(req) {
 
 // ネット優先（プレビュー）: 更新したらすぐ新しい版になる。
 // オフラインのときや、一定時間応答がないときはキャッシュから返す（オフラインでも起動できる）
-function networkFirst(req) {
+function networkFirst(req, response) {
   return new Promise(function (resolve) {
     var settled = false;
     function finish(res) {
@@ -114,7 +120,7 @@ function networkFirst(req) {
       settled = true;
       resolve(res || offlineResponse());
     }
-    fetchAndStore(req).then(finish, function () { fromCache(req).then(finish); });
+    response.then(finish, function () { fromCache(req).then(finish); });
     // 電波が弱いなどで応答が遅いときは、キャッシュがあればそちらで先に表示する
     setTimeout(function () {
       if (settled) return;

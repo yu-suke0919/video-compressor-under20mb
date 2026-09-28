@@ -363,6 +363,26 @@ test.describe('エンコーダーが可変ビットレートの指定を守ら�
     expect(u.outWarn).toContain('目標サイズに圧縮できません');
   });
 
+  test('元動画のビットレートが下限より低い動画でも、目標を超えたら、より低いビットレートで圧縮し直す', async ({ page }) => {
+    // 指定より15%大きく書き出すエンコーダー（目標を超えやすくする）
+    await page.addInitScript(() => {
+      const orig = VideoEncoder.prototype.configure;
+      VideoEncoder.prototype.configure = function (c) { return orig.call(this, c.bitrate ? Object.assign({}, c, { bitrate: Math.round(c.bitrate * 1.15) }) : c); };
+    });
+    await open(page, '?mode=size&target=2');
+    await pick(page, 'long-10min-25mb-noaudio.mp4');   // 10分で約25MB（元のビットレートが下限 1200kbps よりずっと低い）
+    await setTrim(page, 0, 60);
+    await compress(page);
+    const diag = (await ui(page)).diag;
+    const first = Number(/圧縮開始 .* (\d+)kbps/.exec(diag)[1]);
+    expect(first).toBeLessThan(1200);   // 初回から下限より低い
+    // 以前は、次のビットレートを下限（1200kbps）に戻して初回以上になり、圧縮し直しを打ち切っていた
+    // （テストの Chrome のエンコーダーは、ここまで低いと大きさが変わらないので、出来上がりの大きさは確かめない）
+    const retry = /再圧縮 映像 (\d+)kbps/.exec(diag);
+    expect(retry).not.toBe(null);
+    expect(Number(retry[1])).toBeLessThan(first);
+  });
+
   test('なるべく圧縮で20秒より長いときは、時間がかかるので CBR で圧縮し直さない', async ({ page }) => {
     await greedyVbr(page);
     await open(page, '?mode=quality&audio=off');

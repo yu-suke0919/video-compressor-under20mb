@@ -28,3 +28,20 @@ test('一度開けば、ネットにつながっていなくても起動でき�
   await expect(page.locator('h1')).toHaveText('アップロード不要の動画圧縮');
   expect(await page.evaluate(() => typeof window.Mediabunny)).toBe('object');
 });
+
+test('一度開いた説明書の画像は、ネットにつながっていなくても表示できる（キャッシュへの保存を最後まで行う）', async ({ page, context }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 20000 });
+  await page.click('#helpBtn');
+  const firstImage = () => page.evaluate(() => {
+    const img = document.querySelector('#helpSlides img');
+    return img && img.complete ? img.naturalWidth : 0;
+  });
+  await expect.poll(firstImage, { timeout: 10000 }).toBeGreaterThan(0);
+  // 説明書の画像は最初のインストールではキャッシュしない。開いたときに裏で保存したものが残っているか
+  await expect.poll(() => page.evaluate(async () => !!(await caches.match(new URL('./help/help-1.webp', location.href).toString()))), { timeout: 10000 }).toBe(true);
+  await context.setOffline(true);
+  await page.reload();
+  await page.click('#helpBtn');
+  await expect.poll(firstImage, { timeout: 10000 }).toBeGreaterThan(0);
+});

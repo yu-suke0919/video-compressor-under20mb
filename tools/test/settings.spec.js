@@ -140,3 +140,40 @@ test('元動画のビットレートが低く、上限（元の80%）で目標�
     { mode: 'none', bps: 0, label: 'なし', note: null }, 200000000));
   expect(over.unreachable).toBe(true);
 });
+
+test('奇数の大きさでも、計画の幅・高さは偶数（元との違いは1px以内、720p・1080p では縮小）', async ({ page }) => {
+  await open(page);
+  const sizes = await page.evaluate(() => {
+    const st = { res: '720', mode: 'quality', targetMB: 20, targetBytes: 20000000, halfFps: true, minBitrate: { 720: 1200000, 1080: 2700000 } };
+    const none = { mode: 'none', bps: 0, label: 'なし', note: null };
+    const plan = (w, h, res) => window.__compressor.makePlan({ width: w, height: h, duration: 10, fps: 30 }, { start: 0, end: 10 },
+      Object.assign({}, st, { res }), none, 20000000);
+    return [plan(1279, 719, '720'), plan(1921, 1081, '720'), plan(1921, 1081, '1080'), plan(719, 1279, 'source'), plan(333, 177, '720')]
+      .map(p => [p.width, p.height]);
+  });
+  for (const [w, h] of sizes) { expect(w % 2).toBe(0); expect(h % 2).toBe(0); }
+  expect(sizes).toEqual([[1280, 720], [1280, 720], [1920, 1080], [720, 1280], [334, 178]]);
+});
+
+test('元動画のビットレートが下限より低い動画は、圧縮し直すときも同じ下限（設定の最小値）を使う', async ({ page }) => {
+  await open(page);
+  const r = await page.evaluate(() => {
+    const c = window.__compressor;
+    const st = { res: '720', mode: 'size', targetMB: 20, targetBytes: 20000000, halfFps: true, minBitrate: { 720: 1200000, 1080: 2700000 } };
+    const none = { mode: 'none', bps: 0, label: 'なし', note: null };
+    const meta = { width: 1280, height: 720, duration: 600, fps: 30 };
+    const first = c.makePlan(meta, { start: 0, end: 600 }, st, none, 24000000);
+    // 初回が 20.5MB になったとして、圧縮し直すビットレート
+    const next = Math.max(c.nextBitrate(first, 20500000, 0), first.floorBitrate);
+    const second = c.makePlan(meta, { start: 0, end: 600 }, st, none, 24000000, next);
+    // ふつうの動画（元のビットレートが高い）は、設定の下限を守る
+    const normal = c.makePlan(meta, { start: 0, end: 600 }, st, none, 200000000, 500000);
+    return { first: first.videoBitrate, floor: first.floorBitrate, next, second: second.videoBitrate, normal: normal.videoBitrate, normalFloor: normal.floorBitrate };
+  });
+  expect(r.first).toBe(256000);
+  expect(r.floor).toBe(100000);          // 元が下限より低いので、この動画の下限は設定の最小値
+  expect(r.next).toBeLessThan(r.first);  // 下げて圧縮し直せる（以前は下限の 1200kbps に戻され、打ち切っていた）
+  expect(r.second).toBe(r.next);
+  expect(r.normalFloor).toBe(1200000);
+  expect(r.normal).toBe(1200000);        // 求め直した値が低くても、設定の下限は割らない
+});
