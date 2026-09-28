@@ -506,11 +506,23 @@
   // 手元の動画（iPhone で撮った HEVC・HDR・縦向きなど）
   $('fileBtn').addEventListener('click', function () { $('file').click(); });
   $('file').addEventListener('change', async function (ev) {
-    var file = ev.target.files && ev.target.files[0];
+    var picked = ev.target.files && ev.target.files[0];
     ev.target.value = '';
-    if (!file) return;
+    if (!picked) return;
     setBusy(true);
     try {
+      // Android の Chrome は、選んだ動画を読む権限を、選んだページ（このページ）にしか与えない。
+      // 埋め込んだアプリの側では読めない（NotReadableError）ので、ここで読み込んでから中身を渡す
+      var file;
+      try {
+        setStatus('選んだ動画を読み込んでいます…');
+        file = new File([await picked.arrayBuffer()], picked.name, { type: picked.type || 'video/mp4', lastModified: picked.lastModified });
+      } catch (e) {
+        fail(addResult('手元の動画を読み込む'), '読み込めない: ' + errorDetail(e));
+        render();
+        setStatus('手元の動画を読み込めませんでした');
+        return;
+      }
       var source = { file: file, audio: null, label: '手元の動画 ' + fmtMB(file.size) };
       var list = [
         { title: '手元の動画 → 720p', query: 'res=720&mode=quality', limit: 720 },
