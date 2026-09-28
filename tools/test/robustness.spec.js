@@ -3,7 +3,7 @@
 'use strict';
 
 const { test, expect } = require('@playwright/test');
-const { PROFILES, open, pick, compress, ui, outputInfo, setTrim, canEncodeAac } = require('./helpers');
+const { PROFILES, open, pick, compress, ui, outputInfo, setTrim, canEncodeAac, fakeAacEncoder, AAC_LC_48K_STEREO, SAFARI_ESDS } = require('./helpers');
 
 // 画面の表示・非表示を、テストから切り替えられるようにする
 async function controllableVisibility(page) {
@@ -496,22 +496,7 @@ test.describe('互換モード', () => {
 
   test('「音声を残す」をオフで始めたら、互換モードに切り替わっても音声を入れない（圧縮中は設定を初期値に戻せない）', async ({ page }) => {
     // 互換モードで AAC の音声を作れる端末にする（この Chrome は AAC で書き出せないので、書き出す真似をする）
-    await page.addInitScript(() => {
-      window.AudioEncoder = class {
-        constructor(init) { this.init = init; this.state = 'unconfigured'; this.first = true; }
-        get encodeQueueSize() { return 0; }
-        configure(c) { this.c = c; this.state = 'configured'; }
-        encode(ad) {
-          const chunk = new EncodedAudioChunk({ type: 'key', timestamp: ad.timestamp, duration: Math.round(ad.numberOfFrames / ad.sampleRate * 1e6), data: new Uint8Array([0x21, 0x10, 0x04, 0x60, 0x8c, 0x1c]) });
-          const meta = this.first ? { decoderConfig: { codec: 'mp4a.40.2', sampleRate: this.c.sampleRate, numberOfChannels: this.c.numberOfChannels, description: new Uint8Array([0x11, 0x90]) } } : undefined;
-          this.first = false;
-          this.init.output(chunk, meta);
-        }
-        flush() { return Promise.resolve(); }
-        close() { this.state = 'closed'; }
-        static isConfigSupported(c) { return Promise.resolve({ supported: true, config: c }); }
-      };
-    });
+    await fakeAacEncoder(page, AAC_LC_48K_STEREO);
     await open(page, '?mode=quality&audio=off');
     await failFirstConversion(page, 'quick');   // 高速モードで失敗して、互換モードに切り替わる
     await pick(page, 'small-5mb.mp4');
@@ -561,25 +546,7 @@ test.describe('互換モード', () => {
 
   test('iPhone の AudioEncoder が AAC の設定データの代わりに esds ごと出しても、正しい AAC として書き出す', async ({ page }) => {
     // iPhone の Safari と同じく、description に esds の中身（39バイト）を入れてくる AudioEncoder
-    await page.addInitScript(() => {
-      const ESDS = new Uint8Array([0x03, 0x80, 0x80, 0x80, 0x22, 0, 0, 0, 0x04, 0x80, 0x80, 0x80, 0x14, 0x40, 0x14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-        0x05, 0x80, 0x80, 0x80, 0x02, 0x11, 0x90, 0x06, 0x80, 0x80, 0x80, 0x01, 0x02]);
-      class SafariLikeAudioEncoder {
-        constructor(init) { this.init = init; this.state = 'unconfigured'; this.first = true; }
-        get encodeQueueSize() { return 0; }
-        configure(c) { this.c = c; this.state = 'configured'; }
-        encode(ad) {
-          const chunk = new EncodedAudioChunk({ type: 'key', timestamp: ad.timestamp, duration: Math.round(ad.numberOfFrames / ad.sampleRate * 1e6), data: new Uint8Array([0x21, 0x10, 0x04, 0x60, 0x8c, 0x1c]) });
-          const meta = this.first ? { decoderConfig: { codec: 'mp4a.40.2', sampleRate: this.c.sampleRate, numberOfChannels: this.c.numberOfChannels, description: ESDS } } : undefined;
-          this.first = false;
-          this.init.output(chunk, meta);
-        }
-        flush() { return Promise.resolve(); }
-        close() { this.state = 'closed'; }
-        static isConfigSupported(c) { return Promise.resolve({ supported: true, config: c }); }
-      }
-      window.AudioEncoder = SafariLikeAudioEncoder;
-    });
+    await fakeAacEncoder(page, SAFARI_ESDS);
     await open(page, '?mode=quality');
     await pick(page, '720p-60s.mp4');
     await setTrim(page, 0, 4);
