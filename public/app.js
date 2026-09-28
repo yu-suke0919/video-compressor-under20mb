@@ -54,7 +54,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-28i';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-28j';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -966,6 +966,7 @@
     }
 
     var plan = state.plan = currentPlan();
+    scheduleProbe();
     els.audioLabel.textContent = '音声を残す（' + plan.audio.label + '）';
     var trimEst = trimOnlyEstimate(plan);
     els.planInfo.textContent = trimEst
@@ -1232,6 +1233,25 @@
     });
   }
 
+  // 高速モードの映像の設定（本番の圧縮と試し圧縮で共通）
+  function fastVideoConfig(plan, enc) {
+    var video = {
+      codec: enc.codec, width: plan.width, height: plan.height, fit: 'fill',
+      quality: new M.Quality({ bitrate: plan.videoBitrate, bitrateMode: enc.bitrateMode }),
+      hardwareAcceleration: enc.hw, keyFrameInterval: KEYFRAME_INTERVAL,
+      forceTranscode: true, allowTransformationMetadata: false
+    };
+    if (plan.fpsChanged) video.frameRate = plan.outFps;
+    // iPhone で解像度を変えないとき、デコーダーが取り出したコマをそのままエンコーダーに渡すと、
+    // 圧縮中に別のアプリに切り替えたときにデコーダーが固まり、Safari を開き直すまで直らないことがある
+    // （縮小するときは一度描き直すので、エラーになるだけで、戻ってからやり直せる）。
+    // 全体を切り抜く指定にして、縮小するときと同じく描き直す（見た目は変わらない）
+    if (isIOS() && state.meta && state.meta.width && state.meta.height) {
+      video.crop = { left: 0, top: 0, width: Math.round(state.meta.width), height: Math.round(state.meta.height) };
+    }
+    return video;
+  }
+
   // 高速モード: 選んだ解像度・ビットレートで再エンコードする
   function convertFast(plan, onProgress, job) {
     var chosen = null;
@@ -1240,20 +1260,7 @@
         return pickFastEncoding(plan).then(function (enc) {
           if (!enc) throw new Error(MSG_NO_H264);
           chosen = enc;
-          var video = {
-            codec: enc.codec, width: plan.width, height: plan.height, fit: 'fill',
-            quality: new M.Quality({ bitrate: plan.videoBitrate, bitrateMode: enc.bitrateMode }),
-            hardwareAcceleration: enc.hw, keyFrameInterval: KEYFRAME_INTERVAL,
-            forceTranscode: true, allowTransformationMetadata: false
-          };
-          if (plan.fpsChanged) video.frameRate = plan.outFps;
-          // iPhone で解像度を変えないとき、デコーダーが取り出したコマをそのままエンコーダーに渡すと、
-          // 圧縮中に別のアプリに切り替えたときにデコーダーが固まり、Safari を開き直すまで直らないことがある
-          // （縮小するときは一度描き直すので、エラーになるだけで、戻ってからやり直せる）。
-          // 全体を切り抜く指定にして、縮小するときと同じく描き直す（見た目は変わらない）
-          if (isIOS() && state.meta && state.meta.width && state.meta.height) {
-            video.crop = { left: 0, top: 0, width: Math.round(state.meta.width), height: Math.round(state.meta.height) };
-          }
+          var video = fastVideoConfig(plan, enc);
           var audio;
           if (plan.audio.mode === 'aac') {
             audio = { codec: FAST_AUDIO_CODEC, quality: new M.Quality({ bitrate: AUDIO_BITRATE }), forceTranscode: true };
@@ -1293,6 +1300,114 @@
   }
 
   function isFullTrimOf(plan) { return isFullRange(plan.trimStart, plan.trimEnd); }
+
+  // ---------------------------------------------------------------- 試し圧縮（下げられるビットレートの限界を測る）
+  // 端末のエンコーダーは、映像が重いと低いビットレートの指定を守らないことがある
+  // （iPhone の 1080p60 のゲーム映像で、2.7Mbps・4.05Mbps のどちらを指定しても約7.5Mbps になった）。
+  // 動画を読み込んだら（設定を変えたときも）、今の解像度・fps で、とても低いビットレートを指定して数か所を試しに圧縮し、
+  // この端末・この映像で下げられる限界を測る。実際のビットレート ≒ max（指定, 限界）
+  var PROBE_BPS = MIN_KBPS_LIMITS[0] * 1000;   // 試すときに指定するビットレート（設定で選べる最小値）
+  var PROBE_SAMPLE_SEC = 2;                    // 1か所の長さ（キーフレームの間隔と揃え、キーフレームの割合を本番と同じにする）
+  var PROBE_POINTS = [1 / 6, 1 / 2, 5 / 6];    // 試す場所（動画の長さに対する位置）
+  var PROBE_DELAY_MS = 600;                    // 設定を変えてから測り始めるまで待つ（続けて変えたときに何度も測らない）
+  // results … 解像度・fps ごとの結果 { bps, failed }。key/job/timer … 測っている（測る予定の）もの
+  var probe = { results: {}, key: null, job: null, timer: null };
+  // URL に probe=off があれば測らない（自動テスト・自己テストで、本番の圧縮だけを確かめるため）
+  var PROBE_OFF = /[?&]probe=off\b/.test(location.search);
+
+  function probeKey(plan) { return plan.width + 'x' + plan.height + '@' + Math.round(plan.outFps); }
+  // 試す範囲（短い動画は最初の1か所だけ）
+  function probeRanges(duration) {
+    if (duration < PROBE_SAMPLE_SEC * PROBE_POINTS.length * 2) {
+      return [{ start: 0, end: Math.min(duration, PROBE_SAMPLE_SEC) }];
+    }
+    return PROBE_POINTS.map(function (p) {
+      var start = Math.max(0, Math.min(duration - PROBE_SAMPLE_SEC, duration * p - PROBE_SAMPLE_SEC / 2));
+      return { start: start, end: start + PROBE_SAMPLE_SEC };
+    });
+  }
+  function canProbe() {
+    return !PROBE_OFF && !!(state.file && state.meta) && state.engine === 'fast' && !state.running && !state.busy && !isCompressed() &&
+      !els.autoRun.checked && document.visibilityState === 'visible';
+  }
+  // 今の設定の結果がなければ、少し待ってから測る（別の設定を測っている途中なら止める）
+  function scheduleProbe() {
+    if (!canProbe() || !state.plan) return;
+    var key = probeKey(state.plan);
+    if (probe.results[key] || probe.key === key) return;
+    stopProbe();
+    probe.key = key;
+    probe.timer = setTimeout(function () {
+      probe.timer = null;
+      if (probe.key === key && canProbe()) startProbe(state.plan, key);
+      else if (probe.key === key) probe.key = null;
+    }, PROBE_DELAY_MS);
+  }
+  // 測るのを止める。止まりきったら解決する Promise を返す（測っていなければ解決済み）
+  function stopProbe(why) {
+    if (probe.timer) { clearTimeout(probe.timer); probe.timer = null; }
+    probe.key = null;
+    var job = probe.job;
+    if (!job) return Promise.resolve();
+    probe.job = null;
+    if (why) log('試し圧縮を中断（' + why + '）');
+    stopJob(job, CANCELLED);
+    return job.stopped || Promise.resolve();
+  }
+  function startProbe(plan, key) {
+    var job = probe.job = newJob();
+    var file = state.file;
+    // 音声は使わず、ビットレートだけ低くした計画で試す
+    var p = Object.assign({}, plan, { videoBitrate: PROBE_BPS, preferCbr: false, audio: { mode: 'none', bps: 0 } });
+    var ranges = probeRanges(state.meta.duration || plan.duration);
+    var t0 = Date.now(), samples = [], enc = null;
+    // 書き出したファイルの大きさで測る（音声は入れない。mp4 の見出しの分（数KB）だけ大きめに出る）
+    function sample(range) {
+      var t = Date.now();
+      return runConversion({
+        options: function (input, output) {
+          return { input: input, output: output, video: fastVideoConfig(p, enc), audio: { discard: true }, trim: range, showWarnings: false };
+        },
+        prepareLog: function () { return '試し圧縮の準備 ' + range.start.toFixed(1) + '-' + range.end.toFixed(1) + 's'; },
+        invalidMessage: '試し圧縮できない動画です'
+      }, p, function () {}, job).then(function (res) {
+        samples.push({ bytes: res.blob.size, seconds: range.end - range.start, ms: Date.now() - t });
+      });
+    }
+    return pickFastEncoding(p).then(function (found) {
+      if (!found) throw new Error(MSG_NO_H264);
+      enc = found;
+      return ranges.reduce(function (chain, range) {
+        return chain.then(function () { throwIfCancelled(job); return sample(range); });
+      }, Promise.resolve());
+    }).then(function () {
+      var bytes = 0, seconds = 0;
+      samples.forEach(function (x) { bytes += x.bytes; seconds += x.seconds; });
+      var bps = Math.round(bytes * 8 / seconds);
+      probe.results[key] = { bps: bps };
+      log('試し圧縮 ' + key + ' ' + encKey(enc) + ' 指定 ' + fmtRate(PROBE_BPS) + ' → 実測 ' + fmtRate(bps) +
+        '（' + samples.map(function (x) { return fmtRate(x.bytes * 8 / x.seconds); }).join('・') + '）' +
+        '（' + secondsSince(t0) + '・1か所 ' + samples.map(function (x) { return (x.ms / 1000).toFixed(1); }).join('/') + '秒）');
+      logProbeEstimate();
+    }, function (err) {
+      if (isCancel(job, err)) return;
+      probe.results[key] = { failed: true };   // 同じ設定では何度も試さない
+      log('試し圧縮に失敗 ' + key + ' ' + errText(err));
+    }).then(function () {
+      if (probe.job === job) { probe.job = null; probe.key = null; }
+      if (state.file !== file) return;
+      scheduleProbe();   // 測っている間に設定が変わっていたら、その設定を測る
+    });
+  }
+  // 今の計画について、試し圧縮の結果から見込んだサイズを診断情報に書く
+  function logProbeEstimate() {
+    var plan = state.plan;
+    var r = plan && probe.results[probeKey(plan)];
+    if (!r || !r.bps) return;
+    var bps = Math.max(plan.videoBitrate, r.bps);
+    log('予想（試し圧縮から） 映像 ' + fmtRate(bps) + '・' + fmtBytes(Math.round((bps + plan.audioBitrate) * plan.duration / 8)) +
+      '（計画 ' + fmtRate(plan.videoBitrate) + '・' + fmtBytes(plan.estBytes) + '）');
+  }
 
   // ---------------------------------------------------------------- トリミングのみ（再エンコードしない）
   // 「◯MB以内に圧縮」で、解像度もfpsも元のまま、トリミングした元動画が目標サイズに収まる見込みなら、
@@ -1844,6 +1959,9 @@
     requestWakeLock();
     showDiag(false);
     log('圧縮開始 ' + describePlan(plan) + ' engine=' + engine);
+    logProbeEstimate();
+    // 試し圧縮の途中なら止め、エンコーダーなどを片付け終わるのを少し待ってから始める
+    var probeStopped = stopProbe(probe.job ? '圧縮を開始' : null);
     var bgRetries = 0;   // 別のアプリに切り替えたためにやり直した回数
     var preferCbr = false;   // VBR では指定のサイズに収まらなかったので、CBR を優先する
     var vbrResult = null;    // 「なるべく圧縮」で CBR を試す前の VBR の結果（CBR の方が大きければ、こちらを使う）
@@ -2069,7 +2187,10 @@
     }
 
     // デコーダーが固まったまま（iPhone で、前の圧縮中に別のアプリに切り替えたときなど）なら、始める前に開き直すよう案内する
-    var ready = engine === 'copy' ? Promise.resolve() : Promise.race([decoderResponds(job), job.aborted]);
+    var ready = Promise.race([probeStopped, sleep(CLEANUP_WAIT_MS), job.aborted]).then(function () {
+      throwIfCancelled(job);
+      return engine === 'copy' ? null : Promise.race([decoderResponds(job), job.aborted]);
+    });
     return ready.then(function () {
       throwIfCancelled(job);
       return attempt(0);
@@ -2276,6 +2397,9 @@
   // 別のアプリに切り替えると、画面を暗くしない設定は自動で外れる。戻ったときに圧縮中（やり直し中を含む）なら取り直す
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible' && state.running) requestWakeLock();
+    // 試し圧縮は、画面を離れたら止める（iPhone は裏に回ると読み込み・書き出しを壊す）。戻ったら測り直す
+    if (document.visibilityState !== 'visible') stopProbe('画面を離れた');
+    else if (state.meta && !state.running) refresh();
   });
   function releaseWakeLock() {
     if (state.wakeLock) {
@@ -2324,6 +2448,8 @@
   }
 
   function loadChosenFile(file) {
+    stopProbe();
+    probe.results = {};
     state.busy = true;
     state.loadError = null;
     state.file = file;
@@ -2651,7 +2777,7 @@
   window.__compressor = {
     makePlan: makePlan, nextBitrate: nextBitrate, readSettings: readSettings,
     estimateFps: estimateFps, snapFps: snapFps, audioStrategy: audioStrategy,
-    state: state,
+    state: state, probe: probe,
     pickFile: function (file) { onFileChosen(file); },   // 自己テスト（selftest.html）から動画を渡す
     constants: {
       SIZE_SAFETY: SIZE_SAFETY, AUDIO_BITRATE: AUDIO_BITRATE, DEFAULT_MIN_KBPS: DEFAULT_MIN_KBPS,

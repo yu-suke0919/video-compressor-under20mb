@@ -25,8 +25,10 @@ function video(name) {
   return file;
 }
 
-// ページを開き、端末の対応状況（AAC で書き出せるかなど）を調べ終わるまで待つ
+// ページを開き、端末の対応状況（AAC で書き出せるかなど）を調べ終わるまで待つ。
+// 試し圧縮は、probe= を指定したとき以外は止める（本番の圧縮だけを確かめる。試し圧縮は probe.spec.js で確かめる）
 async function open(page, query = '') {
+  if (!/[?&]probe=/.test(query)) query += (query ? '&' : '?') + 'probe=off';
   await page.goto('/' + query);
   await page.waitForFunction(() => /対応 VideoEncoder=/.test(document.getElementById('diagOut').value));
 }
