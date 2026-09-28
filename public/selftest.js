@@ -245,7 +245,7 @@
   function openApp(query) {
     return new Promise(function (resolve) {
       frameEl.onload = resolve;
-      frameEl.src = './?' + query;
+      frameEl.src = './?' + query + '&probe=off';   // 試し圧縮はしない（本番の圧縮だけを確かめる）
     }).then(function () {
       return waitFor(function () { return appWin().__compressor && /対応 VideoEncoder=/.test(appText('diagOut')); }, 30000, 'アプリの準備');
     }).then(function () {
