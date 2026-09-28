@@ -31,6 +31,9 @@
   // 下限ビットレートの既定値（kbps）。720p30で1.2Mbps、1080pは画素数に比例させて同等の画質
   var DEFAULT_MIN_KBPS = { '720': 1200, '1080': 2700 };
   var MIN_KBPS_LIMITS = [100, 50000];
+  // 60fps のまま書き出すときは、下限ビットレートをこの倍率にする（下限は30fpsを前提にした値。
+  // 60fps はとなりのコマが似ていて圧縮しやすいので2倍までは要らない。iPhone は低すぎる指定を守らず、予想の2〜3倍になった）
+  var HIGH_FPS_FLOOR_FACTOR = 1.5;
   var MSG_UNREACHABLE = '目標サイズに圧縮できません。解像度を下げるか、詳細設定にて下限ビットレートを引き下げてください。';
   var MSG_OVER_DISCORD = '20MBを超えるため、Discordの無料アカウントでは送信できません。';
   var MSG_HALF_FPS_HINT = '詳細設定の「60fpsの動画は30fpsにする」をオンにすると収まりやすくなります。';
@@ -51,7 +54,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-28g';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-28h';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -212,6 +215,11 @@
     var debug = false;
     try { debug = /^(1|on|true)$/i.test(new URLSearchParams(location.search).get('debug') || ''); } catch (e) { /* noop */ }
     return debug || (/\.pages\.dev$/.test(h) && h.split('.').length > 3) || h === 'localhost' || h === '127.0.0.1';
+  })();
+  // 試験用: URL に latency=realtime があれば、エンコーダーに「リアルタイム向け」を指定する（指定のビットレートの守り方を比べる）。
+  // なければ今までどおり指定しない（WebCodecs の既定は quality）
+  var LATENCY_REALTIME = (function () {
+    try { return new URLSearchParams(location.search).get('latency') === 'realtime'; } catch (e) { return false; }
   })();
   // open: 開いて表示する（エラーや停止のとき）。false なら普段から表示する環境だけで表示する
   function showDiag(open) {
@@ -846,6 +854,7 @@
     var floorBps = settings.res === 'source'
       ? Math.max(MIN_KBPS_LIMITS[0] * 1000, Math.round(settings.minBitrate['720'] * width * height / (1280 * 720)))
       : settings.minBitrate[settings.res];
+    if (outFps > 40) floorBps = Math.round(floorBps * HIGH_FPS_FLOOR_FACTOR);
     // 元動画より高いビットレートで焼き直しても容量が増えるだけなので上限を設ける（元の実効ビットレートの80%）
     var srcBps = meta.duration > 0 ? fileSize * 8 / meta.duration : Infinity;
     var srcCap = videoCapBps ? Math.floor(videoCapBps) : Math.floor(srcBps * 0.8) - audioBps;
@@ -1169,7 +1178,7 @@
       return M.canEncodeVideo(c.codec, {
         width: plan.width, height: plan.height, frameRate: plan.outFps,
         quality: new M.Quality({ bitrate: plan.videoBitrate, bitrateMode: c.bitrateMode }),
-        hardwareAcceleration: c.hw
+        hardwareAcceleration: c.hw, latencyMode: LATENCY_REALTIME ? 'realtime' : undefined
       }).then(function (ok) {
         log('エンコード設定 ' + encKey(c) + ' → ' + (ok ? '使える' : '使えない'));
         return ok ? c : next(i + 1);
@@ -1242,6 +1251,7 @@
             hardwareAcceleration: enc.hw, keyFrameInterval: KEYFRAME_INTERVAL,
             forceTranscode: true, allowTransformationMetadata: false
           };
+          if (LATENCY_REALTIME) video.latencyMode = 'realtime';
           if (plan.fpsChanged) video.frameRate = plan.outFps;
           // iPhone で解像度を変えないとき、デコーダーが取り出したコマをそのままエンコーダーに渡すと、
           // 圧縮中に別のアプリに切り替えたときにデコーダーが固まり、Safari を開き直すまで直らないことがある
@@ -1336,7 +1346,7 @@
         COMPAT_VIDEO_CODECS.forEach(function (c) {
           var cfg = {
             codec: c.codec, width: plan.width, height: plan.height, bitrate: plan.videoBitrate,
-            framerate: Math.round(plan.outFps) || DEFAULT_FPS, hardwareAcceleration: accel, latencyMode: 'quality'
+            framerate: Math.round(plan.outFps) || DEFAULT_FPS, hardwareAcceleration: accel, latencyMode: LATENCY_REALTIME ? 'realtime' : 'quality'
           };
           Object.keys(c.extra).forEach(function (k) { cfg[k] = c.extra[k]; });
           if (mode) cfg.bitrateMode = mode;
@@ -2092,7 +2102,7 @@
   function describePlan(plan) {
     return plan.res + ' ' + plan.width + 'x' + plan.height + ' mode=' + plan.mode + ' ' + Math.round(plan.videoBitrate / 1000) + 'kbps' +
       ' fps=' + plan.srcFps + '→' + plan.outFps + ' audio=' + plan.audio.mode +
-      ' trim=' + plan.trimStart.toFixed(1) + '-' + plan.trimEnd.toFixed(1) + 's';
+      ' trim=' + plan.trimStart.toFixed(1) + '-' + plan.trimEnd.toFixed(1) + 's' + (LATENCY_REALTIME ? ' latency=realtime' : '');
   }
 
   // 計画を作り直すときに、元の計画と同じ設定を渡す
