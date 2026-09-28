@@ -51,7 +51,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-28a';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-28b';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -92,7 +92,7 @@
     targetSize: $('targetSize'), halfFps: $('halfFps'), audioOn: $('audioOn'), audioLabel: $('audioLabel'),
     minRate720: $('minRate720'), minRate1080: $('minRate1080'), autoRun: $('autoRun'), capLabel: $('capLabel'),
     urlCopy: $('urlCopy'), urlStatus: $('urlStatus'),
-    runBtn: $('runBtn'), progressWrap: $('progressWrap'), progressBar: $('progressBar'), progressNote: $('progressNote'),
+    resetSettings: $('resetSettings'), runBtn: $('runBtn'), progressWrap: $('progressWrap'), progressBar: $('progressBar'), progressNote: $('progressNote'),
     phase: $('phase'), pct: $('pct'),
     outVideo: $('outVideo'), outEmpty: $('outEmpty'), outInfo: $('outInfo'), outWarn: $('outWarn'),
     shareBtn: $('shareBtn'), saveBtn: $('saveBtn'),
@@ -473,7 +473,9 @@
       write: function (v) {
         if (v === '1080') { els.res1080.checked = true; wantSource = false; }
         else if (v === '720') { els.res720.checked = true; wantSource = false; }
-        else if (v === 'source') wantSource = true;
+        // 元の解像度：選択肢が出ない動画（720p・1080p など）のあいだは 1080p にしておく。
+        // 選択肢が出る動画を選ぶと syncResOption で「元の解像度」に切り替わる
+        else if (v === 'source') { els.res1080.checked = true; wantSource = true; }
       },
       fromUrl: function (v) { v = v.toLowerCase().replace('p', ''); return v === 'original' ? 'source' : v; },
       toUrl: String
@@ -528,6 +530,8 @@
     }
   }
   function resetSettings() {
+    // 圧縮中・圧縮後は、ほかの設定と同じく変えさせない（圧縮中の計画と画面の設定がずれないように）
+    if (state.running || isCompressed()) return;
     try { localStorage.removeItem(SETTINGS_KEY); } catch (e) { /* noop */ }
     SETTING_DEFS.forEach(function (d) { d.write(d.def); });
     naming = defaultNaming();
@@ -823,7 +827,7 @@
     var floorBps = settings.res === 'source'
       ? Math.max(MIN_KBPS_LIMITS[0] * 1000, Math.round(settings.minBitrate['720'] * width * height / (1280 * 720)))
       : settings.minBitrate[settings.res];
-    var videoBps, unreachable = false;
+    var videoBps, unreachable = false, budgetBps = Infinity;
 
     if (settings.mode === 'quality') {
       // なるべく圧縮: 下限ビットレートで圧縮する
@@ -833,7 +837,8 @@
       videoBps = Math.max(floorBps, Math.floor(forcedVideoBitrate));
     } else {
       // ◯MB以内に圧縮: 目標サイズに収まるなるべく高いビットレート。下限を下回るなら圧縮できない
-      videoBps = Math.floor(settings.targetBytes * 8 * SIZE_SAFETY / duration - audioBps);
+      budgetBps = Math.floor(settings.targetBytes * 8 * SIZE_SAFETY / duration - audioBps);
+      videoBps = budgetBps;
       if (videoBps < floorBps) { unreachable = true; videoBps = floorBps; }
     }
 
@@ -843,10 +848,14 @@
     if (isFinite(srcCap) && srcCap > 100000 && videoBps > srcCap) videoBps = srcCap;
     // ビットレートは必ず整数にする（小数だと Mediabunny が例外を出し、0%のまま止まっていた）
     videoBps = Math.floor(videoBps);
+    // 元動画のビットレートがもともと低く、上限（元の80%）で目標に収まるなら、下限を割っても収められる
+    // （下限は画質をこれ以上落とさないための値で、元がそれより低い動画には当てはまらない）
+    if (unreachable && videoBps <= budgetBps) unreachable = false;
 
     var estBytes = Math.round((videoBps + audioBps) * duration / 8);
     return {
       mode: settings.mode, res: settings.res, halfFps: settings.halfFps,
+      wantAudio: !!settings.audio,                     // 「音声を残す」（圧縮を始めたときの設定。やり直しでもこれを使う）
       targetMB: settings.targetMB, targetBytes: settings.targetBytes, minBitrate: settings.minBitrate,
       trimStart: trim.start, trimEnd: trim.end, duration: duration,
       srcFps: srcFps, outFps: outFps, fpsChanged: Math.abs(outFps - srcFps) > 0.05,
@@ -912,7 +921,7 @@
     // シークバーは圧縮後も元動画の確認に使えるようにする（圧縮中だけ止める）
     els.trimSeek.disabled = !hasFile || locked;
     [els.res720, els.res1080, els.resSource, els.modeQuality, els.modeSize, els.targetSize, els.halfFps, els.audioOn,
-      els.minRate720, els.minRate1080, els.autoRun, els.nameOn].forEach(function (el) { el.disabled = state.running || done; });
+      els.minRate720, els.minRate1080, els.autoRun, els.nameOn, els.resetSettings].forEach(function (el) { el.disabled = state.running || done; });
     Array.prototype.forEach.call(els.nameList.querySelectorAll('input, button'), function (el) {
       el.disabled = state.running || done || (el.dataset.move === 'up' && !el.parentNode.previousSibling) ||
         (el.dataset.move === 'down' && !el.parentNode.nextSibling);
@@ -1251,7 +1260,7 @@
   // 再圧縮せずに書き出すときの説明（全体なら何を除いたか、一部ならトリミングのみ）
   function copyLabel(plan) {
     if (!isFullTrimOf(plan)) return 'トリミングのみ';
-    var need = stripNeeds(readSettings());
+    var need = stripNeeds({ audio: plan.wantAudio });
     if (need.audio && need.location) return '位置情報と音声を除いて元のまま';
     return need.audio ? '音声を除いて元のまま' : '位置情報を除いて元のまま';
   }
@@ -1481,11 +1490,18 @@
       // settled … 結果（成功・失敗）を返した。末尾の書き出し（flush）で失敗しても、必ず失敗として返すために分けておく
       var frames = 0, lastKeyTs = -Infinity, lastTs = -1, stopped = false, settled = false;
       var minDeltaUs = 1e6 / plan.outFps * 0.75;   // 取り込むフレームレートの上限（多少の揺らぎは許容）
-      var encoder = new VideoEncoder({
-        output: function (chunk, meta) { onPacket(M.EncodedPacket.fromEncodedChunk(chunk), meta); },
-        error: function (e) { fail(e); }
-      });
-      encoder.configure(config);
+      var encoder = null;
+      // 作る・設定するところで失敗しても、プレビューの動画（操作ボタン・ミュート）を元に戻してから失敗にする
+      try {
+        encoder = new VideoEncoder({
+          output: function (chunk, meta) { onPacket(M.EncodedPacket.fromEncodedChunk(chunk), meta); },
+          error: function (e) { fail(e); }
+        });
+        encoder.configure(config);
+      } catch (e) {
+        fail(e);
+        return;
+      }
       // キャンセルしたらその場で止めて、プレビューの動画を元に戻す（次の実行とぶつからないように）
       job.hooks.push(function () { fail(new Error(CANCELLED)); });
 
@@ -1501,7 +1517,7 @@
         settled = true;
         stopped = true;
         cleanup();
-        try { if (encoder.state !== 'closed') encoder.close(); } catch (e) { /* noop */ }
+        try { if (encoder && encoder.state !== 'closed') encoder.close(); } catch (e) { /* noop */ }
         reject(err);
       }
       function finish() {
@@ -1970,7 +1986,7 @@
           console.warn('高速モードに失敗したため互換モードに切り替えます:', err);
           log('互換モードに切り替え');
           engine = 'compat';
-          plan = replan(plan, { audio: audioStrategy(state.meta, readSettings().audio, 'compat') });
+          plan = replan(plan, { audio: audioStrategy(state.meta, plan.wantAudio, 'compat') });
           return attempt(0, 0, stalled ? '処理が進まないため、互換モードでやり直し中' : null);
         }
         if (stalled) throw new Error('圧縮が進まなくなりました。画面を表示したまま、もう一度お試しください。');
@@ -2050,7 +2066,7 @@
   // 計画を作り直すときに、元の計画と同じ設定を渡す
   function planSettings(plan) {
     return {
-      mode: plan.mode, res: plan.res, halfFps: plan.halfFps,
+      mode: plan.mode, res: plan.res, halfFps: plan.halfFps, audio: plan.wantAudio,
       targetMB: plan.targetMB, targetBytes: plan.targetBytes, minBitrate: plan.minBitrate
     };
   }
@@ -2157,7 +2173,7 @@
       fmtDuration(elapsed) + (res.attempts > 1 ? '・' + res.attempts + '回で調整' : '') +
       // Safari（WebKit）は CBR/VBR の指定をエンコーダに渡さないので、表示しない
       (res.rateMode && !isWebKit() ? (res.rateMode === 'variable' ? '・VBR' : '・CBR') : '') +
-      (plan.audio.mode === 'none' && readSettings().audio ? '・音声なし' : '') + (engine === 'compat' ? '・互換モード' : '');
+      (plan.audio.mode === 'none' && plan.wantAudio ? '・音声なし' : '') + (engine === 'compat' ? '・互換モード' : '');
 
     var warns = [];
     if (plan.mode === 'size' && size >= plan.targetBytes) {

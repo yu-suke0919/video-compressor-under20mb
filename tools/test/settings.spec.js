@@ -2,7 +2,7 @@
 'use strict';
 
 const { test, expect } = require('@playwright/test');
-const { open } = require('./helpers');
+const { open, pick } = require('./helpers');
 
 // 画面の設定の状態
 function readUi(page) {
@@ -96,4 +96,47 @@ test('以前の形式で保存した設定も読み込める。おかしな値�
   expect(await readUi(page)).toEqual({ res: '1080', mode: 'quality', target: '30', min720: '900', min1080: '2700', halfFps: true, auto: true, audio: false, nameOn: true });
   await page.click('details.settings:not(#diagBox) > summary');
   expect(await page.textContent('#namePreview')).toBe('あいう.mp4');   // 自由入力は文字と数字だけ
+});
+
+// 画面の圧縮の計画（解像度）
+const planSize = page => page.evaluate(() => {
+  const s = window.__compressor.state, st = window.__compressor.readSettings();
+  const audio = window.__compressor.audioStrategy(s.meta, st.audio, s.engine);
+  const p = window.__compressor.makePlan(s.meta, s.trim, st, audio, s.file.size);
+  return p.width + 'x' + p.height;
+});
+
+test('URL の「元の解像度」は、1080p の動画を縮小せず、選択肢が出る動画では「元の解像度」に戻る', async ({ page }) => {
+  await open(page, '?res=source');
+  await pick(page, '1080p60-45s.mp4');
+  expect(await page.isChecked('#res1080')).toBe(true);
+  expect(await planSize(page)).toBe('1920x1080');
+  await pick(page, 'screenrec-886x1920.mp4');   // 720p・1080p 以外の大きい動画
+  expect(await page.isChecked('#resSource')).toBe(true);
+  expect(await planSize(page)).toBe('886x1920');
+});
+
+test('保存した「元の解像度」も、1080p の動画を縮小しない', async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => localStorage.setItem('video-compressor-under20mb:settings', JSON.stringify({ res: 'source' })));
+  await open(page);
+  await pick(page, '1080p60-45s.mp4');
+  expect(await planSize(page)).toBe('1920x1080');
+});
+
+test('元動画のビットレートが低く、上限（元の80%）で目標に収まるなら、「収まらない」にしない', async ({ page }) => {
+  await open(page);
+  const plan = await page.evaluate(() => window.__compressor.makePlan(
+    { width: 1280, height: 720, duration: 600, fps: 30 }, { start: 0, end: 600 },
+    { res: '720', mode: 'size', targetMB: 20, targetBytes: 20000000, halfFps: true, minBitrate: { 720: 1200000, 1080: 2700000 } },
+    { mode: 'none', bps: 0, label: 'なし', note: null }, 24000000));
+  expect(plan.videoBitrate).toBe(256000);
+  expect(plan.estBytes).toBe(19200000);
+  expect(plan.unreachable).toBe(false);
+  // 元動画の上限を当てはめても収まらないときは、今までどおり「収まらない」
+  const over = await page.evaluate(() => window.__compressor.makePlan(
+    { width: 1280, height: 720, duration: 600, fps: 30 }, { start: 0, end: 600 },
+    { res: '720', mode: 'size', targetMB: 20, targetBytes: 20000000, halfFps: true, minBitrate: { 720: 1200000, 1080: 2700000 } },
+    { mode: 'none', bps: 0, label: 'なし', note: null }, 200000000));
+  expect(over.unreachable).toBe(true);
 });
