@@ -459,6 +459,53 @@ test.describe('Android で選んだ直後に読めない（NotReadableError）',
 });
 
 test.describe('互換モード', () => {
+  test('エンコーダーの設定で失敗しても、プレビューの動画の操作ボタンと音を元に戻す', async ({ page }) => {
+    await page.addInitScript(() => {
+      VideoEncoder.prototype.configure = function () { throw new DOMException('configure failed', 'NotSupportedError'); };
+    });
+    await open(page, '?mode=quality');
+    await pick(page, 'small-5mb.mp4');
+    await page.evaluate(() => { window.__compressor.state.engine = 'compat'; });
+    await compress(page);
+    const u = await ui(page);
+    expect(u.hasOut).toBe(false);
+    expect(u.outWarn).toContain('configure failed');
+    expect(await page.evaluate(() => { const v = document.getElementById('srcVideo'); return { controls: v.controls, muted: v.muted }; }))
+      .toEqual({ controls: true, muted: false });
+  });
+
+  test('「音声を残す」をオフで始めたら、互換モードに切り替わっても音声を入れない（圧縮中は設定を初期値に戻せない）', async ({ page }) => {
+    // 互換モードで AAC の音声を作れる端末にする（この Chrome は AAC で書き出せないので、書き出す真似をする）
+    await page.addInitScript(() => {
+      window.AudioEncoder = class {
+        constructor(init) { this.init = init; this.state = 'unconfigured'; this.first = true; }
+        get encodeQueueSize() { return 0; }
+        configure(c) { this.c = c; this.state = 'configured'; }
+        encode(ad) {
+          const chunk = new EncodedAudioChunk({ type: 'key', timestamp: ad.timestamp, duration: Math.round(ad.numberOfFrames / ad.sampleRate * 1e6), data: new Uint8Array([0x21, 0x10, 0x04, 0x60, 0x8c, 0x1c]) });
+          const meta = this.first ? { decoderConfig: { codec: 'mp4a.40.2', sampleRate: this.c.sampleRate, numberOfChannels: this.c.numberOfChannels, description: new Uint8Array([0x11, 0x90]) } } : undefined;
+          this.first = false;
+          this.init.output(chunk, meta);
+        }
+        flush() { return Promise.resolve(); }
+        close() { this.state = 'closed'; }
+        static isConfigSupported(c) { return Promise.resolve({ supported: true, config: c }); }
+      };
+    });
+    await open(page, '?mode=quality&audio=off');
+    await failFirstConversion(page, 'quick');   // 高速モードで失敗して、互換モードに切り替わる
+    await pick(page, 'small-5mb.mp4');
+    await page.click('#runBtn');
+    await page.waitForTimeout(100);
+    expect(await page.isDisabled('#resetSettings')).toBe(true);
+    await page.evaluate(() => document.getElementById('resetSettings').click());   // 押せないことを確かめる
+    await page.waitForFunction(() => !window.__compressor.state.running, null, { timeout: 120000 });
+    const u = await ui(page);
+    expect(u.diag).toContain('互換モードに切り替え');
+    expect(await page.isChecked('#audioOn')).toBe(false);   // 初期値（オン）に戻っていない
+    expect((await outputInfo(page)).audioCodec).toBe(null);
+  });
+
   test('最後の書き出し（flush）で失敗したら、20秒止まらずにすぐエラーにする', async ({ page }) => {
     await page.addInitScript(() => {
       const orig = VideoEncoder.prototype.flush; let n = 0;
