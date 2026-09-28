@@ -2,27 +2,44 @@
 'use strict';
 
 const { test, expect } = require('@playwright/test');
-const { open, pick, compress, ui } = require('./helpers');
+const { open, pick, compress, ui, setTrim } = require('./helpers');
 
 const diag = page => page.inputValue('#diagOut');
-const probeDone = (page, key) => page.waitForFunction(k => !!window.__compressor.probe.results[k], key, { timeout: 120000 });
 
-test('読み込んだら今の設定で測り、設定を変えたらその設定でも測る', async ({ page }) => {
+test('読み込んだら今の設定で1か所ずつ測って予想を出し直し、設定を変えたらその設定でも測る', async ({ page }) => {
   await open(page, '?probe=on');
-  await pick(page, '1080p60-45s.mp4');   // 初期設定は 720p・30fps
-  await probeDone(page, '1280x720@30');
-  const first = await page.evaluate(() => window.__compressor.probe.results['1280x720@30']);
-  expect(first.samples).toHaveLength(5);   // 45秒の動画は5か所
-  for (const bps of first.samples) expect(bps).toBeGreaterThan(0);
-  expect(await diag(page)).toMatch(/試し圧縮 1280x720@30 .* 指定 .* → 実測 [^・]+・[^・]+・[^・]+・[^・]+・[^・（]+（/);
-  expect(await diag(page)).toMatch(/予想（試し圧縮から）/);
-  expect((await ui(page)).planInfo).toMatch(/予想.*（試し圧縮）$/);
+  await pick(page, '1080p60-45s.mp4');   // 初期設定は 720p・30fps。45秒なので 8か所
+  const count = () => page.evaluate(() => ((window.__compressor.probe.results['1280x720@30'] || {}).samples || []).length);
+  await page.waitForFunction(() => ((window.__compressor.probe.results['1280x720@30'] || {}).samples || []).length === 1, null, { timeout: 60000 });
+  expect((await ui(page)).planInfo).toMatch(/予想.*（試し圧縮 1\/8）$/);   // 1か所目で予想が出る
+  await page.waitForFunction(() => window.__compressor.probe.results['1280x720@30'].samples.length === 8 && !window.__compressor.probe.job, null, { timeout: 120000 });
+  expect(await count()).toBe(8);
+  const starts = await page.evaluate(() => window.__compressor.probe.results['1280x720@30'].samples.map(x => x.start));
+  // 最初・最後・真ん中の順（1か所2秒なので、最後は 45-2=43秒から）
+  expect(starts[0]).toBe(0);
+  expect(starts[1]).toBeCloseTo(43, 0);
+  expect(starts[2]).toBeCloseTo(21.5, 0);
+  for (const x of await page.evaluate(() => window.__compressor.probe.results['1280x720@30'].samples)) expect(x.bps).toBeGreaterThan(0);
+  expect((await ui(page)).planInfo).toMatch(/予想.*（試し圧縮 8\/8）$/);
+  expect(await diag(page)).toMatch(/試し圧縮 1280x720@30 21\.\d-23\.\ds 指定 .* → /);
+  expect(await diag(page)).toMatch(/予想（試し圧縮 8\/8）/);
 
   // 60fps のままにすると、その設定で測り直す（前の結果は残す）
   await page.click('details.settings:not(#diagBox) > summary');
   await page.uncheck('#halfFps');
-  await probeDone(page, '1280x720@60');
-  expect(await page.evaluate(() => Object.keys(window.__compressor.probe.results).sort())).toEqual(['1280x720@30', '1280x720@60']);
+  await page.waitForFunction(() => !!window.__compressor.probe.results['1280x720@60'], null, { timeout: 60000 });
+  expect(await count()).toBe(8);
+});
+
+test('範囲を縮めたら、範囲の中の実測だけで予想し、足りない所を測り足す', async ({ page }) => {
+  await open(page, '?probe=on&mode=quality');   // 「◯MB以内」だと、この動画はトリミングのみになる
+  await pick(page, '720p-60s.mp4');
+  await page.waitForFunction(() => { const r = window.__compressor.probe.results['1280x720@30']; return r && r.samples.length === 10 && !window.__compressor.probe.job; }, null, { timeout: 180000 });
+  await setTrim(page, 0, 20);   // 20秒 → 3か所。全体を測ったときの実測（0秒・約9秒…）は使い、足りなければ測り足す
+  await page.waitForFunction(() => !window.__compressor.probe.job && !window.__compressor.probe.timer, null, { timeout: 60000 });
+  const inside = await page.evaluate(() => window.__compressor.probe.results['1280x720@30'].samples.filter(x => (x.start + x.end) / 2 <= 20).length);
+  expect(inside).toBeGreaterThanOrEqual(3);
+  expect((await ui(page)).planInfo).toMatch(/（試し圧縮 3\/3）$/);
 });
 
 test('測っている途中で「圧縮する」を押すと、測るのを止めて圧縮する', async ({ page }) => {
@@ -68,7 +85,16 @@ test('予想の計算：場面ごとに「指定」と「実測」の大きい�
     const easy = c.applyProbe(plan({ mode: 'size' }), light);
     return {
       mid: c.probedBps(4050000, heavy), q, size70, sizeOver, easy, plain: plan({ mode: 'size', targetMB: 70, targetBytes: 70000000 }),
-      ranges: [c.probeRanges(60).length, c.probeRanges(15).length, c.probeRanges(3).length, c.probeRanges(1)]
+      wanted: [60, 15, 3, 1, 200].map(len => c.probeWanted({ trimStart: 0, trimEnd: len })),
+      order: (() => {
+        // 範囲 0〜60秒を測り切るまで、次に測る場所を順に取り出す
+        const pl = { trimStart: 0, trimEnd: 60 }, samples = [];
+        for (let r; (r = c.nextProbeRange(pl, samples));) samples.push(Object.assign({ bps: 1 }, r));
+        // その実測で、範囲を 30.5〜40.5秒に縮めたとき（2か所ほしい。中にあるのは 36.25秒の1か所）に次に測る場所
+        const next = c.nextProbeRange({ trimStart: 30.5, trimEnd: 40.5 }, samples);
+        const short = c.nextProbeRange({ trimStart: 5, trimEnd: 5.5 }, []);
+        return { starts: samples.map(x => x.start), next, short };
+      })()
     };
   });
   expect(r.mid).toBe(Math.round((4050000 + 5900000 + 11600000) / 3));
@@ -90,9 +116,14 @@ test('予想の計算：場面ごとに「指定」と「実測」の大きい�
   // 指定を守るエンコーダーでは何も変えない
   expect(r.easy.videoBitrate).toBe(4050000);
   expect(r.easy.probeOver).toBe(false);
-  // 試す場所の数：60秒は5か所、15秒は3か所、3秒は1か所、1秒の動画は全体
-  expect(r.ranges.slice(0, 3)).toEqual([5, 3, 1]);
-  expect(r.ranges[3]).toEqual([{ start: 0, end: 1 }]);
+  // 測る数：6秒ごとに1か所（最大12か所）
+  expect(r.wanted).toEqual([10, 3, 1, 1, 12]);
+  // 測る順番：最初・最後・真ん中・1/4・3/4・1/8…（範囲 0〜60秒、1か所2秒なので 0〜58秒の間）
+  expect(r.order.starts).toEqual([0, 58, 29, 14.5, 43.5, 7.25, 21.75, 36.25, 50.75, 3.625]);
+  // 最初（30.5秒）はすぐ近く（29秒）を測ってあるので飛ばし、最後（38.5秒）を測る
+  expect(r.order.next).toEqual({ start: 38.5, end: 40.5 });
+  // 範囲が1か所の長さより短いときは、範囲全体を測る
+  expect(r.order.short).toEqual({ start: 5, end: 5.5 });
 });
 
 test('「◯MB以内に圧縮」で収まらない見込みなら、押す前に知らせる（押すことはできる）', async ({ page }) => {
@@ -102,11 +133,14 @@ test('「◯MB以内に圧縮」で収まらない見込みなら、押す前に
   // テストの動画では収まる見込みになるので、試し圧縮の結果を重い映像のものに差し替えて出し直す
   await page.evaluate(() => {
     const p = window.__compressor.probe;
-    Object.keys(p.results).forEach(k => { p.results[k] = { samples: [20000000, 30000000, 40000000] }; });
+    // 重い実測を3か所入れ、それ以上は測らないようにする
+    Object.keys(p.results).forEach(k => {
+      p.results[k] = { failed: true, samples: [0, 20, 40].map((t, i) => ({ start: t, end: t + 2, bps: [20000000, 30000000, 40000000][i] })) };
+    });
     document.getElementById('targetSize').dispatchEvent(new Event('input', { bubbles: true }));
   });
   const u = await ui(page);
   expect(u.planWarn).toMatch(/試し圧縮の結果、この設定では30MBに収まらない見込みです（予想.*）。30fpsにするか、720pにするか、範囲を短くしてください。/);
-  expect(u.planInfo).toMatch(/（試し圧縮）$/);
+  expect(u.planInfo).toMatch(/（試し圧縮 3\/8）$/);
   expect(u.runDisabled).toBe(false);
 });
