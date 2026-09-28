@@ -934,7 +934,7 @@
       <label for="minRate1080">下限ビットレート（1080p）</label>
       <span><input id="minRate1080" type="number" inputmode="numeric" min="100" max="50000" step="100" value="2700"> kbps</span>
     </div>
-    <p class="hint">「なるべく圧縮」はこの値で圧縮します。「MB以内に圧縮」は、この値を下回らない範囲で目標サイズに収まるなるべく高いビットレートにします。「元の解像度」のときは、720pの値を画素数に比例させて使います。</p>
+    <p class="hint">「なるべく圧縮」はこの値で圧縮します。「MB以内に圧縮」は、この値を下回らない範囲で目標サイズに収まるなるべく高いビットレートにします。「元の解像度」のときは、720pの値を画素数に比例させて使います。60fpsのまま圧縮するときは、この値の1.5倍を使います。</p>
     <div class="check">
       <input type="checkbox" id="halfFps" checked>
       <label for="halfFps">60fpsの動画は30fpsにする（容量を抑えられます）</label>

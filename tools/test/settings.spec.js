@@ -177,3 +177,28 @@ test('元動画のビットレートが下限より低い動画は、圧縮し�
   expect(r.normalFloor).toBe(1200000);
   expect(r.normal).toBe(1200000);        // 求め直した値が低くても、設定の下限は割らない
 });
+
+test('60fpsのまま書き出すときは、下限ビットレートを1.5倍にする（30fpsにするときは今までどおり）', async ({ page }) => {
+  await open(page);
+  const r = await page.evaluate(() => {
+    const c = window.__compressor;
+    const none = { mode: 'none', bps: 0, label: 'なし', note: null };
+    const st = { res: '1080', mode: 'quality', targetMB: 20, targetBytes: 20000000, halfFps: true, minBitrate: { 720: 1200000, 1080: 2700000 } };
+    const meta = { width: 1920, height: 1080, duration: 60, fps: 60 };
+    const plan = (s, m) => c.makePlan(m || meta, { start: 0, end: 60 }, Object.assign({}, st, s), none, 500000000);
+    const size60 = plan({ mode: 'size', halfFps: false });
+    return {
+      half: plan({}).videoBitrate,
+      keep60: plan({ halfFps: false }).videoBitrate,
+      src30: plan({ halfFps: false }, { width: 1920, height: 1080, duration: 60, fps: 30 }).videoBitrate,
+      size60Floor: size60.floorBitrate, size60Unreachable: size60.unreachable,
+      source60: plan({ res: 'source', halfFps: false }).videoBitrate
+    };
+  });
+  expect(r.half).toBe(2700000);       // 60fps → 30fps
+  expect(r.keep60).toBe(4050000);     // 60fps のまま
+  expect(r.src30).toBe(2700000);      // もともと30fps
+  expect(r.size60Floor).toBe(4050000);
+  expect(r.size60Unreachable).toBe(true);   // 60秒は 4.05Mbps では20MBに入らない
+  expect(r.source60).toBe(Math.round(Math.round(1200000 * 1920 * 1080 / (1280 * 720)) * 1.5));
+});
