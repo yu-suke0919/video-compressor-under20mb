@@ -621,7 +621,7 @@
     var input = new M.Input({ source: new M.BlobSource(file), formats: INPUT_FORMATS });
     var meta = {};
     return input.getPrimaryVideoTrack().then(function (vt) {
-      if (!vt) throw new Error('映像トラックが見つかりませんでした。');
+      if (!vt) throw new Error(MSG_NO_VIDEO_TRACK);
       meta.width = vt.displayWidth;
       meta.height = vt.displayHeight;
       meta.videoCodec = vt.codec;
@@ -665,6 +665,12 @@
   // 固まるとこのページからは直せず、Safari（ホーム画面のアプリ）を開き直すまで動画を読み込めない
   var MSG_CODEC_STUCK = 'この端末の動画の処理が止まったままになっています。ブラウザ（ホーム画面に追加した場合はそのアプリ）をいったん完全に閉じて開き直してから、もう一度お試しください（iPhone は、アプリの切り替え画面で上にスワイプすると閉じられます）。';
   var MSG_KILL_BROWSER = 'ブラウザをタスクキルしてください！';
+  var MSG_NO_H264 = 'この端末では動画のエンコード（H.264）に対応していません。';
+  var MSG_NO_VIDEO_TRACK = '映像トラックが見つかりませんでした。';
+  var MSG_CANVAS_FAIL = 'canvasを初期化できませんでした。';
+  var MSG_STALLED = '圧縮が進まなくなりました。画面を表示したまま、もう一度お試しください。';
+  var MSG_PLAY_FAILED = '動画を再生できませんでした。画面を表示したまま、もう一度お試しください。';
+  var MSG_REPORT = 'うまくいかないときは、画面のいちばん下の「診断情報」をコピーして、X（@inkaroma0431）あるいはDiscordに送ってください。';
   var MSG_AUDIO_COPY_FAILED = '元の動画の音声をそのまま使えなかったため、音声なしで圧縮しました。';
   var MSG_PLAY_LOW_POWER = '動画を再生できませんでした。低電力モードがオンのときは再生できないことがあるので、オフにしてからもう一度お試しください。';
   // 読み込み・圧縮のエラーの赤枠に出す行（デコーダーが固まったときは、先に太字でタスクキルを促す）
@@ -731,18 +737,31 @@
     });
   }
 
-  function probeFps(videoEl) {
-    var wasMuted = videoEl.muted;
+  // プレビューの <video> を処理に借りる（音を消し、hideControls なら操作ボタンも隠す）。
+  // 返した関数で、止めて元に戻す（どの終わり方でも必ず呼ぶ。何度呼んでもよい）
+  function borrowVideo(videoEl, hideControls) {
+    var wasMuted = videoEl.muted, hadControls = videoEl.controls, returned = false;
     videoEl.muted = true;
+    if (hideControls) videoEl.controls = false;
+    return function giveBack() {
+      if (returned) return;
+      returned = true;
+      try { videoEl.pause(); } catch (e) { /* noop */ }
+      videoEl.muted = wasMuted;
+      videoEl.controls = hadControls;
+    };
+  }
+
+  function probeFps(videoEl) {
+    var giveBack = borrowVideo(videoEl, false);
     return new Promise(function (resolve) {
       var times = [], done = false;
       function finish() {
         if (done) return;
         done = true;
         clearTimeout(timer);
-        try { videoEl.pause(); } catch (e) { /* noop */ }
+        giveBack();
         try { videoEl.currentTime = 0; } catch (e) { /* noop */ }
-        videoEl.muted = wasMuted;
         resolve(estimateFps(times));
       }
       var timer = setTimeout(finish, 2500);
@@ -1215,7 +1234,7 @@
     return runConversion({
       options: function (input, output) {
         return pickFastEncoding(plan).then(function (enc) {
-          if (!enc) throw new Error('この端末では動画のエンコード（H.264）に対応していません。');
+          if (!enc) throw new Error(MSG_NO_H264);
           chosen = enc;
           var video = {
             codec: enc.codec, width: plan.width, height: plan.height, fit: 'fill',
@@ -1470,24 +1489,46 @@
   }
 
   // 映像: <video> をトリミング範囲だけ再生し、フレームを取り出してエンコードする
-  function encodeCompatVideo(videoEl, plan, config, onPacket, onProgress, job) {
-    // キャンセル済みなら、プレビューの動画（ミュート・再生位置など）に触れずに終える
-    if (job.cancelled) return Promise.reject(new Error(CANCELLED));
-    var width = plan.width, height = plan.height;
-    function makeCanvas(offscreen) {
+  // 取り込んだコマを描く面。OffscreenCanvas を使い、そこから VideoFrame を作れない環境では、ふつうの canvas に切り替える。
+  // 作れなければ null
+  function frameSurface(width, height) {
+    function make(offscreen) {
       var c;
       if (offscreen && typeof OffscreenCanvas !== 'undefined') c = new OffscreenCanvas(width, height);
       else { c = document.createElement('canvas'); c.width = width; c.height = height; }
       return { canvas: c, ctx: c.getContext('2d', { alpha: false }) };
     }
-    var surface = makeCanvas(true);
-    if (!surface.ctx) surface = makeCanvas(false);
-    if (!surface.ctx) return Promise.reject(new Error('canvasを初期化できませんでした。'));
-    var canvasFallbackUsed = false;
+    var surface = make(true);
+    if (!surface.ctx) surface = make(false);
+    if (!surface.ctx) return null;
+    var fellBack = false;
+    return {
+      // source の今のコマを描いて VideoFrame にする（使い終わったら close すること）
+      capture: function (source, ts) {
+        surface.ctx.drawImage(source, 0, 0, width, height);
+        try {
+          return new VideoFrame(surface.canvas, { timestamp: ts });
+        } catch (e) {
+          if (fellBack) throw e;
+          fellBack = true;
+          surface = make(false);
+          surface.ctx.drawImage(source, 0, 0, width, height);
+          return new VideoFrame(surface.canvas, { timestamp: ts });
+        }
+      },
+      // 最後に描いたコマを、別の時刻の VideoFrame にする（末尾の補完用）
+      repeat: function (ts) { return new VideoFrame(surface.canvas, { timestamp: ts }); }
+    };
+  }
+
+  function encodeCompatVideo(videoEl, plan, config, onPacket, onProgress, job) {
+    // キャンセル済みなら、プレビューの動画（ミュート・再生位置など）に触れずに終える
+    if (job.cancelled) return Promise.reject(new Error(CANCELLED));
+    var width = plan.width, height = plan.height;
+    var surface = frameSurface(width, height);
+    if (!surface) return Promise.reject(new Error(MSG_CANVAS_FAIL));
     var start = plan.trimStart, end = plan.trimEnd, span = Math.max(0.1, end - start);
-    var wasMuted = videoEl.muted;
-    videoEl.muted = true;
-    videoEl.controls = false;
+    var giveBack = borrowVideo(videoEl, true);
 
     return new Promise(function (resolve, reject) {
       // stopped … フレームの受け付けを終えた（終わりまで来た・失敗・キャンセル）
@@ -1512,9 +1553,7 @@
       function cleanup() {
         videoEl.onended = null;
         clearInterval(watchdog);
-        try { videoEl.pause(); } catch (e) { /* noop */ }
-        videoEl.muted = wasMuted;
-        videoEl.controls = true;
+        giveBack();
       }
       function fail(err) {
         if (settled) return;
@@ -1532,7 +1571,7 @@
         try {
           var endTs = Math.round(span * 1e6);
           if (frames > 0 && endTs > lastTs + minDeltaUs) {
-            var tail = new VideoFrame(surface.canvas, { timestamp: endTs });
+            var tail = surface.repeat(endTs);
             try { encoder.encode(tail, { keyFrame: false }); } finally { tail.close(); }
           }
         } catch (e) { /* 末尾の補完は失敗しても無視する */ }
@@ -1551,19 +1590,8 @@
           if (t >= end) return finish();
           var ts = Math.round((t - start) * 1e6);
           if (ts >= 0 && ts > lastTs + minDeltaUs) {
-            surface.ctx.drawImage(videoEl, 0, 0, width, height);
             var keyFrame = (ts - lastKeyTs) >= KEYFRAME_INTERVAL * 1e6;
-            var frame;
-            try {
-              frame = new VideoFrame(surface.canvas, { timestamp: ts });
-            } catch (ve) {
-              // OffscreenCanvas から VideoFrame を作れない環境では通常の canvas で作り直す
-              if (canvasFallbackUsed) throw ve;
-              canvasFallbackUsed = true;
-              surface = makeCanvas(false);
-              surface.ctx.drawImage(videoEl, 0, 0, width, height);
-              frame = new VideoFrame(surface.canvas, { timestamp: ts });
-            }
+            var frame = surface.capture(videoEl, ts);
             try { encoder.encode(frame, { keyFrame: keyFrame }); } finally { frame.close(); }   // VideoFrameは必ず解放する
             if (keyFrame) lastKeyTs = ts;
             lastTs = ts;
@@ -1602,7 +1630,7 @@
         }, function (e) {
           log('再生できない ' + errText(e));
           // iPhone は、低電力モードのとき、音を消した動画でも再生させない（NotAllowedError）
-          fail(new Error(isIOS() && e && e.name === 'NotAllowedError' ? MSG_PLAY_LOW_POWER : '動画を再生できませんでした。画面を表示したまま、もう一度お試しください。'));
+          fail(new Error(isIOS() && e && e.name === 'NotAllowedError' ? MSG_PLAY_LOW_POWER : MSG_PLAY_FAILED));
         });
       }
       videoEl.addEventListener('seeked', begin, { once: true });
@@ -1621,7 +1649,7 @@
       throwIfCancelled(job);
       return findCompatVideoConfig(plan, job).then(function (found) {
         throwIfCancelled(job);   // 設定を確かめている間にキャンセルされていたら、先へ進まない
-        if (!found) throw new Error('この端末では動画のエンコード（H.264）に対応していません。');
+        if (!found) throw new Error(MSG_NO_H264);
         var output = newMp4Output();
         var vsrc = new M.EncodedVideoPacketSource(found.mb);
         output.addVideoTrack(vsrc);
@@ -1993,7 +2021,7 @@
           plan = replan(plan, { audio: audioStrategy(state.meta, plan.wantAudio, 'compat') });
           return attempt(0, 0, stalled ? '処理が進まないため、互換モードでやり直し中' : null);
         }
-        if (stalled) throw new Error('圧縮が進まなくなりました。画面を表示したまま、もう一度お試しください。');
+        if (stalled) throw new Error(MSG_STALLED);
         throw err;
       }
 
@@ -2053,7 +2081,7 @@
       log('エラーで終了 ' + errText(err));
       if (err && err.stuck) { setAlert(els.outWarn, errorLines(err.message), true); return; }   // 直し方は決まっているので、診断情報は開かない
       setAlert(els.outWarn, ['エラー: ' + ((err && err.message) || String(err)),
-        'うまくいかないときは、画面のいちばん下の「診断情報」をコピーして、X（@inkaroma0431）あるいはDiscordに送ってください。'], true);
+        MSG_REPORT], true);
       showDiag(true);
     });
   }

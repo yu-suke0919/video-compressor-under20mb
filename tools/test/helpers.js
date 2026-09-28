@@ -105,4 +105,29 @@ function canEncodeAac(page) {
 
 const LOCATION_KEY = /xyz|location|gps/i;
 
-module.exports = { PROFILES, video, open, pick, compress, ui, outputInfo, setTrim, canEncodeAac, LOCATION_KEY };
+// AAC で書き出す真似をする AudioEncoder（この Chrome は AAC で書き出せないので、互換モードの音声を試すときに使う）。
+// 最初のデータに付ける設定データ（description）を選べる
+const AAC_LC_48K_STEREO = [0x11, 0x90];   // 正しい設定データ（AAC-LC・48kHz・ステレオ）
+// iPhone の Safari が出す、設定データの代わりの esds の中身（39バイト）
+const SAFARI_ESDS = [0x03, 0x80, 0x80, 0x80, 0x22, 0, 0, 0, 0x04, 0x80, 0x80, 0x80, 0x14, 0x40, 0x14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  0x05, 0x80, 0x80, 0x80, 0x02, 0x11, 0x90, 0x06, 0x80, 0x80, 0x80, 0x01, 0x02];
+function fakeAacEncoder(page, description) {
+  return page.addInitScript(bytes => {
+    window.AudioEncoder = class {
+      constructor(init) { this.init = init; this.state = 'unconfigured'; this.first = true; }
+      get encodeQueueSize() { return 0; }
+      configure(c) { this.c = c; this.state = 'configured'; }
+      encode(ad) {
+        const chunk = new EncodedAudioChunk({ type: 'key', timestamp: ad.timestamp, duration: Math.round(ad.numberOfFrames / ad.sampleRate * 1e6), data: new Uint8Array([0x21, 0x10, 0x04, 0x60, 0x8c, 0x1c]) });
+        const meta = this.first ? { decoderConfig: { codec: 'mp4a.40.2', sampleRate: this.c.sampleRate, numberOfChannels: this.c.numberOfChannels, description: new Uint8Array(bytes) } } : undefined;
+        this.first = false;
+        this.init.output(chunk, meta);
+      }
+      flush() { return Promise.resolve(); }
+      close() { this.state = 'closed'; }
+      static isConfigSupported(c) { return Promise.resolve({ supported: true, config: c }); }
+    };
+  }, description);
+}
+
+module.exports = { PROFILES, video, open, pick, compress, ui, outputInfo, setTrim, canEncodeAac, fakeAacEncoder, AAC_LC_48K_STEREO, SAFARI_ESDS, LOCATION_KEY };
