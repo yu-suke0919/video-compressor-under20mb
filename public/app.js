@@ -51,7 +51,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-28d';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-28e';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -827,25 +827,29 @@
     var floorBps = settings.res === 'source'
       ? Math.max(MIN_KBPS_LIMITS[0] * 1000, Math.round(settings.minBitrate['720'] * width * height / (1280 * 720)))
       : settings.minBitrate[settings.res];
+    // 元動画より高いビットレートで焼き直しても容量が増えるだけなので上限を設ける（元の実効ビットレートの80%）
+    var srcBps = meta.duration > 0 ? fileSize * 8 / meta.duration : Infinity;
+    var srcCap = videoCapBps ? Math.floor(videoCapBps) : Math.floor(srcBps * 0.8) - audioBps;
+    var capOk = isFinite(srcCap) && srcCap > 100000;
+    // この計画の下限。元動画のビットレートがもともと下限より低い動画には、下限（画質をこれ以上落とさないための値）は
+    // 当てはまらないので、設定で選べる最小値にする。初回の計画・圧縮し直し・「◯分まで収まる」の目安で同じ値を使う
+    var minBps = capOk && srcCap < floorBps ? MIN_KBPS_LIMITS[0] * 1000 : floorBps;
     var videoBps, unreachable = false, budgetBps = Infinity;
 
     if (settings.mode === 'quality') {
-      // なるべく圧縮: 下限ビットレートで圧縮する
+      // なるべく圧縮: 設定の下限ビットレートで圧縮する（元動画が低ければ、下の上限で元に合わせる）
       videoBps = floorBps;
     } else if (forcedVideoBitrate) {
-      // 再圧縮: 実サイズから求め直した値（下限は下回らない）
-      videoBps = Math.max(floorBps, Math.floor(forcedVideoBitrate));
+      // 再圧縮: 実サイズから求め直した値（この計画の下限は下回らない）
+      videoBps = Math.max(minBps, Math.floor(forcedVideoBitrate));
     } else {
-      // ◯MB以内に圧縮: 目標サイズに収まるなるべく高いビットレート。下限を下回るなら圧縮できない
+      // ◯MB以内に圧縮: 目標サイズに収まるなるべく高いビットレート。この計画の下限を下回るなら圧縮できない
       budgetBps = Math.floor(settings.targetBytes * 8 * SIZE_SAFETY / duration - audioBps);
       videoBps = budgetBps;
-      if (videoBps < floorBps) { unreachable = true; videoBps = floorBps; }
+      if (videoBps < minBps) { unreachable = true; videoBps = minBps; }
     }
 
-    // 元動画より高いビットレートで焼き直しても容量が増えるだけなので上限を設ける
-    var srcBps = meta.duration > 0 ? fileSize * 8 / meta.duration : Infinity;
-    var srcCap = videoCapBps ? Math.floor(videoCapBps) : Math.floor(srcBps * 0.8) - audioBps;
-    if (isFinite(srcCap) && srcCap > 100000 && videoBps > srcCap) videoBps = srcCap;
+    if (capOk && videoBps > srcCap) videoBps = srcCap;
     // ビットレートは必ず整数にする（小数だと Mediabunny が例外を出し、0%のまま止まっていた）
     videoBps = Math.floor(videoBps);
     // 元動画のビットレートがもともと低く、上限（元の80%）で目標に収まるなら、下限を割っても収められる
@@ -859,7 +863,7 @@
       targetMB: settings.targetMB, targetBytes: settings.targetBytes, minBitrate: settings.minBitrate,
       trimStart: trim.start, trimEnd: trim.end, duration: duration,
       srcFps: srcFps, outFps: outFps, fpsChanged: Math.abs(outFps - srcFps) > 0.05,
-      width: width, height: height, videoBitrate: videoBps, floorBitrate: floorBps, videoCapBps: videoCapBps || null,
+      width: width, height: height, videoBitrate: videoBps, floorBitrate: minBps, videoCapBps: videoCapBps || null,
       audio: audio, audioBitrate: audioBps,
       estBytes: estBytes,
       unreachable: unreachable,                        // 目標サイズに収められない（◯MB以内に圧縮のとき）

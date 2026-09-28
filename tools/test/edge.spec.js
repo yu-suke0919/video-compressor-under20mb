@@ -155,10 +155,15 @@ test.describe('形式', () => {
   test('奇数の大きさの動画', async ({ page }) => {
     await open(page);
     await pick(page, 'odd-1279x719.mp4');
+    const meta = (await ui(page)).meta;
+    expect([meta.width, meta.height]).toEqual([1279, 719]);   // テストの前提：本当に奇数の大きさで読んでいる
     await compress(page);
     const out = await outputInfo(page);
     expect(out.width % 2).toBe(0);
     expect(out.height % 2).toBe(0);
+    // いちばん近い偶数に丸める（元との違いは1px以内）
+    expect(Math.abs(out.width - 1279)).toBeLessThanOrEqual(1);
+    expect(Math.abs(out.height - 719)).toBeLessThanOrEqual(1);
   });
 
   test('HEVC：読み込めれば圧縮でき、読み込めない端末では形式の案内をすぐ出す', async ({ page }) => {
