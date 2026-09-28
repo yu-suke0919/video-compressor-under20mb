@@ -369,33 +369,52 @@
     $('device').textContent = (IS_IOS ? 'iPhone / iPad' : IS_ANDROID ? 'Android' : 'PC') + (appVersion ? '・ver=' + appVersion : '') + '・' + UA;
   }
 
-  // 1件分を実行して判定する
-  async function runCase(c, source, r) {
+  // ---------------------------------------------------------------- 判定の共通部分
+  function secondsSince(t) { return ((Date.now() - t) / 1000).toFixed(1) + '秒'; }
+  function errorDetail(e) { return 'エラー: ' + ((e && e.message) || String(e)); }
+  function usedCompat(s) { return s.engine === 'compat' || /互換モード/.test(appText('outInfo')); }
+  // 失敗として書く（アプリの診断情報も残す）
+  function fail(r, detail) {
+    r.status = 'ng';
+    r.detail = detail;
+    try { r.diag = appText('diagOut'); } catch (e) { /* アプリを開く前に失敗したとき */ }
+  }
+  // 見つかった問題（失敗）と注意をまとめて書く。成功以外は診断情報も残す
+  function judge(r, problems, warns) {
+    r.status = problems.length ? 'ng' : warns.length ? 'warn' : 'ok';
+    if (problems.length || warns.length) r.detail = problems.concat(warns).join('／') + (r.detail ? '（' + r.detail + '）' : '');
+    if (r.status !== 'ok') r.diag = appText('diagOut');
+  }
+  // アプリを開き直して動画を渡す。読み込めなければ失敗と書いて null を返す
+  async function openAndPick(query, file, r) {
     r.status = 'run';
     render();
-    await openApp(c.query);
-    await pickInApp(source.file);
-    var w = appWin(), s = w.__compressor.state;
-    if (!s.meta) {
-      r.status = 'ng';
-      r.detail = '読み込めない: ' + (s.loadError || appText('planWarn'));
-      r.diag = appText('diagOut');
-      return;
-    }
+    await openApp(query);
+    await pickInApp(file);
+    var s = appWin().__compressor.state;
+    if (s.meta) return s;
+    fail(r, '読み込めない: ' + (s.loadError || appText('planWarn')));
+    return null;
+  }
+
+  // 1件分を実行して判定する
+  async function runCase(c, source, r) {
+    var s = await openAndPick(c.query, source.file, r);
+    if (!s) return;
     // テスト用の動画の音声をアプリが読めないなら、アプリではなくテスト用の動画の問題
     var badSource = source.audio && s.meta.audio && s.meta.audio.canDecode === false;
     if (c.trim) setTrim(c.trim[0], c.trim[1]);
     if (c.compat) s.engine = 'compat';   // 互換モードを試す（画面からは選べない）
     var t0 = Date.now();
     if (!c.noRun) await runInApp(COMPRESS_TIMEOUT_MS);
-    var sec = ((Date.now() - t0) / 1000).toFixed(1);
+    var sec = secondsSince(t0);
     var problems = [], warns = [];
     var out = s.out;
     if (!out) {
       problems.push('圧縮できない: ' + (appText('outWarn') || appText('planWarn') || '（理由不明）'));
     } else {
       var info = await inspect(out.blob);
-      r.detail = describe(info) + (c.noRun ? '' : '・' + sec + '秒で完了');
+      r.detail = describe(info) + (c.noRun ? '' : '・' + sec + 'で完了');
       var e = c.expect || {};
       if (e.w && (info.w !== e.w || info.h !== e.h)) problems.push('解像度が ' + info.w + '×' + info.h + '（正しくは ' + e.w + '×' + e.h + '）');
       if (e.fps && !(info.fps && Math.abs(info.fps - e.fps) <= 2)) problems.push('fps が ' + (info.fps ? Math.round(info.fps) : '不明') + '（正しくは ' + e.fps + '）');
@@ -408,12 +427,10 @@
       if (e.trimOnly && !/再圧縮なし/.test(appText('outInfo'))) problems.push('トリミングのみにならなかった');
       if (e.duration && Math.abs(info.duration - e.duration) > (e.durationTol || 0.6)) problems.push('長さが ' + info.duration.toFixed(1) + '秒（正しくは約' + e.duration + '秒）');
       if (c.compat && s.engine !== 'compat') problems.push('互換モードにならなかった');
-      if (!c.compat && (s.engine === 'compat' || /互換モード/.test(appText('outInfo')))) warns.push('互換モードで処理した');
+      if (!c.compat && usedCompat(s)) warns.push('互換モードで処理した');
     }
     if (badSource) problems.unshift('テスト用の動画の音声（' + source.audio + '）をアプリが読めない（テスト用の動画の問題）');
-    r.status = problems.length ? 'ng' : warns.length ? 'warn' : 'ok';
-    if (problems.length || warns.length) r.detail = problems.concat(warns).join('／') + (r.detail ? '（' + r.detail + '）' : '');
-    if (r.status !== 'ok') r.diag = appText('diagOut');
+    judge(r, problems, warns);
   }
 
   function setBusy(busy) {
@@ -430,9 +447,7 @@
         setStatus('テスト中 ' + (i + 1) + '/' + list.length + '：' + list[i].title);
         await runCase(list[i], source, r);
       } catch (e) {
-        r.status = 'ng';
-        r.detail = 'エラー: ' + ((e && e.message) || String(e));
-        try { r.diag = appText('diagOut'); } catch (e2) { /* noop */ }
+        fail(r, errorDetail(e));
       }
       render();
     }
@@ -469,9 +484,9 @@
       var retries = (diag.match(/最初からやり直し（/g) || []).length;
       if (s.out) {
         var info = await inspect(s.out.blob);
-        r.detail = describe(info) + '・' + ((Date.now() - t0) / 1000).toFixed(1) + '秒で完了' + (retries ? '・最初からやり直し ' + retries + '回' : '');
+        r.detail = describe(info) + '・' + secondsSince(t0) + 'で完了' + (retries ? '・最初からやり直し ' + retries + '回' : '');
         if (!left) { r.status = 'warn'; r.detail = '切り替えたことを確認できませんでした（圧縮中に切り替えてください）（' + r.detail + '）'; }
-        else if (s.engine === 'compat' || /互換モード/.test(appText('outInfo'))) { r.status = 'warn'; r.detail = '互換モードに切り替わった（' + r.detail + '）'; }
+        else if (usedCompat(s)) { r.status = 'warn'; r.detail = '互換モードに切り替わった（' + r.detail + '）'; }
         else r.status = 'ok';
       } else {
         r.status = 'ng';
@@ -480,8 +495,7 @@
       if (r.status !== 'ok') r.diag = diag;
       setStatus('切り替えのテストが終わりました');
     } catch (e) {
-      r.status = 'ng';
-      r.detail = 'エラー: ' + ((e && e.message) || String(e));
+      fail(r, errorDetail(e));
       setNotice('');
     } finally {
       render();
@@ -507,12 +521,8 @@
         var r = rows[i], c = list[i];
         try {
           setStatus('テスト中 ' + (i + 1) + '/' + list.length + '：' + c.title);
-          r.status = 'run';
-          render();
-          await openApp(c.query);
-          await pickInApp(file);
-          var s = appWin().__compressor.state;
-          if (!s.meta) { r.status = 'ng'; r.detail = '読み込めない: ' + (s.loadError || appText('planWarn')); r.diag = appText('diagOut'); continue; }
+          var s = await openAndPick(c.query, file, r);
+          if (!s) continue;
           var meta = s.meta;
           r.title = c.title + '（元: ' + meta.width + '×' + meta.height + '・' + (meta.codecString || meta.videoCodec) + (meta.hdr ? '・HDR' : '') + '・' + fmtMB(file.size) + '）';
           await runInApp(COMPRESS_TIMEOUT_MS);
@@ -525,14 +535,11 @@
             if ((meta.width >= meta.height) !== (info.w >= info.h)) problems.push('縦横が変わった');
             if (outShort > Math.min(srcShort, c.limit) + 2) problems.push('解像度が大きすぎる');
             if (meta.audio && meta.audio.canDecode !== false && !info.audio && !s.out.original) warns.push('音声が消えた');
-            if (s.engine === 'compat' || /互換モード/.test(appText('outInfo'))) warns.push('互換モードで処理した');
+            if (usedCompat(s)) warns.push('互換モードで処理した');
           }
-          r.status = problems.length ? 'ng' : warns.length ? 'warn' : 'ok';
-          if (problems.length || warns.length) r.detail = problems.concat(warns).join('／') + (r.detail ? '（' + r.detail + '）' : '');
-          if (r.status !== 'ok') r.diag = appText('diagOut');
+          judge(r, problems, warns);
         } catch (e) {
-          r.status = 'ng';
-          r.detail = 'エラー: ' + ((e && e.message) || String(e));
+          fail(r, errorDetail(e));
         }
         render();
       }
