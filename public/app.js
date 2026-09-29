@@ -59,7 +59,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-29s';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-29t';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1227,7 +1227,7 @@
   //   spec.prepareLog()           … 準備ができたときに診断情報へ書く見出し（なければ書かない）
   //   spec.invalidMessage         … 扱えない動画だったときの文言
   //   spec.startLog               … 変換を始めるときに診断情報へ書く文（なければ書かない）
-  //   spec.input                  … 使う読み込み（試し圧縮・予圧縮からの切り出し）。渡したときは閉じない（なければ開いて、終わったら閉じる）
+  //   spec.input                  … 使う読み込み（予圧縮からの切り出し）。渡したときは閉じない（なければ開いて、終わったら閉じる）
   //   spec.output                 … 書き出し先（予圧縮）。渡したときは結果の blob を作らない
   //   spec.onReady(conv, audioLost) … 変換の準備ができたとき（予圧縮で、音声が外れたかを早めに知る）
   function runConversion(spec, plan, onProgress, job) {
