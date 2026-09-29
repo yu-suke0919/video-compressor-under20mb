@@ -34,6 +34,9 @@
   // 60fps のまま書き出すときは、下限ビットレートをこの倍率にする（下限は30fpsを前提にした値。
   // 60fps のままだと1コマあたりのデータが半分になる。60fps はとなりのコマが似ていて圧縮しやすいので2倍までは要らない）
   var HIGH_FPS_FLOOR_FACTOR = 1.5;
+  // 映像ビットレートの上限（元の動画のビットレートに対する倍率）。元より高いビットレートで焼き直しても、画質は上がらず容量が増えるだけ。
+  // 元が HEVC のときは、書き出す H.264 で同じ画質にするのに約1.5倍のビットレートが要るので、1.5倍まで許す
+  var SRC_CAP_RATIO = 1, SRC_CAP_RATIO_HEVC = 1.5;
   var MSG_UNREACHABLE = '目標サイズに圧縮できません。解像度を下げるか、詳細設定にて下限ビットレートを引き下げてください。';
   var MSG_OVER_DISCORD = '20MBを超えるため、Discordの無料アカウントでは送信できません。';
   var MSG_HALF_FPS_HINT = '詳細設定の「60fpsの動画は30fpsにする」をオンにすると収まりやすくなります。';
@@ -54,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-29h';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-29i';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -833,7 +836,7 @@
   }
 
   // videoCapBps: 映像ビットレートの上限を直接指定する（トリミングのみで目標を超えたとき、切り出した部分の実測値を使う）。
-  //   省略時は、ファイル全体の平均ビットレートの80%を上限にする
+  //   省略時は、ファイル全体の平均ビットレート（元が HEVC なら1.5倍）を上限にする
   function makePlan(meta, trim, settings, audio, fileSize, forcedVideoBitrate, videoCapBps) {
     var duration = Math.max(0.1, trim.end - trim.start);
     var srcFps = meta.fps || DEFAULT_FPS;
@@ -850,9 +853,10 @@
       ? Math.max(MIN_KBPS_LIMITS[0] * 1000, Math.round(settings.minBitrate['720'] * width * height / (1280 * 720)))
       : settings.minBitrate[settings.res];
     if (outFps > 40) floorBps = Math.round(floorBps * HIGH_FPS_FLOOR_FACTOR);
-    // 元動画より高いビットレートで焼き直しても容量が増えるだけなので上限を設ける（元の実効ビットレートの80%）
+    // 元動画より高いビットレートで焼き直しても容量が増えるだけなので上限を設ける（元の実効ビットレート。HEVC なら1.5倍）
     var srcBps = meta.duration > 0 ? fileSize * 8 / meta.duration : Infinity;
-    var srcCap = videoCapBps ? Math.floor(videoCapBps) : Math.floor(srcBps * 0.8) - audioBps;
+    var capRatio = meta.videoCodec === 'hevc' ? SRC_CAP_RATIO_HEVC : SRC_CAP_RATIO;
+    var srcCap = videoCapBps ? Math.floor(videoCapBps * capRatio) : Math.floor(srcBps * capRatio) - audioBps;
     var capOk = isFinite(srcCap) && srcCap > 100000;
     // この計画の下限。元動画のビットレートがもともと下限より低い動画には、下限（画質をこれ以上落とさないための値）は
     // 当てはまらないので、設定で選べる最小値にする。初回の計画・圧縮し直し・「◯分まで収まる」の目安で同じ値を使う
@@ -875,7 +879,7 @@
     if (capOk && videoBps > srcCap) videoBps = srcCap;
     // ビットレートは必ず整数にする（小数だと Mediabunny が例外を出し、0%のまま止まっていた）
     videoBps = Math.floor(videoBps);
-    // 元動画のビットレートがもともと低く、上限（元の80%）で目標に収まるなら、下限を割っても収められる
+    // 元動画のビットレートがもともと低く、上限（元のビットレート）で目標に収まるなら、下限を割っても収められる
     // （下限は画質をこれ以上落とさないための値で、元がそれより低い動画には当てはまらない）
     if (unreachable && videoBps <= budgetBps) unreachable = false;
 
@@ -2255,7 +2259,7 @@
         log('トリミングのみでは目標を超えたため、通常の圧縮に切り替え');
         engine = 'fast';
         // 予想を超えたのは、切り出した部分がファイル全体の平均より重いから。
-        // 全体の平均の80%で頭打ちにすると必要以上に小さくなるので、切り出した部分の実測値を上限にして計画し直す
+        // 全体の平均で頭打ちにすると必要以上に小さくなるので、切り出した部分の実測値を上限にして計画し直す
         var copyVideoBps = Math.floor(res.blob.size * 8 / plan.duration) - Math.round(plan.audio.bps || 0);
         plan = replan(plan, { cap: copyVideoBps });
         log('計画し直し ' + describePlan(plan));
