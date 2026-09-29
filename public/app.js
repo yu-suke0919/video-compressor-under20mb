@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-29j';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-29k';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1416,8 +1416,9 @@
     show(els.quickNote, !!note);
   }
   function probeOverMessage(plan) {
-    return '予圧縮の結果、この設定では' + plan.targetMB + 'MBに収まらない見込みです（予想' + fmtBytes(plan.estBytes) + '）。' +
-      (plan.outFps > 40 ? '30fpsにするか、' : '') + (plan.res !== '720' ? '720pにするか、' : '') + '範囲を短くしてください。';
+    // すでに 720p のときは、720p にする案は出さない
+    return 'この設定では' + plan.targetMB + 'MBに収まらない可能性があります（予想' + fmtBytes(plan.estBytes) + '）。' +
+      (plan.res !== '720' ? '720pにするか、' : '') + 'トリミングするか、「なるべく圧縮」を選択してください。';
   }
   function logEstimate(plan) {
     if (!plan || !plan.probed) return;
