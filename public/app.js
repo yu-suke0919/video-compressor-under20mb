@@ -59,7 +59,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-29q';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-29r';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1421,8 +1421,12 @@
       var setBytes = Math.round((preEstimate(plan, pre, plan.videoBitrate).videoBps + p.audioBitrate) * p.duration / 8);
       p.estBytes = Math.max(floorBytes, Math.min(setBytes, Math.floor(p.targetBytes * SIZE_SAFETY)));
     } else {
+      // なるべく圧縮：予圧縮が範囲の終わりまで済んでいれば、切り出したときの大きさ（1コマごとの表から数える）
       p.probeOver = false;
-      p.estBytes = floorBytes;
+      var exact = null;
+      try { exact = exactCutBytes(plan, pre); } catch (e) { exact = null; }
+      p.estBytes = exact || floorBytes;
+      p.exactEst = !!exact;
     }
     p.expectedBps = Math.max(0, Math.round(p.estBytes * 8 / p.duration - p.audioBitrate));
     p.overDiscord = p.estBytes > DISCORD_FREE_BYTES;
@@ -1475,6 +1479,136 @@
     }, delay) };
   }
 
+  // ---- 予圧縮の区切り（fragmented MP4）の表を読む。1コマごとの大きさ・時刻・キーフレームかどうかが分かるので、
+  // 範囲を切り出したときの大きさを正確に予想できる（区切りの途中で切ると、割合で数えるより正確。
+  // 区切りの頭はキーフレームで大きいので、割合で数えると小さめに出ていた）
+  // 切り出した mp4 の見出し（目次など）の大きさの目安（バイト）。実測では 1000＋1コマ（音声の1区切り）あたり約4.5バイト。
+  // 少し多めに見込む（予想は小さく外れるより、大きく外れる方がよい）
+  var CUT_OVERHEAD_BASE = 1000;
+  var CUT_OVERHEAD_PER_SAMPLE = 5;
+
+  function boxType(buf, o) { return String.fromCharCode(buf[o], buf[o + 1], buf[o + 2], buf[o + 3]); }
+  // buf の [start, end) にある箱を順に fn(type, 中身の始まり, 終わり) で渡す
+  function eachBox(buf, dv, start, end, fn) {
+    var o = start;
+    while (o + 8 <= end) {
+      var size = dv.getUint32(o), head = 8;
+      if (size === 1) { size = dv.getUint32(o + 8) * 4294967296 + dv.getUint32(o + 12); head = 16; }
+      else if (size === 0) size = end - o;
+      if (size < head || o + size > end) return;
+      fn(boxType(buf, o + 4), o + head, o + size);
+      o += size;
+    }
+  }
+  // 受け取ったデータの [off, off + len) を写し取る（区切りの書き出しは先頭から順に届く）
+  function readChunks(rec, off, len) {
+    var out = new Uint8Array(len), got = 0;
+    for (var i = rec.parseChunk || 0; i < rec.chunks.length && got < len; i++) {
+      var c = rec.chunks[i], cEnd = c.position + c.data.byteLength;
+      if (cEnd <= off + got) { rec.parseChunk = i + 1; continue; }
+      var from = off + got - c.position, n = Math.min(len - got, c.data.byteLength - from);
+      out.set(c.data.subarray(from, from + n), got);
+      got += n;
+    }
+    return got === len ? out : null;
+  }
+  // 届いた分の箱を読み進める（moov でトラックの情報を、moof で1コマごとの表を読む）
+  function parseFragments(rec) {
+    if (!rec.tracks) { rec.tracks = {}; rec.samples = { video: [], audio: [] }; rec.parseOff = 0; }
+    while (rec.parseOff + 16 <= rec.bytes) {
+      var head = readChunks(rec, rec.parseOff, 16);
+      if (!head) return;
+      var hv = new DataView(head.buffer), size = hv.getUint32(0), type = boxType(head, 4);
+      if (size === 1) size = hv.getUint32(8) * 4294967296 + hv.getUint32(12);
+      if (size < 8 || rec.parseOff + size > rec.bytes) return;   // まだ全部届いていない
+      if (type === 'moov' || type === 'moof') {
+        var buf = readChunks(rec, rec.parseOff, size);
+        if (!buf) return;
+        var dv = new DataView(buf.buffer);
+        if (type === 'moov') parseMoov(rec, buf, dv, size);
+        else parseMoof(rec, buf, dv, size);
+      }
+      rec.parseOff += size;
+    }
+  }
+  function parseMoov(rec, buf, dv, size) {
+    eachBox(buf, dv, 8, size, function (type, s, e) {
+      if (type === 'trak') {
+        var t = { timescale: 1000, kind: null, id: 0 };
+        eachBox(buf, dv, s, e, function (type2, s2, e2) {
+          if (type2 === 'tkhd') t.id = dv.getUint32(s2 + (buf[s2] === 1 ? 20 : 12));
+          if (type2 !== 'mdia') return;
+          eachBox(buf, dv, s2, e2, function (type3, s3) {
+            if (type3 === 'mdhd') t.timescale = dv.getUint32(s3 + (buf[s3] === 1 ? 20 : 12));
+            if (type3 === 'hdlr') { var h = boxType(buf, s3 + 8); t.kind = h === 'vide' ? 'video' : h === 'soun' ? 'audio' : null; }
+          });
+        });
+        rec.tracks[t.id] = Object.assign(rec.tracks[t.id] || {}, t);
+      }
+      if (type === 'mvex') {
+        eachBox(buf, dv, s, e, function (type2, s2) {
+          if (type2 !== 'trex') return;
+          var id = dv.getUint32(s2 + 4);
+          rec.tracks[id] = Object.assign(rec.tracks[id] || {}, {
+            defDur: dv.getUint32(s2 + 12), defSize: dv.getUint32(s2 + 16), defFlags: dv.getUint32(s2 + 20)
+          });
+        });
+      }
+    });
+  }
+  function parseMoof(rec, buf, dv, size) {
+    eachBox(buf, dv, 8, size, function (type, s, e) {
+      if (type !== 'traf') return;
+      var tr = null, dur = 0, sz = 0, flags = 0, dts = 0;
+      eachBox(buf, dv, s, e, function (type2, s2) {
+        var f = dv.getUint32(s2) & 0xffffff;
+        if (type2 === 'tfhd') {
+          tr = rec.tracks[dv.getUint32(s2 + 4)];
+          if (!tr) return;
+          var o = s2 + 8;
+          if (f & 0x1) o += 8;
+          if (f & 0x2) o += 4;
+          dur = (f & 0x8) ? dv.getUint32(o) : tr.defDur || 0; if (f & 0x8) o += 4;
+          sz = (f & 0x10) ? dv.getUint32(o) : tr.defSize || 0; if (f & 0x10) o += 4;
+          flags = (f & 0x20) ? dv.getUint32(o) : tr.defFlags || 0;
+        } else if (type2 === 'tfdt') {
+          dts = buf[s2] === 1 ? dv.getUint32(s2 + 4) * 4294967296 + dv.getUint32(s2 + 8) : dv.getUint32(s2 + 4);
+        } else if (type2 === 'trun' && tr && tr.kind) {
+          var v1 = buf[s2] === 1, n = dv.getUint32(s2 + 4), o2 = s2 + 8, first = null;
+          if (f & 0x1) o2 += 4;
+          if (f & 0x4) { first = dv.getUint32(o2); o2 += 4; }
+          var list = rec.samples[tr.kind];
+          for (var i = 0; i < n; i++) {
+            var d = dur, z = sz, fl = i === 0 && first !== null ? first : flags, cts = 0;
+            if (f & 0x100) { d = dv.getUint32(o2); o2 += 4; }
+            if (f & 0x200) { z = dv.getUint32(o2); o2 += 4; }
+            if (f & 0x400) { fl = dv.getUint32(o2); o2 += 4; }
+            if (f & 0x800) { cts = v1 ? dv.getInt32(o2) : dv.getUint32(o2); o2 += 4; }
+            list.push({ t: (dts + cts) / tr.timescale, d: d / tr.timescale, s: z, k: !(fl & 0x10000) });
+            dts += d;
+          }
+        }
+      });
+    });
+  }
+  // 範囲を切り出したときの大きさ（バイト）。予圧縮がまだ範囲の終わりまで届いていなければ null
+  //   映像の始まりは、切り出すときと同じく、範囲の始まり以前でいちばん近いキーフレームまで早める（音声は範囲の始まりから）
+  function exactCutBytes(plan, rec) {
+    var v = rec.samples && rec.samples.video;
+    if (!v || !v.length) return null;
+    var a = plan.trimStart, b = plan.trimEnd, eps = 1e-4, last = v[v.length - 1];
+    if (!rec.done && last.t + last.d < b - eps) return null;
+    var start = v[0].t;
+    for (var i = 0; i < v.length && v[i].t <= a + eps; i++) if (v[i].k) start = v[i].t;
+    var bytes = 0, n = 0;
+    [[v, start], [rec.samples.audio, a]].forEach(function (pair) {
+      pair[0].forEach(function (x) {
+        if (x.t >= pair[1] - eps && x.t < b - eps) { bytes += x.s; n++; }
+      });
+    });
+    return bytes + CUT_OVERHEAD_BASE + CUT_OVERHEAD_PER_SAMPLE * n;
+  }
+
   // 予圧縮。書き出しは区切りごと（fragmented MP4）に受け取って持っておく（途中で止めても、区切りまでは読める）
   function startPre(pp, key) {
     var file = state.file;
@@ -1491,6 +1625,7 @@
         var last = rec.marks[rec.marks.length - 1];
         if (last.t === rec.time && rec.marks.length > 1) last.bytes = end;
         else rec.marks.push({ t: rec.time, bytes: end });
+        try { parseFragments(rec); } catch (e) { rec.samples = null; }   // 読めなければ、割合で数える予想のまま
         if (pre === rec && state.file === file && !state.running) refresh();   // 予想を出し直す
       }
     });
@@ -3037,7 +3172,7 @@
 
   // 動作確認用（ブラウザのコンソールから計算結果を確認できるようにしておく）
   window.__compressor = {
-    makePlan: makePlan, nextBitrate: nextBitrate, preEstimate: preEstimate, readSettings: readSettings,
+    makePlan: makePlan, nextBitrate: nextBitrate, preEstimate: preEstimate, exactCutBytes: exactCutBytes, readSettings: readSettings,
     estimateFps: estimateFps, snapFps: snapFps, audioStrategy: audioStrategy,
     state: state, precomp: function () { return { pre: pre }; },
     pickFile: function (file) { onFileChosen(file); },   // 自己テスト（selftest.html）から動画を渡す
