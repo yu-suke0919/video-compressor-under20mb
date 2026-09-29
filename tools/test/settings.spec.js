@@ -202,3 +202,23 @@ test('60fpsのまま書き出すときは、下限ビットレートを1.5倍に
   expect(r.size60Unreachable).toBe(true);   // 60秒は 4.05Mbps では20MBに入らない
   expect(r.source60).toBe(Math.round(Math.round(1200000 * 1920 * 1080 / (1280 * 720)) * 1.5));
 });
+
+test('とんでも画質（試験用）：モードにかかわらず 999Mbps を指定し、端末が断れば次に高い値にする。目標を超えても圧縮し直さない', async ({ page }) => {
+  await open(page, '?extreme=on&mode=size&target=5');
+  await pick(page, '720p-60s.mp4');
+  await page.evaluate(() => {
+    const a = document.getElementById('trimStart'), z = document.getElementById('trimEnd');
+    z.value = '6'; z.dispatchEvent(new Event('input'));
+    a.value = '0'; a.dispatchEvent(new Event('input'));
+  });
+  expect(await page.isChecked('#extreme')).toBe(true);
+  expect(await page.textContent('#planInfo')).toContain('999.0Mbps');
+  await page.click('#runBtn');
+  await page.waitForFunction(() => !window.__compressor.state.running, null, { timeout: 120000 });
+  const d = await page.inputValue('#diagOut');
+  expect(d).toMatch(/とんでも画質：[\d.]+Mbps を指定/);
+  expect(d).not.toMatch(/再圧縮 映像/);   // 5MB を超えても圧縮し直さない
+  const info = await page.textContent('#outInfo');
+  expect(info).toMatch(/（指定[\d.]+Mbps）/);
+  expect(info).not.toContain('回で調整');
+});
