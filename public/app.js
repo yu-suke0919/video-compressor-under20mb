@@ -54,7 +54,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-29a';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-29b';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -918,8 +918,8 @@
   function currentPlan() {
     var settings = readSettings();
     var audio = audioStrategy(state.meta, settings.audio, state.engine);
-    // 試し圧縮で、この解像度・fps・範囲の結果があれば当てはめる
-    return withProbe(makePlan(state.meta, state.trim, settings, audio, state.file.size));
+    // 試し圧縮・予圧縮の結果があれば当てはめる
+    return withEstimate(makePlan(state.meta, state.trim, settings, audio, state.file.size));
   }
 
   // ---------------------------------------------------------------- 表示の更新
@@ -1197,10 +1197,12 @@
   //   spec.prepareLog()           … 準備ができたときに診断情報へ書く見出し（なければ書かない）
   //   spec.invalidMessage         … 扱えない動画だったときの文言
   //   spec.startLog               … 変換を始めるときに診断情報へ書く文（なければ書かない）
-  //   spec.input                  … 使い回す読み込み（試し圧縮）。渡したときは閉じない（なければ開いて、終わったら閉じる）
+  //   spec.input                  … 使う読み込み（試し圧縮・予圧縮からの切り出し）。渡したときは閉じない（なければ開いて、終わったら閉じる）
+  //   spec.output                 … 書き出し先（予圧縮）。渡したときは結果の blob を作らない
+  //   spec.onReady(conv, audioLost) … 変換の準備ができたとき（予圧縮で、音声が外れたかを早めに知る）
   function runConversion(spec, plan, onProgress, job) {
     var input = spec.input || new M.Input({ source: new M.BlobSource(state.file), formats: INPUT_FORMATS });
-    var output = newMp4Output();
+    var output = spec.output || newMp4Output();
     function dispose() {
       if (spec.input) return;
       try { input.dispose(); } catch (e) { /* noop */ }
@@ -1223,13 +1225,14 @@
         throw new Error(spec.invalidMessage + '（' + (videoLost ? videoLost.reason : 'invalid') + '）');
       }
       var audioLost = audioTrackLost(plan, conv);
+      if (spec.onReady) spec.onReady(conv, audioLost);
       // キャンセル時: 変換を止め、ファイルの読み込みも閉じる（止まりきるのは待たない）
       job.hooks.push(function () { var stop = conv.cancel(); dispose(); return stop; });
       conv.onProgress = function (p) { onProgress(p); };
       throwIfCancelled(job);
       if (spec.startLog) log(spec.startLog);
       return conv.execute().then(function () {
-        return { blob: outputBlob(output), audioDropped: audioLost };
+        return { blob: spec.output ? null : outputBlob(output), audioDropped: audioLost };
       });
     }).then(function (res) {
       dispose();
@@ -1262,6 +1265,21 @@
     return video;
   }
 
+  // 高速モードの変換の設定（本番の圧縮と予圧縮で共通）
+  function fastOptions(plan, enc, input, output) {
+    var audio;
+    if (plan.audio.mode === 'aac') {
+      audio = { codec: FAST_AUDIO_CODEC, quality: new M.Quality({ bitrate: AUDIO_BITRATE }), forceTranscode: true };
+    } else if (plan.audio.mode === 'copy') {
+      audio = { codec: FAST_AUDIO_CODEC };   // AACのままコピーする
+    } else {
+      audio = { discard: true };
+    }
+    var options = { input: input, output: output, video: fastVideoConfig(plan, enc), audio: audio, tags: outputTags, showWarnings: false };
+    if (!isFullTrimOf(plan)) options.trim = { start: plan.trimStart, end: plan.trimEnd };
+    return options;
+  }
+
   // 高速モード: 選んだ解像度・ビットレートで再エンコードする
   function convertFast(plan, onProgress, job) {
     var chosen = null;
@@ -1270,18 +1288,7 @@
         return pickFastEncoding(plan).then(function (enc) {
           if (!enc) throw new Error(MSG_NO_H264);
           chosen = enc;
-          var video = fastVideoConfig(plan, enc);
-          var audio;
-          if (plan.audio.mode === 'aac') {
-            audio = { codec: FAST_AUDIO_CODEC, quality: new M.Quality({ bitrate: AUDIO_BITRATE }), forceTranscode: true };
-          } else if (plan.audio.mode === 'copy') {
-            audio = { codec: FAST_AUDIO_CODEC };   // AACのままコピーする
-          } else {
-            audio = { discard: true };
-          }
-          var options = { input: input, output: output, video: video, audio: audio, tags: outputTags, showWarnings: false };
-          if (!isFullTrimOf(plan)) options.trim = { start: plan.trimStart, end: plan.trimEnd };
-          return options;
+          return fastOptions(plan, enc, input, output);
         });
       },
       prepareLog: function () { return '変換の準備（' + encKey(chosen) + '）'; },
@@ -1311,221 +1318,398 @@
 
   function isFullTrimOf(plan) { return isFullRange(plan.trimStart, plan.trimEnd); }
 
-  // ---------------------------------------------------------------- 試し圧縮（下げられるビットレートの限界を測る）
+  // ---------------------------------------------------------------- 試し圧縮と予圧縮（サイズの予想）
   // 端末のエンコーダーは、映像が重いと低いビットレートの指定を守らないことがある
-  // （iPhone の 1080p60 のゲーム映像で、2.7Mbps・4.05Mbps のどちらを指定しても約7.5Mbps になった）。
-  // 動画を読み込んだら（設定や範囲を変えたときも）、今の解像度・fps で、とても低いビットレートを指定して
-  // 範囲の中を1か所ずつ試しに圧縮し、この端末・この映像で下げられる限界を測る。1か所測るたびに予想を出し直す。
-  // 実測は動画の中の位置と一緒に覚え、範囲を変えたら範囲の中の実測だけを使い、足りない所を測り足す
-  var PROBE_BPS = MIN_KBPS_LIMITS[0] * 1000;   // 試すときに指定するビットレート（設定で選べる最小値）
-  var PROBE_SAMPLE_SEC = 2;                    // 1か所の長さ（キーフレームの間隔と揃え、キーフレームの割合を本番と同じにする）
-  var PROBE_SPACING_SEC = 6;                   // 範囲の長さこれだけごとに1か所測る
-  var PROBE_MAX = 12;                          // 1つの範囲で測るのはここまで（iPhone の 1080p60 で約25秒）
-  var PROBE_DELAY_MS = 600;                    // 設定を変えてから測り始めるまで待つ（続けて変えたときに何度も測らない）
-  // results … 解像度・fps ごとの結果 { samples: [{ start, end, bps }], pending: 測っている範囲, enc: 使うエンコード設定, failed }
-  // key/jobs/timer … 測っている（測る予定の）もの。next … 1か所測り終えて、すぐ次を測る。t0 … 続けて測り始めた時刻
-  // input/inputFile … 試し圧縮で使い回す動画の読み込み（1か所ごとに開き直すと、ファイルの解析をやり直すことになる）
-  var probe = { results: {}, key: null, jobs: [], timer: null, next: false, t0: 0, input: null, inputFile: null };
-  // URL に probe=off があれば測らない（自動テスト・自己テストで、本番の圧縮だけを確かめるため）
+  // （iPhone の 1080p60 のゲーム映像で、2.7Mbps・4.05Mbps のどちらを指定しても約7.5Mbps になった）。そこで、実際に圧縮して測る
+  //   1. 試し圧縮 … 動画を読み込んだら、元の解像度・fps・「なるべく圧縮」のビットレートで、真ん中と最後の2秒を圧縮する（目安）
+  //   2. 予圧縮   … そのあと、今の設定・「なるべく圧縮」のビットレートで、範囲に関係なく動画の最初から最後までを裏で圧縮する。
+  //                 書き出したデータの量で予想を直していく。「なるべく圧縮」で設定を変えずに「圧縮する」を押したら、
+  //                 範囲の始まりまで届いていれば、範囲の終わりまで続けて、範囲を切り出して使う
+  // 予想は、場面ごとに「指定」と「なるべく圧縮のビットレートで圧縮したときの実測」の大きい方になるとみて、長さで重み付けして平均する
+  var TRIAL_SEC = 2;                 // 試し圧縮の1か所の長さ（キーフレームの間隔と揃え、キーフレームの割合を本番と同じにする）
+  var PRE_DELAY_MS = 1500;           // 設定を変えてから予圧縮をやり直すまで待つ（続けて変えたときに何度もやり直さない）
+  var PRE_FRAGMENT_SEC = 1;          // 予圧縮の書き出しの区切りの最短の長さ（実際はキーフレームごと＝約2秒ごとに書き出される）
+  var PRE_TAIL_SEC = 1;              // 範囲の終わりからこれだけ先まで書き出せたら、範囲の終わりまで書き出せたとみる
+  // 試し圧縮の実測（元の解像度・fps）を今の解像度・fps に換算するときの係数（画素数・fps の比のべき乗。目安）
+  var SCALE_PIXELS_EXP = 0.75, SCALE_FPS_EXP = 0.6;
+  // URL に probe=off があれば、試し圧縮も予圧縮もしない（自動テスト・自己テストで、本番の圧縮だけを確かめるため）
   var PROBE_OFF = /[?&]probe=off\b/.test(location.search);
-  // 試験用: URL に probe=2 があれば、2か所を同時に測る（速くなるかを実機で比べる）
-  var PROBE_PARALLEL = /[?&]probe=2\b/.test(location.search) ? 2 : 1;
+  // URL に probe=trial があれば、試し圧縮だけ行い、予圧縮はしない（自動テストで、試し圧縮の予想を確かめるため）
+  var TRIAL_ONLY = /[?&]probe=trial\b/.test(location.search);
+  // trial … { file, plan, samples: [{ start, end, bps }], enc, job, done, failed, t0 }
+  // pre   … { file, key, plan, enc, job, chunks, bytes, marks: [{ t: 書き出したときの進み（秒）, bytes: そこまでの量 }],
+  //           time: 進み（秒）, done, failed, audioLost, t0 }
+  var trial = null, pre = null, preTimer = null;
+  var probeIn = { input: null, file: null };   // 試し圧縮で使い回す動画の読み込み（1か所ごとに開くと、ファイルの解析をやり直すことになる）
 
-  function probeKey(plan) { return plan.width + 'x' + plan.height + '@' + Math.round(plan.outFps); }
-  // 範囲の中で測る場所の数
-  function probeWanted(plan) {
-    return Math.max(1, Math.min(PROBE_MAX, Math.round((plan.trimEnd - plan.trimStart) / PROBE_SPACING_SEC)));
+  function canProbe() {
+    return !PROBE_OFF && !!(state.file && state.meta) && state.engine === 'fast' && !state.running && !state.busy && !isCompressed() &&
+      !els.autoRun.checked && document.visibilityState === 'visible';
   }
-  // 範囲の中の実測（真ん中が範囲に入っているもの）
-  function probeSamplesIn(plan, samples) {
-    return samples.filter(function (x) {
-      var mid = (x.start + x.end) / 2;
-      return mid >= plan.trimStart && mid <= plan.trimEnd;
-    });
+  var NO_AUDIO_PLAN = { mode: 'none', bps: 0, label: 'なし', note: null };
+  // 試し圧縮の計画（動画全体・元の解像度・元のfps・なるべく圧縮・音声なし）
+  function trialPlan() {
+    var st = Object.assign({}, readSettings(), { res: 'source', halfFps: false, mode: 'quality' });
+    return makePlan(state.meta, { start: 0, end: state.meta.duration }, st, NO_AUDIO_PLAN, state.file.size);
   }
-  // 測る順番（範囲に対する位置）。最初・最後・真ん中・1/4・3/4・1/8… と、隙間を半分ずつ埋める
-  function probeOrder(count) {
-    var list = [0, 1];
-    for (var d = 2; list.length < count; d *= 2) {
-      for (var i = 1; i < d && list.length < count; i += 2) list.push(i / d);
-    }
-    return list;
+  // 予圧縮の計画（動画全体・今の解像度とfpsと音声・なるべく圧縮）
+  function prePlan(plan) {
+    return makePlan(state.meta, { start: 0, end: state.meta.duration }, Object.assign(planSettings(plan), { mode: 'quality' }),
+      plan.audio, state.file.size);
   }
-  // 次に測る範囲（範囲の中で足りていれば null）。近くをもう測った場所は飛ばす
-  function nextProbeRange(plan, samples) {
-    if (probeSamplesIn(plan, samples).length >= probeWanted(plan)) return null;
-    var len = Math.min(PROBE_SAMPLE_SEC, plan.trimEnd - plan.trimStart);
-    var room = plan.trimEnd - plan.trimStart - len;
-    var order = probeOrder(64);
-    for (var i = 0; i < order.length; i++) {
-      var start = plan.trimStart + room * order[i];
-      var near = samples.some(function (x) { return Math.abs(x.start - start) < PROBE_SAMPLE_SEC; });
-      if (!near) return { start: start, end: start + len };
-    }
-    return null;
+  // 予圧縮の中身を決めるもの（これが変わったら予圧縮をやり直す。範囲は含めない）
+  function preKey(pp) {
+    return pp.width + 'x' + pp.height + '@' + Math.round(pp.outFps) + '/' + pp.videoBitrate + '/' + pp.audio.mode + '/' + pp.audioBitrate;
   }
-  // 指定のビットレートで圧縮したときの、映像のビットレートの見込み。
-  // 場面ごとに「指定」と「その場面で下げられる限界（試し圧縮の実測）」の大きい方になるとみて、平均する
+  // 試し圧縮する範囲（真ん中と最後。短い動画は最初だけ）
+  function trialRanges(duration) {
+    if (duration < TRIAL_SEC * 2) return [{ start: 0, end: Math.min(duration, TRIAL_SEC) }];
+    return [{ start: duration / 2 - TRIAL_SEC / 2, end: duration / 2 + TRIAL_SEC / 2 }, { start: duration - TRIAL_SEC, end: duration }];
+  }
+
+  // 指定のビットレートで圧縮したときの、映像のビットレートの見込み。parts … [{ w: 長さ, bps: その場面の実測 }]
+  // 場面ごとに「指定」と「実測」の大きい方になるとみて、長さで重み付けして平均する
   // （iPhone の 1080p60 のゲーム映像で、実測 1.4・5.9・11.6Mbps、指定 4.05Mbps → 見込み 7.2Mbps、実際 7.3Mbps）
-  function probedBps(bps, rates) {
-    var sum = 0;
-    rates.forEach(function (r) { sum += Math.max(bps, r); });
-    return Math.round(sum / rates.length);
+  function probedBps(bps, parts) {
+    var sum = 0, total = 0;
+    parts.forEach(function (x) { sum += x.w * Math.max(bps, x.bps); total += x.w; });
+    return Math.round(sum / total);
   }
-  // 試し圧縮の結果（範囲の中の実測）を計画に当てはめる
-  // （予想のサイズを直し、「◯MB以内に圧縮」では収まるようにビットレートを下げる）
-  //   probed      … 試し圧縮の結果を使った
+  // 見込みを計画に当てはめる（予想のサイズを直し、「◯MB以内に圧縮」では収まるようにビットレートを下げる）
+  //   probed      … 見込みを使った
   //   expectedBps … 映像のビットレートの見込み
   //   probeOver   … 下限まで下げても目標サイズに収まらない見込み（押せなくはしない。見込みが外れることもあるため）
-  function applyProbe(plan, rates) {
+  function applyProbe(plan, parts) {
     var p = Object.assign({}, plan, { probed: true, probeOver: false });
     if (plan.mode === 'size' && !plan.unreachable) {
       var budget = plan.targetBytes * 8 * SIZE_SAFETY / plan.duration - plan.audioBitrate;
-      if (probedBps(p.videoBitrate, rates) > budget) {
+      if (probedBps(p.videoBitrate, parts) > budget) {
         var lo = Math.min(plan.floorBitrate, p.videoBitrate), hi = p.videoBitrate;
-        if (probedBps(lo, rates) > budget) {
+        if (probedBps(lo, parts) > budget) {
           p.probeOver = true;   // 下限でも収まらない見込み。いちばん小さくなる下限で圧縮する
         } else {
           // 収まる見込みのうち、いちばん高いビットレート（見込みはビットレートが上がると増える一方なので、二分探索で探す）
           while (hi - lo > 1000) {
             var mid = Math.floor((lo + hi) / 2);
-            if (probedBps(mid, rates) <= budget) lo = mid; else hi = mid;
+            if (probedBps(mid, parts) <= budget) lo = mid; else hi = mid;
           }
         }
         p.videoBitrate = lo;
       }
     }
-    p.expectedBps = probedBps(p.videoBitrate, rates);
+    p.expectedBps = probedBps(p.videoBitrate, parts);
     p.estBytes = Math.round((p.expectedBps + p.audioBitrate) * p.duration / 8);
     p.overDiscord = p.estBytes > DISCORD_FREE_BYTES;
     return p;
   }
-  // 計画に試し圧縮の結果を当てはめる（範囲の中の実測がなければそのまま）
-  function withProbe(plan) {
-    var r = state.engine === 'fast' && probe.results[probeKey(plan)];
-    var inside = r ? probeSamplesIn(plan, r.samples) : [];
-    if (!inside.length) return plan;
-    var p = applyProbe(plan, inside.map(function (x) { return x.bps; }));
-    p.probeCount = inside.length;
-    p.probeWanted = probeWanted(plan);
+  // 計画の範囲の見込みの材料（なければ null）。from … 'pre'（予圧縮が範囲の一部でも済んでいる）/ 'trial'（試し圧縮だけ）
+  //   予圧縮が済んだ所 … 書き出したデータの量（なるべく圧縮のビットレートで、今の解像度・fps・音声）から音声の分を引く
+  //   まだの所         … 試し圧縮の実測を今の解像度・fps に換算した値（まだの所にあるものを優先）。なければ予圧縮が済んだ所の平均
+  function estimateParts(plan, trialData, preData) {
+    var a = plan.trimStart, b = plan.trimEnd, parts = [], covered = 0, coveredEnd = a;
+    if (preData) {
+      var marks = preData.marks;
+      for (var i = 1; i < marks.length; i++) {
+        var s0 = marks[i - 1].t, s1 = marks[i].t;
+        if (!(s1 > s0)) continue;
+        var ov = Math.min(s1, b) - Math.max(s0, a);
+        if (ov <= 0) continue;
+        var bps = (marks[i].bytes - marks[i - 1].bytes) * 8 / (s1 - s0) - preData.plan.audioBitrate;
+        parts.push({ w: ov, bps: Math.max(0, bps) });
+        covered += ov;
+        coveredEnd = Math.min(s1, b);
+      }
+    }
+    var from = parts.length ? 'pre' : 'trial';
+    var rest = (b - a) - covered;
+    if (rest > 0.05) {
+      var rates = [];
+      if (trialData && trialData.samples.length) {
+        var tp = trialData.plan;
+        var k = Math.pow(plan.width * plan.height / (tp.width * tp.height), SCALE_PIXELS_EXP) * Math.pow(plan.outFps / tp.outFps, SCALE_FPS_EXP);
+        var ahead = trialData.samples.filter(function (x) { var m = (x.start + x.end) / 2; return m >= coveredEnd && m <= b; });
+        var use = ahead.length ? ahead : (parts.length ? [] : trialData.samples);
+        rates = use.map(function (x) { return x.bps * k; });
+      }
+      if (!rates.length && parts.length) rates = [probedBps(0, parts)];
+      if (!rates.length) return null;
+      rates.forEach(function (r) { parts.push({ w: rest / rates.length, bps: r }); });
+    }
+    return parts.length ? { parts: parts, from: from } : null;
+  }
+  // 計画に見込みを当てはめる（見込みの材料がなければそのまま）
+  function withEstimate(plan) {
+    if (state.engine !== 'fast') return plan;
+    var t = trial && trial.file === state.file ? trial : null;
+    var pd = pre && pre.file === state.file && pre.key === preKey(prePlan(plan)) ? pre : null;
+    var est = estimateParts(plan, t, pd);
+    if (!est) return plan;
+    var p = applyProbe(plan, est.parts);
+    p.estFrom = est.from;
     return p;
   }
-  // 画面の予想の後ろに付ける、試し圧縮の状況
+  // 画面の予想の後ろに付ける、見込みの状況
   function probeLabel(plan) {
-    if (plan.probed) return '（試し圧縮 ' + Math.min(plan.probeCount, plan.probeWanted) + '/' + plan.probeWanted + '）';
-    return probe.key === probeKey(plan) ? '（測定中）' : '';
+    if (plan.estFrom === 'pre') return pre.done ? '（予圧縮済み）' : '（予圧縮 ' + Math.floor(pre.time / pre.plan.duration * 100) + '%）';
+    if (plan.estFrom === 'trial') return '（目安）';
+    return trial && trial.job ? '（測定中）' : '';
   }
   function probeOverMessage(plan) {
     return '試し圧縮の結果、この設定では' + plan.targetMB + 'MBに収まらない見込みです（予想' + fmtBytes(plan.estBytes) + '）。' +
       (plan.outFps > 40 ? '30fpsにするか、' : '') + (plan.res !== '720' ? '720pにするか、' : '') + '範囲を短くしてください。';
   }
-  function canProbe() {
-    return !PROBE_OFF && !!(state.file && state.meta) && state.engine === 'fast' && !state.running && !state.busy && !isCompressed() &&
-      !els.autoRun.checked && document.visibilityState === 'visible';
+  function logEstimate(plan) {
+    if (!plan || !plan.probed) return;
+    log('予想' + probeLabel(plan) + ' 指定 ' + fmtRate(plan.videoBitrate) + ' → 映像 ' + fmtRate(plan.expectedBps) +
+      '・' + fmtBytes(plan.estBytes) + (plan.probeOver ? '（目標サイズに収まらない見込み）' : ''));
   }
-  // 今の設定・範囲で足りない所があれば測る。別の設定を測っている途中なら止める。
-  // 同じ設定を測っている途中なら、空きがあるときだけ測り足す（範囲を動かしている間に何度も止めない）
+
+  // 試し圧縮がまだなら始め、済んだら予圧縮を始める。予圧縮の設定が変わったら止めて、少し待ってからやり直す
   function scheduleProbe() {
-    var next = probe.next;
-    probe.next = false;
     if (!canProbe() || !state.plan) return;
-    var key = probeKey(state.plan);
-    if ((probe.jobs.length || probe.timer) && probe.key !== key) stopProbe();
-    if (probe.timer || probe.jobs.length >= PROBE_PARALLEL) return;
-    var r = probe.results[key];
-    if ((r && r.failed) || !nextProbeRange(state.plan, r ? r.samples.concat(r.pending || []) : [])) return;
-    probe.key = key;
-    probe.timer = setTimeout(function () {
-      probe.timer = null;
-      fillProbes(key);
-    }, next || probe.jobs.length ? 0 : PROBE_DELAY_MS);
-  }
-  // 空きの数だけ、次に測る範囲を決めて測り始める
-  function fillProbes(key) {
-    var plan = state.plan;
-    if (!canProbe() || !plan || probeKey(plan) !== key) { if (!probe.jobs.length) probe.key = null; return; }
-    var r = probe.results[key] || (probe.results[key] = { samples: [], pending: [] });
-    if (!probe.jobs.length) probe.t0 = Date.now();
-    while (probe.jobs.length < PROBE_PARALLEL && !r.failed) {
-      var range = nextProbeRange(plan, r.samples.concat(r.pending || []));
-      if (!range) break;
-      probeSample(plan, key, range);
-    }
-    if (!probe.jobs.length) probe.key = null;
-  }
-  // 測るのを止める。止まりきったら解決する Promise を返す（測っていなければ解決済み）
-  function stopProbe(why) {
-    if (probe.timer) { clearTimeout(probe.timer); probe.timer = null; }
-    probe.key = null;
-    probe.next = false;
-    var jobs = probe.jobs;
-    probe.jobs = [];
-    if (!jobs.length) return Promise.resolve();
-    if (why) log('試し圧縮を中断（' + why + '）');
-    return Promise.all(jobs.map(function (job) { stopJob(job, CANCELLED); return job.stopped; }));
-  }
-  // 試し圧縮で使い回す動画の読み込み（動画が変わったら開き直す）
-  function probeInput() {
-    if (probe.inputFile !== state.file) {
-      closeProbeInput();
-      probe.input = new M.Input({ source: new M.BlobSource(state.file), formats: INPUT_FORMATS });
-      probe.inputFile = state.file;
-    }
-    return probe.input;
-  }
-  function closeProbeInput() {
-    if (probe.input) { try { probe.input.dispose(); } catch (e) { /* noop */ } }
-    probe.input = null;
-    probe.inputFile = null;
-  }
-  // 1か所を試しに圧縮して測る。書き出したファイルの大きさで測る（音声は入れない。mp4 の見出しの分（数KB）だけ大きめに出る）
-  function probeSample(plan, key, range) {
-    var job = newJob();
-    probe.jobs.push(job);
     var file = state.file;
-    var r = probe.results[key];
-    r.pending.push(range);
-    var t = Date.now();
-    // 音声は使わず、ビットレートだけ低くした計画で試す
-    var p = Object.assign({}, plan, { videoBitrate: PROBE_BPS, preferCbr: false, audio: { mode: 'none', bps: 0 } });
-    (r.enc ? Promise.resolve(r.enc) : pickFastEncoding(p)).then(function (enc) {
+    if (!trial || trial.file !== file) trial = { file: file, samples: [], job: null, done: false, failed: false };
+    if (trial.job) return;
+    if (!trial.done && !trial.failed) { startTrial(); return; }
+    if (TRIAL_ONLY) return;
+    var key = preKey(prePlan(state.plan));
+    if (pre && pre.file === file && pre.key === key && (pre.job || pre.done || pre.failed)) return;
+    if (pre && pre.job) stopPre('設定を変えた');
+    if (preTimer && preTimer.key === key) return;
+    if (preTimer) clearTimeout(preTimer.id);
+    var delay = pre && pre.file === file ? PRE_DELAY_MS : 0;
+    preTimer = { key: key, id: setTimeout(function () {
+      preTimer = null;
+      if (!canProbe() || !state.plan) return;
+      var pp = prePlan(state.plan);
+      if (preKey(pp) === key) startPre(pp, key); else scheduleProbe();
+    }, delay) };
+  }
+
+  // 試し圧縮（途中で止めていたら、まだの所だけ）
+  function startTrial() {
+    var t = trial, file = t.file;
+    var tp = t.plan || (t.plan = trialPlan());
+    var ranges = trialRanges(state.meta.duration).filter(function (r) {
+      return !t.samples.some(function (x) { return x.start === r.start; });
+    });
+    var job = t.job = newJob();
+    if (!t.t0) t.t0 = Date.now();
+    (t.enc ? Promise.resolve(t.enc) : pickFastEncoding(tp)).then(function (enc) {
       if (!enc) throw new Error(MSG_NO_H264);
-      r.enc = enc;
-      throwIfCancelled(job);
-      return runConversion({
-        input: probeInput(),
-        options: function (input, output) {
-          return { input: input, output: output, video: fastVideoConfig(p, enc), audio: { discard: true }, trim: range, showWarnings: false };
-        },
-        invalidMessage: '試し圧縮できない動画です'
-      }, p, function () {}, job);
-    }).then(function (res) {
-      var bps = Math.round(res.blob.size * 8 / (range.end - range.start));
-      r.samples.push({ start: range.start, end: range.end, bps: bps });
-      log('試し圧縮 ' + key + ' ' + range.start.toFixed(1) + '-' + range.end.toFixed(1) + 's 指定 ' + fmtRate(PROBE_BPS) +
-        ' → ' + fmtRate(bps) + '（' + secondsSince(t) + (PROBE_PARALLEL > 1 ? '・同時' + PROBE_PARALLEL : '') + '）');
-      probe.next = true;
+      t.enc = enc;
+      return ranges.reduce(function (chain, range) {
+        return chain.then(function () {
+          throwIfCancelled(job);
+          var t1 = Date.now();
+          // 書き出したファイルの大きさで測る（音声は入れない。mp4 の見出しの分（数KB）だけ大きめに出る）
+          return runConversion({
+            input: probeInput(),
+            options: function (input, output) {
+              return { input: input, output: output, video: fastVideoConfig(tp, enc), audio: { discard: true }, trim: range, showWarnings: false };
+            },
+            invalidMessage: '試し圧縮できない動画です'
+          }, tp, function () {}, job).then(function (res) {
+            var bps = Math.round(res.blob.size * 8 / (range.end - range.start));
+            t.samples.push({ start: range.start, end: range.end, bps: bps });
+            log('試し圧縮 ' + tp.width + 'x' + tp.height + '@' + Math.round(tp.outFps) + ' ' + range.start.toFixed(1) + '-' + range.end.toFixed(1) +
+              's 指定 ' + fmtRate(tp.videoBitrate) + ' → ' + fmtRate(bps) + '（' + secondsSince(t1) + '）');
+            if (state.file === file && !state.running) refresh();
+          });
+        });
+      }, Promise.resolve());
+    }).then(function () {
+      t.done = true;
+      log('試し圧縮が完了（' + secondsSince(t.t0) + '）');
     }, function (err) {
       if (isCancel(job, err)) return;
-      r.failed = true;   // 同じ設定では何度も試さない（それまでの実測は使う）
-      log('試し圧縮に失敗 ' + key + ' ' + errText(err));
+      t.failed = true;   // 予圧縮はそれでも行う
+      log('試し圧縮に失敗 ' + errText(err));
     }).then(function () {
-      r.pending.splice(r.pending.indexOf(range), 1);
-      var i = probe.jobs.indexOf(job);
-      if (i >= 0) probe.jobs.splice(i, 1);
-      if (!probe.jobs.length && !probe.timer) probe.key = null;
-      if (state.file !== file || state.running) return;
-      refresh();   // 予想を出し直し、足りなければ次を測る（測っている間に設定が変わっていたら、その設定を測る）
-      if (!probe.jobs.length && !probe.timer) logProbeEstimate(null, secondsSince(probe.t0));   // 測り終えた
+      if (t.job === job) t.job = null;
+      if (state.file === file && !state.running) refresh();
     });
   }
-  // 今の計画について、試し圧縮の結果から見込んだサイズを診断情報に書く
-  // took: 測り終えたときの、続けて測った時間
-  function logProbeEstimate(plan, took) {
-    plan = plan || state.plan;
-    if (!plan || !plan.probed) return;
-    log('予想（試し圧縮 ' + plan.probeCount + '/' + plan.probeWanted + (took ? '・' + took : '') + '） 指定 ' + fmtRate(plan.videoBitrate) +
-      ' → 映像 ' + fmtRate(plan.expectedBps) + '・' + fmtBytes(plan.estBytes) + (plan.probeOver ? '（目標サイズに収まらない見込み）' : ''));
+  // 止まりきったら解決する Promise を返す（止めるものがなければ解決済み）
+  function stopTrial(why) {
+    var job = trial && trial.job;
+    if (!job) return Promise.resolve();
+    trial.job = null;
+    if (why) log('試し圧縮を中断（' + why + '）');
+    stopJob(job, CANCELLED);
+    return job.stopped || Promise.resolve();
+  }
+  function probeInput() {
+    if (probeIn.file !== state.file) {
+      closeProbeInput();
+      probeIn.input = new M.Input({ source: new M.BlobSource(state.file), formats: INPUT_FORMATS });
+      probeIn.file = state.file;
+    }
+    return probeIn.input;
+  }
+  function closeProbeInput() {
+    if (probeIn.input) { try { probeIn.input.dispose(); } catch (e) { /* noop */ } }
+    probeIn.input = null;
+    probeIn.file = null;
+  }
+
+  // 予圧縮。書き出しは区切りごと（fragmented MP4）に受け取って持っておく（途中で止めても、区切りまでは読める）
+  function startPre(pp, key) {
+    var file = state.file;
+    var rec = pre = { file: file, key: key, plan: pp, job: newJob(), chunks: [], bytes: 0, marks: [{ t: 0, bytes: 0 }],
+      time: 0, done: false, failed: false, audioLost: false, t0: Date.now() };
+    var job = rec.job;
+    var writable = new WritableStream({
+      write: function (chunk) {
+        rec.chunks.push(chunk);
+        var end = chunk.position + chunk.data.byteLength;
+        if (end <= rec.bytes) return;
+        rec.bytes = end;
+        // 同じ進みのうちに続けて書き出された分（1つの区切りが何回かに分けて届いたとき）は、まとめる
+        var last = rec.marks[rec.marks.length - 1];
+        if (last.t === rec.time && rec.marks.length > 1) last.bytes = end;
+        else rec.marks.push({ t: rec.time, bytes: end });
+        if (pre === rec && state.file === file && !state.running) refresh();   // 予想を出し直す
+      }
+    });
+    var output = new M.Output({
+      format: new M.Mp4OutputFormat({ fastStart: 'fragmented', minimumFragmentDuration: PRE_FRAGMENT_SEC }),
+      target: new M.StreamTarget(writable)
+    });
+    log('予圧縮を開始 ' + describePlan(pp));
+    pickFastEncoding(pp).then(function (enc) {
+      if (!enc) throw new Error(MSG_NO_H264);
+      rec.enc = enc;
+      throwIfCancelled(job);
+      return runConversion({
+        output: output,
+        options: function (input, out) { return fastOptions(pp, enc, input, out); },
+        onReady: function (conv, audioLost) { rec.audioLost = audioLost; },
+        invalidMessage: '予圧縮できない動画です'
+      }, pp, function (p) { rec.time = p * pp.duration; }, job);
+    }).then(function () {
+      rec.time = pp.duration;
+      rec.marks[rec.marks.length - 1].t = pp.duration;   // 最後の書き出しは、動画の終わりまでの分
+      rec.done = true;
+      log('予圧縮が完了 ' + fmtBytes(rec.bytes) + '（' + secondsSince(rec.t0) + '）');
+    }, function (err) {
+      if (isCancel(job, err)) return;
+      rec.failed = true;   // 同じ設定では何度もやり直さない
+      log('予圧縮に失敗 ' + errText(err));
+    }).then(function () {
+      if (rec.job === job) rec.job = null;
+      if (pre === rec && state.file === file && !state.running) refresh();
+    });
+  }
+  function stopPre(why) {
+    if (preTimer) { clearTimeout(preTimer.id); preTimer = null; }
+    var job = pre && pre.job;
+    if (!job) return Promise.resolve();
+    pre.job = null;
+    if (why) log('予圧縮を中断（' + why + '・' + pre.time.toFixed(1) + '秒まで）');
+    stopJob(job, CANCELLED);
+    return job.stopped || Promise.resolve();
+  }
+
+  // 「なるべく圧縮」で、予圧縮が今の設定と同じで、範囲の始まりまで届いていれば、その予圧縮（使えなければ null）
+  function precompressUsable(plan) {
+    return precompressWhyNot(plan) ? null : pre;
+  }
+  function precompressWhyNot(plan) {
+    if (plan.mode !== 'quality') return '「なるべく圧縮」ではない';
+    if (!pre || pre.file !== state.file) return '予圧縮していない';
+    if (pre.failed) return '予圧縮に失敗した';
+    if (pre.key !== preKey(prePlan(plan))) return '設定が変わった';
+    if (!pre.done && !pre.job) return '予圧縮を途中で止めた';
+    if (!pre.done && pre.time < plan.trimStart) return '範囲の始まりまで届いていない（' + pre.time.toFixed(1) + '秒）';
+    return '';
+  }
+  // 予圧縮を範囲の終わりまで続け、範囲を切り出して結果にする（予圧縮に失敗したら、普通に圧縮する）
+  function finishFromPrecompress(rec, plan, onProgress, job) {
+    var span = Math.max(0.1, plan.trimEnd - plan.trimStart);
+    var need = Math.min(rec.plan.duration, plan.trimEnd + PRE_TAIL_SEC);
+    job.hooks.push(function () { return stopPre(); });   // キャンセル・停止したら予圧縮も止める
+    return new Promise(function (resolve, reject) {
+      (function wait() {
+        if (job.cancelled) return reject(new Error(CANCELLED));
+        if (rec.failed) return reject(new Error('予圧縮に失敗'));
+        if (rec.done || rec.marks[rec.marks.length - 1].t >= need) return resolve();
+        if (!rec.job) return reject(new Error('予圧縮が止まった'));
+        onProgress(Math.max(0, Math.min(0.95, (rec.time - plan.trimStart) / span)));
+        setTimeout(wait, 200);
+      })();
+    }).then(function () {
+      throwIfCancelled(job);
+      var stopping = rec.done ? null : stopPre();   // 範囲の終わりまで書き出せたので、残りは要らない
+      if (!rec.done) log('予圧縮を範囲の終わりで止める（' + rec.time.toFixed(1) + '秒）');
+      return Promise.resolve(stopping);
+    }).then(function () {
+      throwIfCancelled(job);
+      var input = new M.Input({ source: new M.BlobSource(fragmentsBlob(rec)), formats: INPUT_FORMATS });
+      job.hooks.push(function () { try { input.dispose(); } catch (e) { /* noop */ } });
+      return runConversion({
+        input: input,
+        options: function (inp, output) {
+          return {
+            input: inp, output: output, video: {},
+            audio: plan.audio.mode === 'none' ? { discard: true } : {},
+            trim: { start: plan.trimStart, end: plan.trimEnd },
+            // 区切りはキーフレームに合わせて広げる（開始が最大2秒早まることがある）
+            copy: { mode: 'forced', boundaryPolicy: 'expand', shiftTolerance: Infinity },
+            tags: outputTags, showWarnings: false
+          };
+        },
+        prepareLog: function () { return '予圧縮から切り出す準備'; },
+        invalidMessage: '予圧縮から切り出せませんでした'
+      }, plan, function (p) { onProgress(0.95 + 0.05 * p); }, job).then(function (res) {
+        try { input.dispose(); } catch (e) { /* noop */ }
+        return checkCutDuration(res, span).then(function () {
+          res.rateMode = rec.enc.bitrateMode;
+          res.audioDropped = rec.audioLost;
+          return res;
+        });
+      });
+    }).catch(function (err) {
+      if (isCancel(job, err)) throw err;
+      log('予圧縮を使えないため、普通に圧縮する（' + errText(err) + '）');
+      return convertFast(plan, onProgress, job);
+    });
+  }
+  // 切り出した動画が範囲より短ければ失敗にする（予圧縮の書き出しが範囲の終わりまで届いていなかった）
+  function checkCutDuration(res, span) {
+    var input = new M.Input({ source: new M.BlobSource(res.blob), formats: INPUT_FORMATS });
+    return input.computeDuration().then(function (d) {
+      try { input.dispose(); } catch (e) { /* noop */ }
+      if (d < span - 0.25) throw new Error('切り出した動画が短い（' + d.toFixed(2) + '秒／' + span.toFixed(2) + '秒）');
+    });
+  }
+  // 受け取った書き出しを1つにまとめ、最後の区切りまでで切る（途中で止めたとき、最後の区切りは書きかけのことがある）。
+  // 区切りごとの書き出しは先頭から順に届くので、受け取ったデータをそのままつなげる（長い動画でも大きな写しを作らない）
+  function fragmentsBlob(rec) {
+    var chunks = rec.chunks, pos = 0;
+    var inOrder = chunks.every(function (c) { var ok = c.position === pos; pos += c.data.byteLength; return ok; });
+    if (!inOrder) {
+      // 念のため：順に届いていなければ、位置どおりに1つにまとめ直す
+      var buf = new Uint8Array(rec.bytes);
+      chunks.forEach(function (c) { buf.set(c.data, c.position); });
+      chunks = [{ position: 0, data: buf }];
+    }
+    // 箱（size 4バイト＋種類 4バイト）を先頭から順にたどる
+    var ci = 0, total = chunks.reduce(function (n, c) { return n + c.data.byteLength; }, 0);
+    function byteAt(off) {
+      while (off >= chunks[ci].position + chunks[ci].data.byteLength) ci++;
+      while (off < chunks[ci].position) ci--;
+      return chunks[ci].data[off - chunks[ci].position];
+    }
+    var off = 0, keep = 0;
+    while (off + 8 <= total) {
+      var size = ((byteAt(off) << 24) >>> 0) + (byteAt(off + 1) << 16) + (byteAt(off + 2) << 8) + byteAt(off + 3);
+      var type = String.fromCharCode(byteAt(off + 4), byteAt(off + 5), byteAt(off + 6), byteAt(off + 7));
+      if (size < 8 || off + size > total) break;
+      off += size;
+      if (type === 'mdat' || type === 'moov' || type === 'mfra') keep = off;
+    }
+    return new Blob(chunks.map(function (c) { return c.data; }), { type: 'video/mp4' }).slice(0, keep, 'video/mp4');
   }
 
   // ---------------------------------------------------------------- トリミングのみ（再エンコードしない）
@@ -2078,9 +2262,14 @@
     requestWakeLock();
     showDiag(false);
     log('圧縮開始 ' + describePlan(plan) + ' engine=' + engine);
-    logProbeEstimate(plan);
-    // 試し圧縮の途中なら止め、エンコーダーなどを片付け終わるのを少し待ってから始める
-    var probeStopped = stopProbe(probe.jobs.length ? '圧縮を開始' : null).then(closeProbeInput);
+    logEstimate(plan);
+    // 「なるべく圧縮」で設定を変えておらず、予圧縮が範囲の始まりまで届いていれば、予圧縮をそのまま使う
+    var usePre = engine === 'fast' && precompressUsable(plan);
+    var preTried = false;
+    if (usePre) log('予圧縮を使う（' + (usePre.done ? '完了済み' : usePre.time.toFixed(1) + '秒まで済み') + '）');
+    else if (pre && pre.file === state.file && engine === 'fast' && plan.mode === 'quality') log('予圧縮は使わない（' + precompressWhyNot(plan) + '）');
+    // 試し圧縮・（使わない）予圧縮の途中なら止め、エンコーダーなどを片付け終わるのを少し待ってから始める
+    var probeStopped = Promise.all([stopTrial('圧縮を開始'), usePre ? null : stopPre('圧縮を開始')]).then(closeProbeInput);
     var bgRetries = 0;   // 別のアプリに切り替えたためにやり直した回数
     var preferCbr = false;   // VBR では指定のサイズに収まらなかったので、CBR を優先する
     var vbrResult = null;    // 「なるべく圧縮」で CBR を試す前の VBR の結果（CBR の方が大きければ、こちらを使う）
@@ -2129,7 +2318,10 @@
         }
         setProgress(p, label);
       };
+      var fromPre = engine === 'fast' && index === 0 && usePre && !preTried;
+      if (fromPre) preTried = true;   // 使えるのは最初の1回だけ（やり直すときは普通に圧縮する）
       var task = engine === 'copy' ? convertCopy(plan, onProgress, aj)
+        : fromPre ? finishFromPrecompress(usePre, plan, onProgress, aj)
         : engine === 'fast' ? convertFast(plan, onProgress, aj) : convertCompat(plan, onProgress, aj);
       task.catch(function () { /* 競争に負けた側の失敗は無視する */ });
 
@@ -2516,9 +2708,11 @@
   // 別のアプリに切り替えると、画面を暗くしない設定は自動で外れる。戻ったときに圧縮中（やり直し中を含む）なら取り直す
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible' && state.running) requestWakeLock();
-    // 試し圧縮は、画面を離れたら止める（iPhone は裏に回ると読み込み・書き出しを壊す）。戻ったら測り直す
-    if (document.visibilityState !== 'visible') stopProbe('画面を離れた');
-    else if (state.meta && !state.running) refresh();
+    // 試し圧縮・予圧縮は、画面を離れたら止める（iPhone は裏に回ると読み込み・書き出しを壊す）。
+    // 戻ったら試し圧縮は続きを、予圧縮は最初からやり直す（圧縮中に予圧縮を使っているときは、圧縮の見回りに任せる）
+    if (state.running) return;
+    if (document.visibilityState !== 'visible') { stopTrial('画面を離れた'); stopPre('画面を離れた'); }
+    else if (state.meta) refresh();
   });
   function releaseWakeLock() {
     if (state.wakeLock) {
@@ -2567,9 +2761,11 @@
   }
 
   function loadChosenFile(file) {
-    stopProbe();
+    stopTrial();
+    stopPre();
     closeProbeInput();
-    probe.results = {};
+    trial = null;
+    pre = null;
     state.busy = true;
     state.loadError = null;
     state.file = file;
@@ -2895,9 +3091,9 @@
 
   // 動作確認用（ブラウザのコンソールから計算結果を確認できるようにしておく）
   window.__compressor = {
-    makePlan: makePlan, nextBitrate: nextBitrate, applyProbe: applyProbe, probedBps: probedBps, nextProbeRange: nextProbeRange, probeWanted: probeWanted, readSettings: readSettings,
+    makePlan: makePlan, nextBitrate: nextBitrate, applyProbe: applyProbe, probedBps: probedBps, estimateParts: estimateParts, readSettings: readSettings,
     estimateFps: estimateFps, snapFps: snapFps, audioStrategy: audioStrategy,
-    state: state, probe: probe,
+    state: state, precomp: function () { return { trial: trial, pre: pre }; },
     pickFile: function (file) { onFileChosen(file); },   // 自己テスト（selftest.html）から動画を渡す
     constants: {
       SIZE_SAFETY: SIZE_SAFETY, AUDIO_BITRATE: AUDIO_BITRATE, DEFAULT_MIN_KBPS: DEFAULT_MIN_KBPS,
