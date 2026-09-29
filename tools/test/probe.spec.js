@@ -118,7 +118,7 @@ test('「◯MB以内」で収まらない見込みなら、押す前に知らせ
   await pick(page, '1080p60-45s.mp4');
   await preDone(page);
   const u = await ui(page);
-  expect(u.planWarn).toMatch(/予圧縮の結果、この設定では3MBに収まらない見込みです（予想.*）。30fpsにするか、720pにするか、範囲を短くしてください。/);
+  expect(u.planWarn).toMatch(/^この設定では3MBに収まらない可能性があります（予想.*）。720pにするか、トリミングするか、「なるべく圧縮」を選択してください。/);
   expect(u.runDisabled).toBe(false);
 });
 
