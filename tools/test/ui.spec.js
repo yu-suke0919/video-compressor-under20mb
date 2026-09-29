@@ -4,7 +4,7 @@
 const { test, expect } = require('@playwright/test');
 const { open, pick, compress, ui } = require('./helpers');
 
-const settingIds = ['res720', 'res1080', 'modeQuality', 'modeSize', 'targetSize', 'halfFps', 'audioOn', 'autoRun', 'extreme', 'nameOn', 'resetSettings'];
+const settingIds = ['res720', 'res1080', 'modeQuality', 'modeSize', 'targetSize', 'halfFps', 'audioOn', 'autoRun', 'forceRate', 'nameOn', 'resetSettings'];
 const disabledStates = page => page.evaluate(ids => ids.map(id => document.getElementById(id).disabled), settingIds);
 
 test('圧縮後は「やり直す」になり、設定を変えられず、共有できる。やり直すと元に戻る', async ({ page }) => {
