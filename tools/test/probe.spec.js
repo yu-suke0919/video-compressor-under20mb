@@ -102,10 +102,13 @@ test('「◯MB以内」でも下限ビットレートで予圧縮し、範囲を
   const d0 = await diag(page);
   expect(d0).not.toMatch(/予圧縮を中断/);
   expect(d0.match(/予圧縮を開始/g)).toHaveLength(1);
-  // 予想は、指定（目標から決めたビットレート）と下限での実測の大きい方
-  const r = await pc(page, () => { const p = window.__compressor.state.plan; return { bps: p.expectedBps, set: p.videoBitrate, probed: p.probed }; });
+  // 範囲が「約◯秒まで」以内なら、収まらない注意は出さず、予想は狙うサイズ（目標の97%）までにする
+  const r = await pc(page, () => { const p = window.__compressor.state.plan; return { est: p.estBytes, over: p.probeOver, fit: p.fitSec, dur: p.duration, probed: p.probed }; });
   expect(r.probed).toBe(true);
-  expect(r.bps).toBeGreaterThanOrEqual(r.set);
+  expect(r.dur).toBeLessThanOrEqual(r.fit);
+  expect(r.over).toBe(false);
+  expect(r.est).toBeLessThanOrEqual(10000000 * 0.97);
+  expect((await ui(page)).planWarn).not.toMatch(/収まらない/);
   await compress(page);
   const d = await diag(page);
   expect(d).toMatch(/予圧縮は使わない（「なるべく圧縮」ではない）/);
