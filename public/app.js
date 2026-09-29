@@ -59,7 +59,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-29p';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-29q';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1001,8 +1001,11 @@
         plan.width + '×' + plan.height + '・予想' + fmtBytes(trimEst)
       : '→ ' + plan.width + '×' + plan.height + '・' + fmtFps(plan.outFps) + '・' +
         // 予圧縮で測れたら、ビットレートは実測の平均。目標サイズに収まる秒数の目安も出す
+        // （範囲が目安を超えていればトリミングを促し、収まっていれば収まる長さを伝える）
         fmtRate(plan.probed ? plan.expectedBps : plan.videoBitrate) + '・予想' + fmtBytes(plan.estBytes) + probeLabel(plan) +
-        (plan.probed && plan.fitSec ? '・' + plan.targetMB + 'MBに収めるなら約' + fmtDuration(plan.fitSec) + 'まで' : '');
+        (plan.probed && plan.fitSec ? '・' + (plan.duration > plan.fitSec
+          ? plan.targetMB + 'MBに収めるなら約' + fmtDuration(plan.fitSec) + '以内にトリミングしてね'
+          : '約' + fmtDuration(plan.fitSec) + 'まで' + plan.targetMB + 'MBに収まるよ') : '');
 
     var warns = [];
     if (plan.mode === 'size' && plan.unreachable && !trimEst) {

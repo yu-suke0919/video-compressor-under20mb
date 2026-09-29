@@ -19,10 +19,10 @@ test('読み込んだら全体を予圧縮し、実測の平均ビットレー�
   await open(page, '?probe=on&mode=quality');
   await pick(page, '1080p60-45s.mp4');   // 初期設定は 720p・30fps
   await waitPc(page, () => { const p = window.__compressor.precomp().pre; return p && p.marks.length > 2; });
-  expect((await ui(page)).planInfo).toMatch(/・予想[\d.]+ MB（予圧縮 \d+%）・20MBに収めるなら約.+まで$/);
+  expect((await ui(page)).planInfo).toMatch(/・予想[\d.]+ MB（予圧縮 \d+%）・約.+まで20MBに収まるよ$/);
   await preDone(page);
   const u = await ui(page);
-  expect(u.planInfo).toMatch(/（予圧縮済み）・20MBに収めるなら約.+まで$/);
+  expect(u.planInfo).toMatch(/（予圧縮済み）・約.+まで20MBに収まるよ$/);
   const d = await diag(page);
   expect(d).toMatch(/予圧縮を開始 720 1280x720 mode=quality 1200kbps fps=60→30/);   // なるべく圧縮は下限ビットレート
   expect(d).toMatch(/予圧縮が完了 /);
@@ -172,6 +172,7 @@ test('範囲が目標サイズに収まる長さの目安を超えていれば�
   const fit = await pc(page, () => window.__compressor.state.plan.fitSec);
   expect(fit).toBeLessThan(60);
   expect(await over()).toBe(true);
+  expect(await page.textContent('#planInfo')).toMatch(new RegExp('・3MBに収めるなら約' + fit + '秒以内にトリミングしてね$'));
   // 即出力の大きさは「なるべく圧縮」での予想（範囲全体）
   const q = await pc(page, () => {
     const m = document.getElementById('modeQuality');
@@ -187,6 +188,7 @@ test('範囲が目標サイズに収まる長さの目安を超えていれば�
   // 目安の長さより短くすれば、黄色をやめる
   await setTrim(page, 0, Math.max(1, fit - 2));
   expect(await over()).toBe(false);
+  expect(await page.textContent('#planInfo')).toMatch(new RegExp('・約' + fit + '秒まで3MBに収まるよ$'));
   // 圧縮中・圧縮後は出さない
   await compress(page);
   expect(await over()).toBe(false);
