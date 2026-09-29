@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-29l';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-29m';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1392,14 +1392,13 @@
     var floorBytes = Math.round(floorTotal * p.duration / 8);
     p.fitSec = floorTotal > 0 ? Math.floor(p.targetBytes * 8 / floorTotal * FIT_MARGIN) : 0;
     if (plan.mode === 'size') {
-      // 「◯MB以内」：収まるかどうかは、下限ビットレートでの実測（「約◯秒まで」）で決める。範囲がその長さ以内なら、
-      // 最初の圧縮で超えても、圧縮し直しで収められる。そのときの予想は、区切りごとの「指定」と「下限での実測」の大きい方を、
-      // 狙うサイズ（目標の97%）で頭打ちにする（大きい方をとる見込みは多めに出る。エンコーダーは平均を指定に寄せるため。
-      // iPhone：29.8秒・指定 5.0Mbps で、見込み 21.1MB に対し実際 18.8MB）。収まらない長さなら、下限での実測を予想にする
+      // 「◯MB以内」：収まるかどうかは、画面に出す目安（「約◯秒まで」）で決める（トリミングの帯の黄色と同じ）。
+      // 予想は、区切りごとの「指定」と「下限での実測」の大きい方を、狙うサイズ（目標の97%）で頭打ちにし、
+      // 下限での実測より小さくはしない（大きい方をとる見込みは多めに出る。エンコーダーは平均を指定に寄せるため。
+      // iPhone：29.8秒・指定 5.0Mbps で、見込み 21.1MB に対し実際 18.8MB。超えても圧縮し直しで下限まで下げられる）
       p.probeOver = !p.unreachable && p.duration > p.fitSec;
-      p.estBytes = p.probeOver ? floorBytes : Math.min(
-        Math.round((preEstimate(plan, pre, plan.videoBitrate).videoBps + p.audioBitrate) * p.duration / 8),
-        Math.floor(p.targetBytes * SIZE_SAFETY));
+      var setBytes = Math.round((preEstimate(plan, pre, plan.videoBitrate).videoBps + p.audioBitrate) * p.duration / 8);
+      p.estBytes = Math.max(floorBytes, Math.min(setBytes, Math.floor(p.targetBytes * SIZE_SAFETY)));
     } else {
       p.probeOver = false;
       p.estBytes = floorBytes;
@@ -1428,7 +1427,7 @@
   }
   function probeOverMessage(plan) {
     // すでに 720p のときは、720p にする案は出さない
-    return 'この設定では' + plan.targetMB + 'MBに収まらない可能性があります（予想' + fmtBytes(plan.estBytes) + '）。' +
+    return 'この設定では' + plan.targetMB + 'MBに収まらない可能性があります（目安は約' + fmtDuration(plan.fitSec) + 'まで）。' +
       (plan.res !== '720' ? '720pにするか、' : '') + 'トリミングするか、「なるべく圧縮」を選択してください。';
   }
   function logEstimate(plan) {
