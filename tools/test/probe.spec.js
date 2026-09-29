@@ -20,11 +20,12 @@ test('読み込んだら、元の解像度・fps で真ん中と最後を試し�
   await waitPc(page, () => { const t = window.__compressor.precomp().trial; return t && t.samples.length >= 1; });
   expect((await ui(page)).planInfo).toMatch(/（目安）$/);
   await waitPc(page, () => window.__compressor.precomp().trial.done);
-  const t = await pc(page, () => { const t = window.__compressor.precomp().trial; return { plan: [t.plan.width, t.plan.height, Math.round(t.plan.outFps)], starts: t.samples.map(x => x.start) }; });
+  const t = await pc(page, () => { const t = window.__compressor.precomp().trial; return { plan: [t.plan.width, t.plan.height, Math.round(t.plan.outFps)], starts: t.samples.map(x => x.start), hi: t.samples.map(x => x.hi > 0) }; });
   expect(t.plan).toEqual([1920, 1080, 60]);   // 元の解像度・fps
+  expect(t.hi).toEqual([true, true]);         // 上限も測った
   expect(t.starts[0]).toBeCloseTo(21.5, 0);    // 真ん中
   expect(t.starts[1]).toBeCloseTo(43, 0);      // 最後
-  expect(await diag(page)).toMatch(/試し圧縮 1920x1080@60 21\.\d-23\.\ds 指定 4\.0Mbps → /);
+  expect(await diag(page)).toMatch(/試し圧縮 1920x1080@60 21\.\d-23\.\ds 指定 4\.0Mbps → [\d.]+[kM]bps・指定 50\.0Mbps → [\d.]+[kM]bps（/);
 
   await waitPc(page, () => { const p = window.__compressor.precomp().pre; return p && p.done; });
   const u = await ui(page);
@@ -56,6 +57,11 @@ test('「なるべく圧縮」で、予圧縮が済んでいれば、押した�
   expect(dur).toBeLessThanOrEqual(22.1);   // 始まりはキーフレームに合わせて最大2秒早まる
   const size = await pc(page, () => window.__compressor.state.out.blob.size);
   expect(Math.abs(size - est) / size).toBeLessThan(0.15);
+  // 結果の欄のビットレートは、書き出した大きさと動画の長さから求めた実際の値（切り出しで少し長くなった分も反映する）
+  const actual = await pc(page, () => ({ audio: window.__compressor.state.plan.audioBitrate }));
+  const bps = size * 8 / dur - actual.audio;
+  const label = bps >= 1000000 ? (bps / 1000000).toFixed(1) + 'Mbps' : Math.round(bps / 1000) + 'kbps';
+  await page.waitForFunction(l => document.getElementById('outInfo').textContent.includes('・' + l), label, { timeout: 10000 });
 });
 
 test('予圧縮の途中で押しても、範囲の始まりを越えていれば、範囲の終わりまで続けて使う', async ({ page }) => {
@@ -208,4 +214,35 @@ test('「◯MB以内に圧縮」で収まらない見込みなら、押す前に
   expect(u.planInfo).toMatch(/（目安）$/);
   expect(u.runDisabled).toBe(false);
   expect(await diag(page)).not.toMatch(/予圧縮/);   // probe=trial では予圧縮しない
+});
+
+test('上限：指定が高すぎるときは、場面ごとの上限までしか使わない見込みにする', async ({ page }) => {
+  await open(page);
+  const r = await page.evaluate(() => {
+    const c = window.__compressor;
+    const none = { mode: 'none', bps: 0, label: 'なし', note: null };
+    const parts = [{ w: 1, bps: 5400000, hi: 6500000 }];   // iPhone：下限 5.4Mbps・上限 6.5Mbps の場面
+    const st = { res: '1080', mode: 'size', targetMB: 20, targetBytes: 20000000, halfFps: true, minBitrate: { 720: 1200000, 1080: 2700000 } };
+    const plan = c.makePlan({ width: 1920, height: 1080, duration: 15.4, fps: 30 }, { start: 0, end: 15.4 }, st, none, 500000000);
+    const trial = { plan: { width: 1920, height: 1080, outFps: 30 }, samples: [{ start: 6.7, end: 8.7, bps: 4000000, hi: 8000000 }] };
+    const marks = [{ t: 0, bytes: 0 }, { t: 2, bytes: 250000 }];   // 予圧縮：0〜2秒が 1Mbps
+    return {
+      low: c.probedBps(2700000, parts),     // 指定が低い → 下限
+      mid: c.probedBps(6000000, parts),     // 間 → 指定どおり
+      high: c.probedBps(9400000, parts),    // 指定が高い → 上限
+      noHi: c.probedBps(9400000, [{ w: 1, bps: 5400000 }]),
+      plan: c.applyProbe(plan, parts),
+      est: c.estimateParts(Object.assign({}, plan, { width: 1920, height: 1080, outFps: 30, trimStart: 0, trimEnd: 4 }), trial, { plan: { audioBitrate: 0 }, marks })
+    };
+  });
+  expect(r.low).toBe(5400000);
+  expect(r.mid).toBe(6000000);
+  expect(r.high).toBe(6500000);
+  expect(r.noHi).toBe(9400000);   // 上限を測っていなければ、今までどおり指定どおり
+  // 20MB以内・15.4秒：指定は約9.9Mbps のままだが、予想は上限の 6.5Mbps で出す（実機では 12.9MB になった）
+  expect(r.plan.videoBitrate).toBeGreaterThan(9000000);
+  expect(r.plan.expectedBps).toBe(6500000);
+  expect(r.plan.estBytes).toBe(Math.round(6500000 * 15.4 / 8));
+  // 予圧縮の区切りの上限は、試し圧縮の「上限÷下限」の比（2倍）で見込む
+  expect(r.est.parts[0]).toEqual({ w: 2, bps: 1000000, hi: 2000000 });
 });

@@ -54,7 +54,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-29b';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-29c';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1321,12 +1321,17 @@
   // ---------------------------------------------------------------- 試し圧縮と予圧縮（サイズの予想）
   // 端末のエンコーダーは、映像が重いと低いビットレートの指定を守らないことがある
   // （iPhone の 1080p60 のゲーム映像で、2.7Mbps・4.05Mbps のどちらを指定しても約7.5Mbps になった）。そこで、実際に圧縮して測る
-  //   1. 試し圧縮 … 動画を読み込んだら、元の解像度・fps・「なるべく圧縮」のビットレートで、真ん中と最後の2秒を圧縮する（目安）
+  //   1. 試し圧縮 … 動画を読み込んだら、元の解像度・fps で、真ん中と最後の2秒を圧縮する（目安）。
+  //                 「なるべく圧縮」のビットレートと、とても高いビットレートの2通りで圧縮し、その場面で下げられる所（下限）と
+  //                 使い切る所（上限）を測る
   //   2. 予圧縮   … そのあと、今の設定・「なるべく圧縮」のビットレートで、範囲に関係なく動画の最初から最後までを裏で圧縮する。
   //                 書き出したデータの量で予想を直していく。「なるべく圧縮」で設定を変えずに「圧縮する」を押したら、
   //                 範囲の始まりまで届いていれば、範囲の終わりまで続けて、範囲を切り出して使う
-  // 予想は、場面ごとに「指定」と「なるべく圧縮のビットレートで圧縮したときの実測」の大きい方になるとみて、長さで重み付けして平均する
+  // 予想は、場面ごとに「指定」を「下限（なるべく圧縮のビットレートで圧縮したときの実測）」と「上限」の間に収めた値になるとみて、
+  // 長さで重み付けして平均する。エンコーダーは画質の段階に限界があり、指定が低すぎると下げきれず多く使い、
+  // 高すぎると使い切らずに少なく済ませる（iPhone：指定 2.7Mbps → 約5.4Mbps、指定 9.4Mbps → 約6.5Mbps）
   var TRIAL_SEC = 2;                 // 試し圧縮の1か所の長さ（キーフレームの間隔と揃え、キーフレームの割合を本番と同じにする）
+  var TRIAL_HIGH_BPS = MIN_KBPS_LIMITS[1] * 1000;   // 上限を測るときに指定するビットレート（設定で選べる最大値）
   var PRE_DELAY_MS = 1500;           // 設定を変えてから予圧縮をやり直すまで待つ（続けて変えたときに何度もやり直さない）
   var PRE_FRAGMENT_SEC = 1;          // 予圧縮の書き出しの区切りの最短の長さ（実際はキーフレームごと＝約2秒ごとに書き出される）
   var PRE_TAIL_SEC = 1;              // 範囲の終わりからこれだけ先まで書き出せたら、範囲の終わりまで書き出せたとみる
@@ -1336,7 +1341,7 @@
   var PROBE_OFF = /[?&]probe=off\b/.test(location.search);
   // URL に probe=trial があれば、試し圧縮だけ行い、予圧縮はしない（自動テストで、試し圧縮の予想を確かめるため）
   var TRIAL_ONLY = /[?&]probe=trial\b/.test(location.search);
-  // trial … { file, plan, samples: [{ start, end, bps }], enc, job, done, failed, t0 }
+  // trial … { file, plan, samples: [{ start, end, bps: 下限, hi: 上限 }], enc, job, done, failed, t0 }
   // pre   … { file, key, plan, enc, job, chunks, bytes, marks: [{ t: 書き出したときの進み（秒）, bytes: そこまでの量 }],
   //           time: 進み（秒）, done, failed, audioLost, t0 }
   var trial = null, pre = null, preTimer = null;
@@ -1367,12 +1372,17 @@
     return [{ start: duration / 2 - TRIAL_SEC / 2, end: duration / 2 + TRIAL_SEC / 2 }, { start: duration - TRIAL_SEC, end: duration }];
   }
 
-  // 指定のビットレートで圧縮したときの、映像のビットレートの見込み。parts … [{ w: 長さ, bps: その場面の実測 }]
-  // 場面ごとに「指定」と「実測」の大きい方になるとみて、長さで重み付けして平均する
-  // （iPhone の 1080p60 のゲーム映像で、実測 1.4・5.9・11.6Mbps、指定 4.05Mbps → 見込み 7.2Mbps、実際 7.3Mbps）
+  // 指定のビットレートで圧縮したときの、映像のビットレートの見込み。parts … [{ w: 長さ, bps: その場面の下限, hi: 上限（なければ上限なし） }]
+  // 場面ごとに「指定」を下限と上限の間に収めた値になるとみて、長さで重み付けして平均する
+  // （iPhone の 1080p60 のゲーム映像で、下限 1.4・5.9・11.6Mbps、指定 4.05Mbps → 見込み 7.2Mbps、実際 7.3Mbps）
   function probedBps(bps, parts) {
     var sum = 0, total = 0;
-    parts.forEach(function (x) { sum += x.w * Math.max(bps, x.bps); total += x.w; });
+    parts.forEach(function (x) {
+      var v = Math.max(bps, x.bps);
+      if (x.hi) v = Math.min(v, Math.max(x.hi, x.bps));
+      sum += x.w * v;
+      total += x.w;
+    });
     return Math.round(sum / total);
   }
   // 見込みを計画に当てはめる（予想のサイズを直し、「◯MB以内に圧縮」では収まるようにビットレートを下げる）
@@ -1407,6 +1417,9 @@
   //   まだの所         … 試し圧縮の実測を今の解像度・fps に換算した値（まだの所にあるものを優先）。なければ予圧縮が済んだ所の平均
   function estimateParts(plan, trialData, preData) {
     var a = plan.trimStart, b = plan.trimEnd, parts = [], covered = 0, coveredEnd = a;
+    // 上限と下限の比（試し圧縮の平均）。予圧縮は下限しか測らないので、この比で上限を見込む
+    var withHi = trialData ? trialData.samples.filter(function (x) { return x.hi && x.bps; }) : [];
+    var hiRatio = withHi.length ? withHi.reduce(function (n, x) { return n + x.hi / x.bps; }, 0) / withHi.length : 0;
     if (preData) {
       var marks = preData.marks;
       for (var i = 1; i < marks.length; i++) {
@@ -1414,8 +1427,8 @@
         if (!(s1 > s0)) continue;
         var ov = Math.min(s1, b) - Math.max(s0, a);
         if (ov <= 0) continue;
-        var bps = (marks[i].bytes - marks[i - 1].bytes) * 8 / (s1 - s0) - preData.plan.audioBitrate;
-        parts.push({ w: ov, bps: Math.max(0, bps) });
+        var bps = Math.max(0, (marks[i].bytes - marks[i - 1].bytes) * 8 / (s1 - s0) - preData.plan.audioBitrate);
+        parts.push(hiRatio ? { w: ov, bps: bps, hi: bps * hiRatio } : { w: ov, bps: bps });
         covered += ov;
         coveredEnd = Math.min(s1, b);
       }
@@ -1429,11 +1442,16 @@
         var k = Math.pow(plan.width * plan.height / (tp.width * tp.height), SCALE_PIXELS_EXP) * Math.pow(plan.outFps / tp.outFps, SCALE_FPS_EXP);
         var ahead = trialData.samples.filter(function (x) { var m = (x.start + x.end) / 2; return m >= coveredEnd && m <= b; });
         var use = ahead.length ? ahead : (parts.length ? [] : trialData.samples);
-        rates = use.map(function (x) { return x.bps * k; });
+        rates = use.map(function (x) { return x.hi ? { bps: x.bps * k, hi: x.hi * k } : { bps: x.bps * k }; });
       }
-      if (!rates.length && parts.length) rates = [probedBps(0, parts)];
+      if (!rates.length && parts.length) {
+        // まだの所は、予圧縮が済んだ所の平均（下限・上限それぞれ）
+        var lo = 0, hi = 0, w = 0;
+        parts.forEach(function (x) { lo += x.w * x.bps; hi += x.w * (x.hi || 0); w += x.w; });
+        rates = [hiRatio ? { bps: lo / w, hi: hi / w } : { bps: lo / w }];
+      }
       if (!rates.length) return null;
-      rates.forEach(function (r) { parts.push({ w: rest / rates.length, bps: r }); });
+      rates.forEach(function (r) { parts.push(Object.assign({ w: rest / rates.length }, r)); });
     }
     return parts.length ? { parts: parts, from: from } : null;
   }
@@ -1490,30 +1508,54 @@
   function startTrial() {
     var t = trial, file = t.file;
     var tp = t.plan || (t.plan = trialPlan());
+    // まだの所だけ（下限を測って上限がまだの所は、上限だけ）
     var ranges = trialRanges(state.meta.duration).filter(function (r) {
-      return !t.samples.some(function (x) { return x.start === r.start; });
+      return !t.samples.some(function (x) { return x.start === r.start && (x.hi || x.hiFailed); });
     });
     var job = t.job = newJob();
     if (!t.t0) t.t0 = Date.now();
     (t.enc ? Promise.resolve(t.enc) : pickFastEncoding(tp)).then(function (enc) {
       if (!enc) throw new Error(MSG_NO_H264);
       t.enc = enc;
+      // 書き出したファイルの大きさで測る（音声は入れない。mp4 の見出しの分（数KB）だけ大きめに出る）
+      function measure(range, bps) {
+        var p = Object.assign({}, tp, { videoBitrate: bps });
+        return runConversion({
+          input: probeInput(),
+          options: function (input, output) {
+            return { input: input, output: output, video: fastVideoConfig(p, enc), audio: { discard: true }, trim: range, showWarnings: false };
+          },
+          invalidMessage: '試し圧縮できない動画です'
+        }, p, function () {}, job).then(function (res) {
+          return Math.round(res.blob.size * 8 / (range.end - range.start));
+        });
+      }
       return ranges.reduce(function (chain, range) {
         return chain.then(function () {
           throwIfCancelled(job);
           var t1 = Date.now();
-          // 書き出したファイルの大きさで測る（音声は入れない。mp4 の見出しの分（数KB）だけ大きめに出る）
-          return runConversion({
-            input: probeInput(),
-            options: function (input, output) {
-              return { input: input, output: output, video: fastVideoConfig(tp, enc), audio: { discard: true }, trim: range, showWarnings: false };
-            },
-            invalidMessage: '試し圧縮できない動画です'
-          }, tp, function () {}, job).then(function (res) {
-            var bps = Math.round(res.blob.size * 8 / (range.end - range.start));
-            t.samples.push({ start: range.start, end: range.end, bps: bps });
+          var x = t.samples.filter(function (s) { return s.start === range.start; })[0];
+          // 下限（なるべく圧縮のビットレート）を先に測って予想を出し、そのあと上限を測る
+          return (x ? Promise.resolve(x) : measure(range, tp.videoBitrate).then(function (bps) {
+            x = { start: range.start, end: range.end, bps: bps };
+            t.samples.push(x);
+            if (state.file === file && !state.running) refresh();
+            return x;
+          })).then(function () {
+            throwIfCancelled(job);
+            // 上限を測れなくても（高いビットレートを断る端末など）、下限だけで予想する
+            return measure(range, TRIAL_HIGH_BPS).then(null, function (err) {
+              if (isCancel(job, err)) throw err;
+              x.hiFailed = true;
+              log('試し圧縮で上限を測れなかった ' + errText(err));
+              return 0;
+            });
+          }).then(function (hi) {
+            if (!hi) return;
+            x.hi = hi;
             log('試し圧縮 ' + tp.width + 'x' + tp.height + '@' + Math.round(tp.outFps) + ' ' + range.start.toFixed(1) + '-' + range.end.toFixed(1) +
-              's 指定 ' + fmtRate(tp.videoBitrate) + ' → ' + fmtRate(bps) + '（' + secondsSince(t1) + '）');
+              's 指定 ' + fmtRate(tp.videoBitrate) + ' → ' + fmtRate(x.bps) + '・指定 ' + fmtRate(TRIAL_HIGH_BPS) + ' → ' + fmtRate(hi) +
+              '（' + secondsSince(t1) + '）');
             if (state.file === file && !state.running) refresh();
           });
         });
@@ -1677,10 +1719,19 @@
   }
   // 切り出した動画が範囲より短ければ失敗にする（予圧縮の書き出しが範囲の終わりまで届いていなかった）
   function checkCutDuration(res, span) {
-    var input = new M.Input({ source: new M.BlobSource(res.blob), formats: INPUT_FORMATS });
+    return blobDuration(res.blob).then(function (d) {
+      if (d < span - 0.25) throw new Error('切り出した動画が短い（' + d.toFixed(2) + '秒／' + span.toFixed(2) + '秒）');
+    });
+  }
+  // 書き出した動画の長さ（秒）
+  function blobDuration(blob) {
+    var input = new M.Input({ source: new M.BlobSource(blob), formats: INPUT_FORMATS });
     return input.computeDuration().then(function (d) {
       try { input.dispose(); } catch (e) { /* noop */ }
-      if (d < span - 0.25) throw new Error('切り出した動画が短い（' + d.toFixed(2) + '秒／' + span.toFixed(2) + '秒）');
+      return d;
+    }, function (e) {
+      try { input.dispose(); } catch (e2) { /* noop */ }
+      throw e;
     });
   }
   // 受け取った書き出しを1つにまとめ、最後の区切りまでで切る（途中で止めたとき、最後の区切りは書きかけのことがある）。
@@ -2636,12 +2687,24 @@
       setAlert(els.outWarn, size > DISCORD_FREE_BYTES ? [MSG_OVER_DISCORD] : []);
       return;
     }
-    els.outInfo.textContent = fmtBytes(state.file.size) + ' → ' + fmtBytes(size) + '（' + (ratio >= 0 ? '-' : '+') +
-      Math.abs(ratio) + '%）・' + plan.width + '×' + plan.height + '・' + fmtRate(plan.videoBitrate) + '・' +
-      fmtDuration(elapsed) + (res.attempts > 1 ? '・' + res.attempts + '回で調整' : '') +
-      // Safari（WebKit）は CBR/VBR の指定をエンコーダに渡さないので、表示しない
-      (res.rateMode && !isWebKit() ? (res.rateMode === 'variable' ? '・VBR' : '・CBR') : '') +
-      (plan.audio.mode === 'none' && plan.wantAudio ? '・音声なし' : '') + (engine === 'compat' ? '・互換モード' : '');
+    // ビットレートは、書き出した大きさと長さから求めた実際の値（音声の分を引く）。指定と1割以上違えば、指定も出す
+    // （エンコーダーは映像によって、指定より多く使ったり、少なく済ませたりする）
+    function info(duration) {
+      var actual = Math.max(0, size * 8 / duration - plan.audioBitrate);
+      var rate = fmtRate(actual) + (Math.abs(actual - plan.videoBitrate) > plan.videoBitrate * 0.1 ? '（指定' + fmtRate(plan.videoBitrate) + '）' : '');
+      return fmtBytes(state.file.size) + ' → ' + fmtBytes(size) + '（' + (ratio >= 0 ? '-' : '+') +
+        Math.abs(ratio) + '%）・' + plan.width + '×' + plan.height + '・' + rate + '・' +
+        fmtDuration(elapsed) + (res.attempts > 1 ? '・' + res.attempts + '回で調整' : '') +
+        // Safari（WebKit）は CBR/VBR の指定をエンコーダに渡さないので、表示しない
+        (res.rateMode && !isWebKit() ? (res.rateMode === 'variable' ? '・VBR' : '・CBR') : '') +
+        (plan.audio.mode === 'none' && plan.wantAudio ? '・音声なし' : '') + (engine === 'compat' ? '・互換モード' : '');
+    }
+    // まず範囲の長さで出し、書き出した動画の長さが分かったら出し直す（予圧縮から切り出すと、始まりが少し早まることがある）
+    els.outInfo.textContent = info(plan.duration);
+    var out = state.out;
+    blobDuration(res.blob).then(function (d) {
+      if (state.out === out && d > 0) els.outInfo.textContent = info(d);
+    }, function () { /* 範囲の長さのまま */ });
 
     var warns = [];
     if (plan.mode === 'size' && size >= plan.targetBytes) {
