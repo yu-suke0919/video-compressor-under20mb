@@ -227,3 +227,16 @@ test('720p以下の動画では 720p にして 1080p を選べなくし、選ん
   expect(await page.isChecked('#res720')).toBe(true);
   expect(await page.isDisabled('#res1080')).toBe(true);
 });
+
+test('「元の解像度」は、720p の動画を経由しても、次の 1080p の動画を縮小しない', async ({ page }) => {
+  await open(page, '?res=source');
+  await pick(page, '720p-60s.mp4');
+  expect(await page.isChecked('#res720')).toBe(true);
+  expect(await page.isDisabled('#res1080')).toBe(true);
+  await pick(page, '1080p60-45s.mp4');
+  expect(await page.isChecked('#res1080')).toBe(true);
+  expect(await planSize(page)).toBe('1920x1080');
+  await pick(page, 'screenrec-886x1920.mp4');   // 「元の解像度」を出せる動画では、元の解像度に戻る
+  expect(await page.isChecked('#resSource')).toBe(true);
+  expect(await planSize(page)).toBe('886x1920');
+});
