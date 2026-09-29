@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-29k';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-29l';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1380,21 +1380,32 @@
   }
   // 計画に予圧縮の予想を当てはめる（今の設定の予圧縮がまだ何も書き出していなければ、そのまま）
   //   probed      … 予圧縮の予想を使った
-  //   expectedBps … 映像のビットレートの予想（なるべく圧縮は実測の平均。◯MB以内は、指定と実測の大きい方の平均）
+  //   expectedBps … 映像のビットレートの予想（予想のサイズから求める）
   //   fitSec      … 目標サイズに収まる秒数の目安（下限ビットレートでの実測の平均で収まる秒数の95%）
-  //   probeOver   … 「◯MB以内」で、目標サイズに収まらない見込み（押せなくはしない。見込みが外れることもあるため）
+  //   probeOver   … 「◯MB以内」で、範囲が fitSec より長い（目標サイズに収まらない可能性がある。押せなくはしない）
   function withEstimate(plan) {
     if (state.engine !== 'fast' || !pre || pre.file !== state.file || pre.key !== preKey(prePlan(plan))) return plan;
     var floorEst = preEstimate(plan, pre, 0);
     if (!floorEst) return plan;
-    var est = plan.mode === 'size' ? preEstimate(plan, pre, plan.videoBitrate) : floorEst;
     var p = Object.assign({}, plan, { probed: true });
-    p.expectedBps = est.videoBps;
-    p.estBytes = Math.round((est.videoBps + p.audioBitrate) * p.duration / 8);
     var floorTotal = floorEst.videoBps + p.audioBitrate;
+    var floorBytes = Math.round(floorTotal * p.duration / 8);
     p.fitSec = floorTotal > 0 ? Math.floor(p.targetBytes * 8 / floorTotal * FIT_MARGIN) : 0;
+    if (plan.mode === 'size') {
+      // 「◯MB以内」：収まるかどうかは、下限ビットレートでの実測（「約◯秒まで」）で決める。範囲がその長さ以内なら、
+      // 最初の圧縮で超えても、圧縮し直しで収められる。そのときの予想は、区切りごとの「指定」と「下限での実測」の大きい方を、
+      // 狙うサイズ（目標の97%）で頭打ちにする（大きい方をとる見込みは多めに出る。エンコーダーは平均を指定に寄せるため。
+      // iPhone：29.8秒・指定 5.0Mbps で、見込み 21.1MB に対し実際 18.8MB）。収まらない長さなら、下限での実測を予想にする
+      p.probeOver = !p.unreachable && p.duration > p.fitSec;
+      p.estBytes = p.probeOver ? floorBytes : Math.min(
+        Math.round((preEstimate(plan, pre, plan.videoBitrate).videoBps + p.audioBitrate) * p.duration / 8),
+        Math.floor(p.targetBytes * SIZE_SAFETY));
+    } else {
+      p.probeOver = false;
+      p.estBytes = floorBytes;
+    }
+    p.expectedBps = Math.max(0, Math.round(p.estBytes * 8 / p.duration - p.audioBitrate));
     p.overDiscord = p.estBytes > DISCORD_FREE_BYTES;
-    p.probeOver = p.mode === 'size' && !p.unreachable && p.estBytes >= p.targetBytes;
     return p;
   }
   // 画面の予想の後ろに付ける、予圧縮の状況
