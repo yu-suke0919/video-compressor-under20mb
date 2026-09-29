@@ -205,3 +205,25 @@ test('60fpsのまま書き出すときは、下限ビットレートを1.5倍に
   expect(r.size60Unreachable).toBe(true);   // 60秒は 4.05Mbps では20MBに入らない
   expect(r.source60).toBe(Math.round(Math.round(1200000 * 1920 * 1080 / (1280 * 720)) * 1.5));
 });
+
+test('720p以下の動画では 720p にして 1080p を選べなくし、選んでいた 1080p は大きい動画を選んだら戻す（保存した設定も 1080p のまま）', async ({ page }) => {
+  await open(page);
+  await page.click('label[for="res1080"]');   // 画面で 1080p を選ぶ（保存される）
+  await pick(page, '720p-60s.mp4');
+  expect(await page.isChecked('#res720')).toBe(true);
+  expect(await page.isDisabled('#res1080')).toBe(true);
+  expect(await page.textContent('#planInfo')).toContain('1280×720');
+  expect(await page.evaluate(() => window.__compressor.state.plan.floorBitrate)).toBe(1200000);   // 720p の下限で計画する
+  // ほかの設定を変えて保存しても、解像度は 1080p のまま覚えている
+  await page.click('label[for="modeQuality"]');
+  await page.waitForTimeout(100);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('video-compressor-under20mb:settings')));
+  expect(saved.res).toBe('1080');
+  await pick(page, '1080p60-45s.mp4');
+  expect(await page.isChecked('#res1080')).toBe(true);
+  expect(await page.isDisabled('#res1080')).toBe(false);
+  // もっと小さい動画（160×120）でも同じ
+  await pick(page, 'tiny-160x120.mp4');
+  expect(await page.isChecked('#res720')).toBe(true);
+  expect(await page.isDisabled('#res1080')).toBe(true);
+});

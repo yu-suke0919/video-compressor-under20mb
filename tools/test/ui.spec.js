@@ -10,7 +10,8 @@ const disabledStates = page => page.evaluate(ids => ids.map(id => document.getEl
 test('圧縮後は「やり直す」になり、設定を変えられず、共有できる。やり直すと元に戻る', async ({ page }) => {
   await open(page);
   await pick(page, '720p-60s.mp4');
-  expect(await disabledStates(page)).toEqual(settingIds.map(() => false));
+  const small = settingIds.map(id => id === 'res1080');   // 720p の動画では 1080p だけ選べない
+  expect(await disabledStates(page)).toEqual(small);
   await compress(page);
   let u = await ui(page);
   expect(u.runText).toBe('やり直す');
@@ -25,7 +26,7 @@ test('圧縮後は「やり直す」になり、設定を変えられず、共�
   expect(u.runText).toBe('圧縮する');
   expect(u.hasOut).toBe(false);
   expect(u.shareDisabled).toBe(true);
-  expect(await disabledStates(page)).toEqual(settingIds.map(() => false));
+  expect(await disabledStates(page)).toEqual(small);
 });
 
 test('圧縮中に「キャンセル」を押すと、すぐ元の状態に戻る', async ({ page }) => {

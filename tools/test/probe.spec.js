@@ -19,10 +19,10 @@ test('読み込んだら全体を予圧縮し、実測の平均ビットレー�
   await open(page, '?probe=on&mode=quality');
   await pick(page, '1080p60-45s.mp4');   // 初期設定は 720p・30fps
   await waitPc(page, () => { const p = window.__compressor.precomp().pre; return p && p.marks.length > 2; });
-  expect((await ui(page)).planInfo).toMatch(/・予想[\d.]+ MB（予圧縮 \d+%）・20MBなら約.+まで$/);
+  expect((await ui(page)).planInfo).toMatch(/・予想[\d.]+ MB（予圧縮 \d+%）・20MBに収めるなら約.+まで$/);
   await preDone(page);
   const u = await ui(page);
-  expect(u.planInfo).toMatch(/（予圧縮済み）・20MBなら約.+まで$/);
+  expect(u.planInfo).toMatch(/（予圧縮済み）・20MBに収めるなら約.+まで$/);
   const d = await diag(page);
   expect(d).toMatch(/予圧縮を開始 720 1280x720 mode=quality 1200kbps fps=60→30/);   // なるべく圧縮は下限ビットレート
   expect(d).toMatch(/予圧縮が完了 /);
