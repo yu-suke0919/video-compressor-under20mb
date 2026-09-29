@@ -24,7 +24,9 @@
   var MIN_TARGET_MB = 1;
   var MAX_TARGET_MB = 500;
   var MB = 1000 * 1000;                  // 1MB = 100万バイト（iPhoneのファイル表示と同じ数え方）
-  var SIZE_SAFETY = 0.97;                // 目標サイズの97%を狙う（20MB→19.4MB）。エンコーダの誤差（数%）を吸収して再圧縮を避ける
+  var SIZE_SAFETY = 0.97;
+  // 「◯MB以内に圧縮」で、目標のこの割合以下に仕上がったら、小さく済んだ理由を出す（エンコーダーが、画質が十分な所で使う量を抑えた）
+  var SMALL_RESULT_RATIO = 0.8;                // 目標サイズの97%を狙う（20MB→19.4MB）。エンコーダの誤差（数%）を吸収して再圧縮を避ける
   var AUDIO_BITRATE = 128000;            // 音声を再エンコードするときのビットレート
   var AUDIO_COPY_MAX_BITRATE = 192000;   // これ以下のAACは再エンコードせずそのまま使う
   var DISCORD_FREE_BYTES = 20 * MB;     // Discord無料アカウントの上限（注意文の基準）
@@ -57,7 +59,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-29o';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-29p';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -100,7 +102,7 @@
     urlCopy: $('urlCopy'), urlStatus: $('urlStatus'),
     resetSettings: $('resetSettings'), runBtn: $('runBtn'), progressWrap: $('progressWrap'), progressBar: $('progressBar'), progressNote: $('progressNote'),
     phase: $('phase'), pct: $('pct'),
-    outVideo: $('outVideo'), outEmpty: $('outEmpty'), outInfo: $('outInfo'), outWarn: $('outWarn'),
+    outVideo: $('outVideo'), outEmpty: $('outEmpty'), outInfo: $('outInfo'), outNote: $('outNote'), outWarn: $('outWarn'),
     shareBtn: $('shareBtn'), saveBtn: $('saveBtn'),
     nameOn: $('nameOn'), nameBox: $('nameBox'), nameList: $('nameList'), namePreview: $('namePreview'),
     diagBox: $('diagBox'), diagOut: $('diagOut'), diagCopy: $('diagCopy'), diagStatus: $('diagStatus')
@@ -2539,6 +2541,7 @@
     show(els.outVideo, false);
     show(els.outEmpty, true);
     els.outInfo.textContent = '';
+    show(els.outNote, false);
     setAlert(els.outWarn, []);
     els.shareBtn.disabled = true;
     els.saveBtn.disabled = true;
@@ -2580,6 +2583,11 @@
     blobDuration(res.blob).then(function (d) {
       if (state.out === out && d > 0) els.outInfo.textContent = info(d);
     }, function () { /* 範囲の長さのまま */ });
+
+    // 目標よりかなり小さく仕上がったときは、そのわけを出す（悪いことではないので、注意ではなく補足として）
+    var small = plan.mode === 'size' && size <= plan.targetBytes * SMALL_RESULT_RATIO;
+    els.outNote.textContent = small ? 'これ以上大きくしても画質はほぼ上がらないため、' + fmtBytes(size).replace(' ', '') + 'に抑えました。' : '';
+    show(els.outNote, small);
 
     var warns = [];
     if (plan.mode === 'size' && size >= plan.targetBytes) {

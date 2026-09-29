@@ -2,7 +2,7 @@
 'use strict';
 
 const { test, expect } = require('@playwright/test');
-const { open, pick, compress, ui } = require('./helpers');
+const { open, pick, compress, ui, setTrim } = require('./helpers');
 
 const settingIds = ['res720', 'res1080', 'modeQuality', 'modeSize', 'targetSize', 'halfFps', 'audioOn', 'autoRun', 'nameOn', 'resetSettings'];
 const disabledStates = page => page.evaluate(ids => ids.map(id => document.getElementById(id).disabled), settingIds);
@@ -102,4 +102,21 @@ test('使い方：全16枚で、最後までスワイプすると最後の点が
   expect(info.last).toBe('更新情報');
   await page.evaluate(() => { const s = document.getElementById('helpSlides'); s.scrollLeft = s.scrollWidth; });
   await expect(page.locator('#helpDots button').nth(15)).toHaveAttribute('aria-current', 'true');
+});
+
+test('「◯MB以内に圧縮」で目標の8割以下に仕上がったら、小さく済んだわけを出す', async ({ page }) => {
+  await open(page, '?mode=size&target=100');
+  await pick(page, '1080p60-45s.mp4');   // 720p・30fps にするので、トリミングのみにはならない
+  await setTrim(page, 0, 10);
+  await compress(page);
+  const size = await page.evaluate(() => window.__compressor.state.out.blob.size);
+  expect(size).toBeLessThanOrEqual(80000000);
+  expect(await page.isVisible('#outNote')).toBe(true);
+  expect(await page.textContent('#outNote')).toBe('これ以上大きくしても画質はほぼ上がらないため、' + (size / 1000000).toFixed(1) + 'MBに抑えました。');
+  // やり直すと消える。「なるべく圧縮」では出さない
+  await page.click('#runBtn');
+  expect(await page.isVisible('#outNote')).toBe(false);
+  await page.click('label[for="modeQuality"]');
+  await compress(page);
+  expect(await page.isVisible('#outNote')).toBe(false);
 });
