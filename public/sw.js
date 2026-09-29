@@ -9,7 +9,7 @@
 'use strict';
 
 var CACHE_PREFIX = 'video-compressor-under20mb-';   // このアプリのキャッシュ名の頭（同じドメインの別アプリのキャッシュは消さない）
-var CACHE = CACHE_PREFIX + 'v138';
+var CACHE = CACHE_PREFIX + 'v140';
 var NETWORK_TIMEOUT_MS = 3000;   // ネット優先のとき、ネットの応答をこれだけ待ってからキャッシュを使う
 
 // Cloudflare Pages のプレビュー（<ブランチ名>.<プロジェクト名>.pages.dev）と手元の確認環境だけネット優先にする
