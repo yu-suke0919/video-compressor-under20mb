@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-29i';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-29j';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -91,7 +91,7 @@
     unsupported: $('unsupported'), file: $('file'), pickBtn: $('pickBtn'), repickBtn: $('repickBtn'),
     app: document.querySelector('.app'),
     srcVideo: $('srcVideo'), srcInfo: $('srcInfo'), srcBox: $('srcBox'), outBox: $('outBox'),
-    trimStart: $('trimStart'), trimEnd: $('trimEnd'), trimFill: $('trimFill'), trimLabel: $('trimLabel'),
+    trimStart: $('trimStart'), trimEnd: $('trimEnd'), trimFill: $('trimFill'), trimBox: $('trimBox'), quickNote: $('quickNote'), trimLabel: $('trimLabel'),
     trimTicks: $('trimTicks'), trimSeek: $('trimSeek'),
     res720: $('res720'), res1080: $('res1080'), resSource: $('resSource'), resSeg: $('resSeg'), modeQuality: $('modeQuality'), modeSize: $('modeSize'),
     sizeLabel: $('sizeLabel'), planInfo: $('planInfo'), planWarn: $('planWarn'),
@@ -919,8 +919,10 @@
   }
   function isFullTrim() { return isFullRange(state.trim.start, state.trim.end); }
 
-  function currentPlan() {
+  // mode … 画面で選んだモードの代わりに使うモード（省略時は画面のとおり）
+  function currentPlan(mode) {
     var settings = readSettings();
+    if (mode) settings.mode = mode;
     var audio = audioStrategy(state.meta, settings.audio, state.engine);
     // 予圧縮の予想があれば当てはめる
     return withEstimate(makePlan(state.meta, state.trim, settings, audio, state.file.size));
@@ -963,6 +965,7 @@
     els.runBtn.textContent = state.running ? 'キャンセル' : done ? 'やり直す' : '圧縮する';
 
     if (!hasFile) {
+      showPrecompressHints(null);
       els.runBtn.disabled = !state.running;
       els.planInfo.textContent = '';
       // 読み込みに失敗したときは、その理由を出したままにする
@@ -972,6 +975,7 @@
 
     var plan = state.plan = currentPlan();
     scheduleProbe();
+    showPrecompressHints(plan);
     els.audioLabel.textContent = '音声を残す（' + plan.audio.label + '）';
     var trimEst = trimOnlyEstimate(plan);
     els.planInfo.textContent = trimEst
@@ -1397,6 +1401,19 @@
   function probeLabel(plan) {
     if (plan.probed) return pre.done ? '（予圧縮済み）' : '（予圧縮 ' + Math.floor(pre.time / pre.plan.duration * 100) + '%）';
     return pre && pre.file === state.file && (pre.job || preTimer) ? '（予圧縮中）' : '';
+  }
+  // 予圧縮の結果を画面に出す。範囲が目標サイズに収まる長さの目安を超えていれば、トリミングの帯を黄色にする。
+  // 予圧縮が済んでいれば、「なるべく圧縮」の下に、押せばすぐ出せる大きさを出す
+  function showPrecompressHints(plan) {
+    var idle = !!plan && !state.running && !isCompressed();
+    els.trimBox.classList.toggle('is-over', idle && !!plan.probed && plan.fitSec > 0 && plan.duration > plan.fitSec);
+    var note = '';
+    if (idle && pre && pre.done) {
+      var qp = plan.mode === 'quality' ? plan : currentPlan('quality');
+      if (qp.probed && !precompressWhyNot(qp)) note = fmtBytes(qp.estBytes).replace(' ', '') + 'で即出力するよ';
+    }
+    els.quickNote.textContent = note;
+    show(els.quickNote, !!note);
   }
   function probeOverMessage(plan) {
     return '予圧縮の結果、この設定では' + plan.targetMB + 'MBに収まらない見込みです（予想' + fmtBytes(plan.estBytes) + '）。' +
