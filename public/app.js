@@ -31,6 +31,9 @@
   // 下限ビットレートの既定値（kbps）。720p30で1.2Mbps、1080pは画素数に比例させて同等の画質
   var DEFAULT_MIN_KBPS = { '720': 1200, '1080': 2700 };
   var MIN_KBPS_LIMITS = [100, 50000];
+  // とんでも画質（試験用）：ビットレートの指定がとても高いとき、エンコーダーがどこまで使うかを見る。
+  // 端末が断れば、次に高い値を試す
+  var EXTREME_BPS = [999000000, 300000000, 100000000];
   // 60fps のまま書き出すときは、下限ビットレートをこの倍率にする（下限は30fpsを前提にした値。
   // 60fps のままだと1コマあたりのデータが半分になる。60fps はとなりのコマが似ていて圧縮しやすいので2倍までは要らない）
   var HIGH_FPS_FLOOR_FACTOR = 1.5;
@@ -54,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-29c';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-29d';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -93,7 +96,7 @@
     res720: $('res720'), res1080: $('res1080'), resSource: $('resSource'), resSeg: $('resSeg'), modeQuality: $('modeQuality'), modeSize: $('modeSize'),
     sizeLabel: $('sizeLabel'), planInfo: $('planInfo'), planWarn: $('planWarn'),
     targetSize: $('targetSize'), halfFps: $('halfFps'), audioOn: $('audioOn'), audioLabel: $('audioLabel'),
-    minRate720: $('minRate720'), minRate1080: $('minRate1080'), autoRun: $('autoRun'), capLabel: $('capLabel'),
+    minRate720: $('minRate720'), minRate1080: $('minRate1080'), autoRun: $('autoRun'), extreme: $('extreme'), capLabel: $('capLabel'),
     urlCopy: $('urlCopy'), urlStatus: $('urlStatus'),
     resetSettings: $('resetSettings'), runBtn: $('runBtn'), progressWrap: $('progressWrap'), progressBar: $('progressBar'), progressNote: $('progressNote'),
     phase: $('phase'), pct: $('pct'),
@@ -285,6 +288,7 @@
       halfFps: !!els.halfFps.checked,
       audio: !!els.audioOn.checked,
       autoRun: !!els.autoRun.checked,
+      extreme: !!els.extreme.checked,
       // 解像度ごとの下限ビットレート（bps）
       minBitrate: {
         '720': readKbps(els.minRate720, DEFAULT_MIN_KBPS['720']) * 1000,
@@ -507,6 +511,7 @@
       return undefined;
     }, function (v) { return v ? '30' : 'source'; }),
     checkSetting('auto', 'auto', 'autoRun', false),     // 動画を選んだらすぐ圧縮
+    checkSetting('extreme', 'extreme', 'extreme', false),   // とんでも画質（試験用）
     checkSetting('audio', 'audio', 'audioOn', true)     // 音声を残す
   ];
 
@@ -872,7 +877,9 @@
       if (videoBps < minBps) { unreachable = true; videoBps = minBps; }
     }
 
-    if (capOk && videoBps > srcCap) videoBps = srcCap;
+    // とんでも画質（試験用）：モードにかかわらず、とても高いビットレートを指定する（元の動画による上限もかけない）
+    if (settings.extreme) { videoBps = EXTREME_BPS[0]; unreachable = false; }
+    else if (capOk && videoBps > srcCap) videoBps = srcCap;
     // ビットレートは必ず整数にする（小数だと Mediabunny が例外を出し、0%のまま止まっていた）
     videoBps = Math.floor(videoBps);
     // 元動画のビットレートがもともと低く、上限（元の80%）で目標に収まるなら、下限を割っても収められる
@@ -881,7 +888,7 @@
 
     var estBytes = Math.round((videoBps + audioBps) * duration / 8);
     return {
-      mode: settings.mode, res: settings.res, halfFps: settings.halfFps,
+      mode: settings.mode, res: settings.res, halfFps: settings.halfFps, extreme: !!settings.extreme,
       wantAudio: !!settings.audio,                     // 「音声を残す」（圧縮を始めたときの設定。やり直しでもこれを使う）
       targetMB: settings.targetMB, targetBytes: settings.targetBytes, minBitrate: settings.minBitrate,
       trimStart: trim.start, trimEnd: trim.end, duration: duration,
@@ -949,7 +956,7 @@
     // シークバーは圧縮後も元動画の確認に使えるようにする（圧縮中だけ止める）
     els.trimSeek.disabled = !hasFile || locked;
     [els.res720, els.res1080, els.resSource, els.modeQuality, els.modeSize, els.targetSize, els.halfFps, els.audioOn,
-      els.minRate720, els.minRate1080, els.autoRun, els.nameOn, els.resetSettings].forEach(function (el) { el.disabled = state.running || done; });
+      els.minRate720, els.minRate1080, els.autoRun, els.extreme, els.nameOn, els.resetSettings].forEach(function (el) { el.disabled = state.running || done; });
     Array.prototype.forEach.call(els.nameList.querySelectorAll('input, button'), function (el) {
       el.disabled = state.running || done || (el.dataset.move === 'up' && !el.parentNode.previousSibling) ||
         (el.dataset.move === 'down' && !el.parentNode.nextSibling);
@@ -1391,7 +1398,7 @@
   //   probeOver   … 下限まで下げても目標サイズに収まらない見込み（押せなくはしない。見込みが外れることもあるため）
   function applyProbe(plan, parts) {
     var p = Object.assign({}, plan, { probed: true, probeOver: false });
-    if (plan.mode === 'size' && !plan.unreachable) {
+    if (plan.mode === 'size' && !plan.unreachable && !plan.extreme) {
       var budget = plan.targetBytes * 8 * SIZE_SAFETY / plan.duration - plan.audioBitrate;
       if (probedBps(p.videoBitrate, parts) > budget) {
         var lo = Math.min(plan.floorBitrate, p.videoBitrate), hi = p.videoBitrate;
@@ -1658,6 +1665,7 @@
     return precompressWhyNot(plan) ? null : pre;
   }
   function precompressWhyNot(plan) {
+    if (plan.extreme) return 'とんでも画質';
     if (plan.mode !== 'quality') return '「なるべく圧縮」ではない';
     if (!pre || pre.file !== state.file) return '予圧縮していない';
     if (pre.failed) return '予圧縮に失敗した';
@@ -1767,7 +1775,7 @@
   // 「◯MB以内に圧縮」で、解像度もfpsも元のまま、トリミングした元動画が目標サイズに収まる見込みなら、
   // 再エンコードせずに切り出すだけにする（画質は元のまま）。見込みのサイズを返し、対象外なら 0
   function trimOnlyEstimate(plan) {
-    if (!state.meta || !state.file || state.engine !== 'fast' || plan.mode !== 'size') return 0;
+    if (!state.meta || !state.file || state.engine !== 'fast' || plan.mode !== 'size' || plan.extreme) return 0;
     // 全体のときは「元の動画のまま」で扱う。ただし位置情報や音声を取り除く必要があるときは、それだけ除いてそのまま書き出す
     var need = stripNeeds(readSettings());
     if (isFullTrimOf(plan) && !need.location && !need.audio) return 0;
@@ -2450,7 +2458,7 @@
 
       // 「◯MB以内に圧縮」で目標を超えたら、実際のサイズからビットレートを計算し直して、圧縮し直す
       function retrySmaller(res) {
-        if (plan.mode !== 'size' || res.blob.size < plan.targetBytes || index + 1 >= MAX_ATTEMPTS) return null;
+        if (plan.mode !== 'size' || plan.extreme || res.blob.size < plan.targetBytes || index + 1 >= MAX_ATTEMPTS) return null;
         var audioBytes = audioBytesOf(plan);
         var next = nextBitrate(plan, res.blob.size - audioBytes, audioBytes);
         // 下限を下回る値は下限に揃え、それ以上下げられないならやめる
@@ -2552,6 +2560,8 @@
     var ready = Promise.race([probeStopped, sleep(CLEANUP_WAIT_MS), job.aborted]).then(function () {
       throwIfCancelled(job);
       return engine === 'copy' ? null : Promise.race([decoderResponds(job), job.aborted]);
+    }).then(function () {
+      if (plan.extreme && engine === 'fast') return pickExtremeBitrate(plan);
     });
     return ready.then(function () {
       throwIfCancelled(job);
@@ -2573,6 +2583,18 @@
     });
   }
 
+  // とんでも画質（試験用）：端末が受け付ける、いちばん高いビットレートを決める（999Mbps から順に試す）
+  function pickExtremeBitrate(plan) {
+    return (function next(i) {
+      if (i >= EXTREME_BPS.length) { log('とんでも画質：どのビットレートも使えない'); return null; }
+      return pickFastEncoding(Object.assign({}, plan, { videoBitrate: EXTREME_BPS[i] })).then(function (enc) {
+        if (!enc) return next(i + 1);
+        plan.videoBitrate = EXTREME_BPS[i];
+        log('とんでも画質：' + fmtRate(EXTREME_BPS[i]) + ' を指定');
+      });
+    })(0);
+  }
+
   // 画面に出す解像度の名前（例: 720p、元の解像度）
   function resLabel(plan) { return plan.res === 'source' ? '元の解像度' : plan.res + 'p'; }
 
@@ -2585,7 +2607,7 @@
   // 計画を作り直すときに、元の計画と同じ設定を渡す
   function planSettings(plan) {
     return {
-      mode: plan.mode, res: plan.res, halfFps: plan.halfFps, audio: plan.wantAudio,
+      mode: plan.mode, res: plan.res, halfFps: plan.halfFps, audio: plan.wantAudio, extreme: plan.extreme,
       targetMB: plan.targetMB, targetBytes: plan.targetBytes, minBitrate: plan.minBitrate
     };
   }
@@ -2985,7 +3007,7 @@
   ['res720', 'res1080', 'resSource'].forEach(function (k) {
     els[k].addEventListener('change', function () { wantSource = k === 'resSource'; });
   });
-  ['res720', 'res1080', 'resSource', 'modeQuality', 'modeSize', 'halfFps', 'audioOn'].forEach(function (k) {
+  ['res720', 'res1080', 'resSource', 'modeQuality', 'modeSize', 'halfFps', 'audioOn', 'extreme'].forEach(function (k) {
     els[k].addEventListener('change', refresh);
   });
   [els.minRate720, els.minRate1080].forEach(function (el) {
