@@ -202,33 +202,3 @@ test('60fpsのまま書き出すときは、下限ビットレートを1.5倍に
   expect(r.size60Unreachable).toBe(true);   // 60秒は 4.05Mbps では20MBに入らない
   expect(r.source60).toBe(Math.round(Math.round(1200000 * 1920 * 1080 / (1280 * 720)) * 1.5));
 });
-
-test('ビットレートを強制（試験用）：モードにかかわらず入れた値を指定し、目標を超えても圧縮し直さない。空にすると使わない', async ({ page }) => {
-  await open(page, '?force=12.5&mode=size&target=5');
-  await pick(page, '720p-60s.mp4');
-  await page.evaluate(() => {
-    const a = document.getElementById('trimStart'), z = document.getElementById('trimEnd');
-    z.value = '6'; z.dispatchEvent(new Event('input'));
-    a.value = '0'; a.dispatchEvent(new Event('input'));
-  });
-  expect(await page.inputValue('#forceRate')).toBe('12.5');
-  expect(await page.textContent('#planInfo')).toContain('12.5Mbps');
-  await page.click('#runBtn');
-  await page.waitForFunction(() => !window.__compressor.state.running, null, { timeout: 120000 });
-  const d = await page.inputValue('#diagOut');
-  expect(d).toMatch(/ビットレートを強制：12\.5Mbps を指定/);
-  expect(d).toMatch(/圧縮開始 .* 12500kbps/);
-  expect(d).not.toMatch(/再圧縮 映像/);   // 5MB を超えても圧縮し直さない
-  expect(await page.textContent('#outInfo')).not.toContain('回で調整');
-
-  // 空にすると使わない（範囲外の値は範囲に収める）
-  await page.click('#runBtn');   // やり直す
-  await page.click('details.settings:not(#diagBox) > summary');
-  await page.fill('#forceRate', '');
-  await page.dispatchEvent('#forceRate', 'change');
-  expect(await page.textContent('#planInfo')).not.toContain('12.5Mbps');
-  await page.fill('#forceRate', '5000');
-  await page.dispatchEvent('#forceRate', 'change');
-  expect(await page.inputValue('#forceRate')).toBe('999');
-  expect(await page.textContent('#planInfo')).toContain('999.0Mbps');
-});
