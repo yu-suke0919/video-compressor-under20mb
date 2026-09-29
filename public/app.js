@@ -59,7 +59,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-29u';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-29v';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -275,12 +275,17 @@
   function syncResOption() {
     var show = !!(state.meta && !isStandardRes(state.meta) && Math.min(state.meta.width, state.meta.height) > 720 + 8);
     els.resSeg.classList.toggle('is-three', show);
-    if (show && wantSource) els.resSource.checked = true;
-    else if (!show && els.resSource.checked) els.res1080.checked = true;
     var small = isSmallSource(state.meta);
     els.res1080.classList.toggle('is-locked', small);
+    // 「元の解像度」を選んでいるときは、前の動画での表示に関係なく、動画ごとに決め直す
+    // （出せる動画は「元の解像度」、720p以下の動画は 720p、それ以外（1080p など）は 1080p）
+    if (wantSource) {
+      (show ? els.resSource : small ? els.res720 : els.res1080).checked = true;
+      return;
+    }
+    if (!show && els.resSource.checked) els.res1080.checked = true;
     if (small && els.res1080.checked) {
-      if (!wantSource) want1080 = true;
+      want1080 = true;
       els.res720.checked = true;
     } else if (!small && want1080) {
       els.res1080.checked = true;
