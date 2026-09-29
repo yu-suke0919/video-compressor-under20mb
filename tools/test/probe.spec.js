@@ -121,7 +121,7 @@ test('「◯MB以内」で収まらない見込みなら、押す前に知らせ
   await pick(page, '1080p60-45s.mp4');
   await preDone(page);
   const u = await ui(page);
-  expect(u.planWarn).toMatch(/^この設定では3MBに収まらない可能性があります（予想.*）。720pにするか、トリミングするか、「なるべく圧縮」を選択してください。/);
+  expect(u.planWarn).toMatch(/^この設定では3MBに収まらない可能性があります（目安は約.+まで）。720pにするか、トリミングするか、「なるべく圧縮」を選択してください。/);
   expect(u.runDisabled).toBe(false);
 });
 
@@ -191,4 +191,17 @@ test('範囲が目標サイズに収まる長さの目安を超えていれば�
   await compress(page);
   expect(await over()).toBe(false);
   expect(await page.isVisible('#quickNote')).toBe(false);
+});
+
+test('「◯MB以内」の予想は、範囲が目安の長さを超えるかどうかで計算を変えない（長くしたのに小さくならない）', async ({ page }) => {
+  await open(page, '?probe=on&mode=size&target=3');
+  await pick(page, '720p-60s.mp4');
+  await preDone(page);
+  const fit = await pc(page, () => window.__compressor.state.plan.fitSec);
+  const at = async end => { await setTrim(page, 0, end); return pc(page, () => { const p = window.__compressor.state.plan; return { est: p.estBytes, over: p.probeOver }; }); };
+  const inside = await at(fit), outside = await at(fit + 0.1);
+  expect(inside.over).toBe(false);
+  expect(outside.over).toBe(true);
+  expect(outside.est).toBeGreaterThanOrEqual(inside.est);
+  expect(await page.textContent('#planWarn')).toContain('（目安は約' + fit + '秒まで）');
 });
