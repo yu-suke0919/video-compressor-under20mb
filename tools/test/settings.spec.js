@@ -124,21 +124,24 @@ test('保存した「元の解像度」も、1080p の動画を縮小しない',
   expect(await planSize(page)).toBe('1920x1080');
 });
 
-test('元動画のビットレートが低く、上限（元の80%）で目標に収まるなら、「収まらない」にしない', async ({ page }) => {
+test('元動画のビットレートを上限にし（HEVC なら1.5倍）、その上限で目標に収まるなら、「収まらない」にしない', async ({ page }) => {
   await open(page);
-  const plan = await page.evaluate(() => window.__compressor.makePlan(
-    { width: 1280, height: 720, duration: 600, fps: 30 }, { start: 0, end: 600 },
-    { res: '720', mode: 'size', targetMB: 20, targetBytes: 20000000, halfFps: true, minBitrate: { 720: 1200000, 1080: 2700000 } },
-    { mode: 'none', bps: 0, label: 'なし', note: null }, 24000000));
-  expect(plan.videoBitrate).toBe(256000);
-  expect(plan.estBytes).toBe(19200000);
-  expect(plan.unreachable).toBe(false);
+  const r = await page.evaluate(() => {
+    const st = { res: '720', mode: 'size', targetMB: 20, targetBytes: 20000000, halfFps: true, minBitrate: { 720: 1200000, 1080: 2700000 } };
+    const none = { mode: 'none', bps: 0, label: 'なし', note: null };
+    const plan = (codec, size) => window.__compressor.makePlan({ width: 1280, height: 720, duration: 600, fps: 30, videoCodec: codec }, { start: 0, end: 600 }, st, none, size);
+    return { avc: plan('avc', 18000000), hevc: plan('hevc', 12000000), hevcBig: plan('hevc', 18000000), over: plan('avc', 200000000) };
+  });
+  // H.264：元の 240kbps（18MB・600秒）が上限。目標（約259kbps）より低いので上限で圧縮し、収まる
+  expect(r.avc.videoBitrate).toBe(240000);
+  expect(r.avc.estBytes).toBe(18000000);
+  expect(r.avc.unreachable).toBe(false);
+  // HEVC：元の 160kbps（12MB・600秒）の1.5倍＝240kbps まで
+  expect(r.hevc.videoBitrate).toBe(240000);
+  // HEVC で1.5倍が目標より高ければ、目標で決まる
+  expect(r.hevcBig.videoBitrate).toBe(Math.floor(20000000 * 8 * 0.97 / 600));
   // 元動画の上限を当てはめても収まらないときは、今までどおり「収まらない」
-  const over = await page.evaluate(() => window.__compressor.makePlan(
-    { width: 1280, height: 720, duration: 600, fps: 30 }, { start: 0, end: 600 },
-    { res: '720', mode: 'size', targetMB: 20, targetBytes: 20000000, halfFps: true, minBitrate: { 720: 1200000, 1080: 2700000 } },
-    { mode: 'none', bps: 0, label: 'なし', note: null }, 200000000));
-  expect(over.unreachable).toBe(true);
+  expect(r.over.unreachable).toBe(true);
 });
 
 test('奇数の大きさでも、計画の幅・高さは偶数（元との違いは1px以内、720p・1080p では縮小）', async ({ page }) => {
@@ -170,7 +173,7 @@ test('元動画のビットレートが下限より低い動画は、圧縮し�
     const normal = c.makePlan(meta, { start: 0, end: 600 }, st, none, 200000000, 500000);
     return { first: first.videoBitrate, floor: first.floorBitrate, next, second: second.videoBitrate, normal: normal.videoBitrate, normalFloor: normal.floorBitrate };
   });
-  expect(r.first).toBe(256000);
+  expect(r.first).toBe(Math.floor(20000000 * 8 * 0.97 / 600));   // 目標で決まる（元の 320kbps より低い）
   expect(r.floor).toBe(100000);          // 元が下限より低いので、この動画の下限は設定の最小値
   expect(r.next).toBeLessThan(r.first);  // 下げて圧縮し直せる（以前は下限の 1200kbps に戻され、打ち切っていた）
   expect(r.second).toBe(r.next);
