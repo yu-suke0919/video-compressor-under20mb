@@ -502,7 +502,11 @@
   .seg-input:disabled + .seg-opt {
     cursor: default;
   }
-  .seg:has(.seg-input:disabled) {
+  /* 720p以下の動画のときの 1080p など、その選択肢だけ選べないとき */
+  .seg-input.is-locked:disabled + .seg-opt {
+    opacity: .35;
+  }
+  .seg:has(.seg-input:disabled:not(.is-locked)) {
     opacity: .45;
   }
 

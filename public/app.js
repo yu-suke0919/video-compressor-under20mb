@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-29m';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-29o';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -265,11 +265,25 @@
     var shortSide = Math.min(meta.width, meta.height);
     return Math.abs(shortSide - 720) <= 8 || Math.abs(shortSide - 1080) <= 8;
   }
+  // 720p以下の動画（短い辺が720付近以下）は、1080p を選んでも拡大はしないので、720p にして 1080p を選べなくする
+  // （1080p の下限ビットレートで 720p の動画を圧縮してしまうのを防ぐ）。
+  // 選んでいた 1080p は want1080 で覚えておき、大きい動画を選んだら戻す（保存する設定も 1080p のまま）
+  var want1080 = false;
+  function isSmallSource(meta) { return !!meta && Math.min(meta.width, meta.height) <= 720 + 8; }
   function syncResOption() {
     var show = !!(state.meta && !isStandardRes(state.meta) && Math.min(state.meta.width, state.meta.height) > 720 + 8);
     els.resSeg.classList.toggle('is-three', show);
     if (show && wantSource) els.resSource.checked = true;
     else if (!show && els.resSource.checked) els.res1080.checked = true;
+    var small = isSmallSource(state.meta);
+    els.res1080.classList.toggle('is-locked', small);
+    if (small && els.res1080.checked) {
+      if (!wantSource) want1080 = true;
+      els.res720.checked = true;
+    } else if (!small && want1080) {
+      els.res1080.checked = true;
+      want1080 = false;
+    }
   }
   // 目標サイズ（MB）。入力がおかしければ初期値、上限を超えたら上限にする
   function readTargetMB() {
@@ -475,8 +489,9 @@
     // 解像度（「元の解像度」を選んだことは wantSource で覚える。出せない動画のあいだは画面の選択は 720p・1080p のまま）
     {
       key: 'res', url: 'res', def: '720', ids: ['res720', 'res1080', 'resSource'],
-      read: function () { return wantSource ? 'source' : resValue(radioValue('res', '720')); },
+      read: function () { return wantSource ? 'source' : want1080 ? '1080' : resValue(radioValue('res', '720')); },
       write: function (v) {
+        want1080 = false;
         if (v === '1080') { els.res1080.checked = true; wantSource = false; }
         else if (v === '720') { els.res720.checked = true; wantSource = false; }
         // 元の解像度：選択肢が出ない動画（720p・1080p など）のあいだは 1080p にしておく。
@@ -956,6 +971,7 @@
     els.trimSeek.disabled = !hasFile || locked;
     [els.res720, els.res1080, els.resSource, els.modeQuality, els.modeSize, els.targetSize, els.halfFps, els.audioOn,
       els.minRate720, els.minRate1080, els.autoRun, els.nameOn, els.resetSettings].forEach(function (el) { el.disabled = state.running || done; });
+    if (isSmallSource(state.meta)) els.res1080.disabled = true;   // 720p以下の動画は 1080p を選べない
     Array.prototype.forEach.call(els.nameList.querySelectorAll('input, button'), function (el) {
       el.disabled = state.running || done || (el.dataset.move === 'up' && !el.parentNode.previousSibling) ||
         (el.dataset.move === 'down' && !el.parentNode.nextSibling);
@@ -984,7 +1000,7 @@
       : '→ ' + plan.width + '×' + plan.height + '・' + fmtFps(plan.outFps) + '・' +
         // 予圧縮で測れたら、ビットレートは実測の平均。目標サイズに収まる秒数の目安も出す
         fmtRate(plan.probed ? plan.expectedBps : plan.videoBitrate) + '・予想' + fmtBytes(plan.estBytes) + probeLabel(plan) +
-        (plan.probed && plan.fitSec ? '・' + plan.targetMB + 'MBなら約' + fmtDuration(plan.fitSec) + 'まで' : '');
+        (plan.probed && plan.fitSec ? '・' + plan.targetMB + 'MBに収めるなら約' + fmtDuration(plan.fitSec) + 'まで' : '');
 
     var warns = [];
     if (plan.mode === 'size' && plan.unreachable && !trimEst) {
@@ -1335,7 +1351,7 @@
   // （範囲の長さでビットレートを変えると、範囲を変えるたびにやり直しになるため）。
   // 「なるべく圧縮」で設定を変えずに「圧縮する」を押したら、範囲の始まりまで届いていれば、
   // 範囲の終わりまで続けて、範囲を切り出して使う。「◯MB以内」では予想と注意にだけ使い、押したら普通に圧縮する
-  var FIT_MARGIN = 0.95;             // 「◯MBなら約◯秒まで」は、実測の平均で収まる秒数のこの割合を出す
+  var FIT_MARGIN = 0.95;             // 「◯MBに収めるなら約◯秒まで」は、実測の平均で収まる秒数のこの割合を出す
   var PRE_DELAY_MS = 1500;           // 設定を変えてから予圧縮をやり直すまで待つ（続けて変えたときに何度もやり直さない）
   var PRE_FRAGMENT_SEC = 1;          // 予圧縮の書き出しの区切りの最短の長さ（実際はキーフレームごと＝約2秒ごとに書き出される）
   var PRE_TAIL_SEC = 1;              // 範囲の終わりからこれだけ先まで書き出せたら、範囲の終わりまで書き出せたとみる
@@ -1433,7 +1449,7 @@
   function logEstimate(plan) {
     if (!plan || !plan.probed) return;
     log('予想' + probeLabel(plan) + ' 映像 ' + fmtRate(plan.expectedBps) + '・' + fmtBytes(plan.estBytes) +
-      '・' + plan.targetMB + 'MBなら約' + plan.fitSec + '秒まで' + (plan.probeOver ? '（目標サイズに収まらない見込み）' : ''));
+      '・' + plan.targetMB + 'MBに収めるなら約' + plan.fitSec + '秒まで' + (plan.probeOver ? '（目標サイズに収まらない見込み）' : ''));
   }
 
   // 今の設定の予圧縮がまだなら始める。設定が変わったら止めて、少し待ってからやり直す
@@ -2839,7 +2855,7 @@
 
   // 画面で解像度を選んだら、「元の解像度」を選んだかどうかを覚えておく
   ['res720', 'res1080', 'resSource'].forEach(function (k) {
-    els[k].addEventListener('change', function () { wantSource = k === 'resSource'; });
+    els[k].addEventListener('change', function () { wantSource = k === 'resSource'; want1080 = false; });
   });
   ['res720', 'res1080', 'resSource', 'modeQuality', 'modeSize', 'halfFps', 'audioOn'].forEach(function (k) {
     els[k].addEventListener('change', refresh);
