@@ -159,3 +159,33 @@ test('予想の計算：済んだ所は区切りごとの実測、まだの所�
   expect(r.raised.videoBps).toBe(Math.round((1500000 * 16 + 2000000 * 4) / 20));
   expect(r.none).toBe(null);
 });
+
+test('範囲が目標サイズに収まる長さの目安を超えていればトリミングの帯を黄色にし、予圧縮が済んだら「なるべく圧縮」の下に即出力の大きさを出す', async ({ page }) => {
+  await open(page, '?probe=on&mode=size&target=3');   // 3MB なら、この動画は20秒ほどしか入らない
+  await pick(page, '720p-60s.mp4');
+  expect(await page.isVisible('#quickNote')).toBe(false);
+  await preDone(page);
+  const over = () => page.evaluate(() => document.getElementById('trimBox').classList.contains('is-over'));
+  const fit = await pc(page, () => window.__compressor.state.plan.fitSec);
+  expect(fit).toBeLessThan(60);
+  expect(await over()).toBe(true);
+  // 即出力の大きさは「なるべく圧縮」での予想（範囲全体）
+  const q = await pc(page, () => {
+    const m = document.getElementById('modeQuality');
+    m.checked = true; m.dispatchEvent(new Event('change', { bubbles: true }));
+    const est = window.__compressor.state.plan.estBytes;
+    const s = document.getElementById('modeSize');
+    s.checked = true; s.dispatchEvent(new Event('change', { bubbles: true }));
+    return est;
+  });
+  const label = (q / 1000000).toFixed(1) + 'MB';
+  expect(await page.textContent('#quickNote')).toBe(label + 'で即出力するよ');
+  expect(await page.isVisible('#quickNote')).toBe(true);
+  // 目安の長さより短くすれば、黄色をやめる
+  await setTrim(page, 0, Math.max(1, fit - 2));
+  expect(await over()).toBe(false);
+  // 圧縮中・圧縮後は出さない
+  await compress(page);
+  expect(await over()).toBe(false);
+  expect(await page.isVisible('#quickNote')).toBe(false);
+});
