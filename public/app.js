@@ -24,9 +24,9 @@
   var MIN_TARGET_MB = 1;
   var MAX_TARGET_MB = 500;
   var MB = 1000 * 1000;                  // 1MB = 100万バイト（iPhoneのファイル表示と同じ数え方）
-  var SIZE_SAFETY = 0.97;
+  var SIZE_SAFETY = 0.97;                // 目標サイズの97%を狙う（20MB→19.4MB）。エンコーダの誤差（数%）を吸収して再圧縮を避ける
   // 「◯MB以内に圧縮」で、目標のこの割合以下に仕上がったら、小さく済んだ理由を出す（エンコーダーが、画質が十分な所で使う量を抑えた）
-  var SMALL_RESULT_RATIO = 0.8;                // 目標サイズの97%を狙う（20MB→19.4MB）。エンコーダの誤差（数%）を吸収して再圧縮を避ける
+  var SMALL_RESULT_RATIO = 0.8;
   var AUDIO_BITRATE = 128000;            // 音声を再エンコードするときのビットレート
   var AUDIO_COPY_MAX_BITRATE = 192000;   // これ以下のAACは再エンコードせずそのまま使う
   var DISCORD_FREE_BYTES = 20 * MB;     // Discord無料アカウントの上限（注意文の基準）
@@ -59,7 +59,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-29t';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-29u';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1276,7 +1276,7 @@
     });
   }
 
-  // 高速モードの映像の設定（本番の圧縮と試し圧縮で共通）
+  // 高速モードの映像の設定（本番の圧縮と予圧縮で共通）
   function fastVideoConfig(plan, enc) {
     var video = {
       codec: enc.codec, width: plan.width, height: plan.height, fit: 'fill',
@@ -1354,12 +1354,12 @@
   // 動画を読み込んだら（設定を変えたときも）、範囲に関係なく動画の最初から最後までを裏で圧縮し（予圧縮）、
   // 書き出したデータの量から、ビットレートとサイズの予想を出す。予圧縮は、モードにかかわらず決めた下限ビットレートで行う
   // （範囲の長さでビットレートを変えると、範囲を変えるたびにやり直しになるため）。
-  // 「なるべく圧縮」で設定を変えずに「圧縮する」を押したら、範囲の始まりまで届いていれば、
-  // 範囲の終わりまで続けて、範囲を切り出して使う。「◯MB以内」では予想と注意にだけ使い、押したら普通に圧縮する
-  var FIT_MARGIN = 0.95;
+  // 設定を変えずに「圧縮する」を押したら、範囲の始まりまで届いていれば、範囲の終わりまで続けて、範囲を切り出して使う。
+  // 「◯MB以内」では、切り出した大きさが目標の95%以上・目標未満のときだけ使い、それ以外は予想と注意にだけ使って普通に圧縮する
+  var FIT_MARGIN = 0.95;             // 「約◯秒まで◯MBに収まるよ」は、実測の平均で収まる秒数のこの割合を出す
   // 「◯MB以内」でも、予圧縮を切り出した大きさが目標のこの割合以上（かつ目標未満）なら、予圧縮をそのまま使う
   // （目標いっぱいまで使って圧縮し直しても、大きさ・画質はほとんど変わらないので、すぐ出せる方を選ぶ）
-  var PRE_SIZE_USE_RATIO = 0.95;             // 「◯MBに収めるなら約◯秒まで」は、実測の平均で収まる秒数のこの割合を出す
+  var PRE_SIZE_USE_RATIO = 0.95;
   var PRE_DELAY_MS = 1500;           // 設定を変えてから予圧縮をやり直すまで待つ（続けて変えたときに何度もやり直さない）
   var PRE_FRAGMENT_SEC = 1;          // 予圧縮の書き出しの区切りの最短の長さ（実際はキーフレームごと＝約2秒ごとに書き出される）
   var PRE_TAIL_SEC = 1;              // 範囲の終わりからこれだけ先まで書き出せたら、範囲の終わりまで書き出せたとみる
@@ -1423,6 +1423,10 @@
       p.probeOver = !p.unreachable && p.duration > p.fitSec;
       var setBytes = Math.round((preEstimate(plan, pre, plan.videoBitrate).videoBps + p.audioBitrate) * p.duration / 8);
       p.estBytes = Math.max(floorBytes, Math.min(setBytes, Math.floor(p.targetBytes * SIZE_SAFETY)));
+      // 押したら予圧縮をそのまま使う大きさ（目標の95%以上・目標未満）なら、切り出したときの大きさを予想にする
+      var cut = null;
+      try { cut = exactCutBytes(plan, pre); } catch (e) { cut = null; }
+      if (cut && cut >= p.targetBytes * PRE_SIZE_USE_RATIO && cut < p.targetBytes) { p.estBytes = cut; p.exactEst = true; }
     } else {
       // なるべく圧縮：予圧縮が範囲の終わりまで済んでいれば、切り出したときの大きさ（1コマごとの表から数える）
       p.probeOver = false;
@@ -1441,7 +1445,7 @@
     return pre && pre.file === state.file && (pre.job || preTimer) ? '（予圧縮中）' : '';
   }
   // 予圧縮の結果を画面に出す。範囲が目標サイズに収まる長さの目安を超えていれば、トリミングの帯を黄色にする。
-  // 予圧縮が済んでいれば、「なるべく圧縮」の下に、押せばすぐ出せる大きさを出す
+  // 予圧縮が済んでいれば、押せばすぐ出せる選択肢（なるべく圧縮・条件を満たせば◯MB以内）の下に、その大きさを出す
   function showPrecompressHints(plan) {
     var idle = !!plan && !state.running && !isCompressed();
     els.trimBox.classList.toggle('is-over', idle && !!plan.probed && plan.fitSec > 0 && plan.duration > plan.fitSec);
@@ -1634,7 +1638,8 @@
         var last = rec.marks[rec.marks.length - 1];
         if (last.t === rec.time && rec.marks.length > 1) last.bytes = end;
         else rec.marks.push({ t: rec.time, bytes: end });
-        try { parseFragments(rec); } catch (e) { rec.samples = null; }   // 読めなければ、割合で数える予想のまま
+        // 表を読めなければ、以後は読まず、割合で数える予想のままにする
+        if (!rec.parseFailed) { try { parseFragments(rec); } catch (e) { rec.parseFailed = true; rec.samples = null; } }
         if (pre === rec && state.file === file && !state.running) refresh();   // 予想を出し直す
       }
     });
