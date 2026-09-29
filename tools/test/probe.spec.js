@@ -111,7 +111,7 @@ test('「◯MB以内」でも下限ビットレートで予圧縮し、範囲を
   expect((await ui(page)).planWarn).not.toMatch(/収まらない/);
   await compress(page);
   const d = await diag(page);
-  expect(d).toMatch(/予圧縮は使わない（「なるべく圧縮」ではない）/);
+  expect(d).toMatch(/予圧縮は使わない（「◯MB以内」で、予圧縮の大きさ（.*）が目標の95%未満）/);   // 10MB の目標に対して小さい
   expect(d).toMatch(/変換を開始/);
 });
 
@@ -221,4 +221,35 @@ test('予圧縮が範囲の終わりまで済んでいれば、切り出した�
     expect(Math.abs(est - size) / size).toBeLessThan(0.003);   // 0.3%以内（実測では 0.01〜0.03%）
     await page.click('#runBtn');   // やり直す
   }
+});
+
+test('「◯MB以内」でも、予圧縮を切り出した大きさが目標の95%以上・目標未満なら、予圧縮をそのまま使い、選択肢の下に出す', async ({ page }) => {
+  await open(page, '?probe=on&mode=size');
+  await pick(page, '720p-60s.mp4');
+  await preDone(page);
+  await setTrim(page, 0, 30);
+  const cut = await pc(page, () => window.__compressor.exactCutBytes(window.__compressor.state.plan, window.__compressor.precomp().pre));
+  // 目標を、切り出した大きさがその 97% になるようにする
+  const target = Math.ceil(cut / 0.97 / 100000) / 10;   // MB（小数1桁）
+  await page.click('details.settings:not(#diagBox) > summary');
+  await page.fill('#targetSize', String(target));
+  await page.dispatchEvent('#targetSize', 'change');
+  const label = (cut / 1000000).toFixed(1) + 'MBで即出力するよ';
+  expect(await page.textContent('#quickNoteSize')).toBe(label);
+  expect(await page.isVisible('#quickNoteSize')).toBe(true);
+  expect(await page.textContent('#quickNote')).toBe(label);   // 「なるべく圧縮」の下にも同じ大きさ
+  await compress(page);
+  const d = await diag(page);
+  expect(d).toMatch(/予圧縮を使う（完了済み）/);
+  expect(d).not.toMatch(/変換を開始/);
+  const size = await pc(page, () => window.__compressor.state.out.blob.size);
+  expect(size).toBeLessThan(target * 1000000);
+  expect(await page.isVisible('#quickNoteSize')).toBe(false);   // 圧縮後は出さない
+
+  // 目標を大きくして 95% 未満になると、使わずに普通に圧縮する（選択肢の下にも出さない）
+  await page.click('#runBtn');   // やり直す
+  await page.fill('#targetSize', String(Math.ceil(target * 1.2)));
+  await page.dispatchEvent('#targetSize', 'change');
+  expect(await page.isVisible('#quickNoteSize')).toBe(false);
+  expect(await page.isVisible('#quickNote')).toBe(true);
 });
