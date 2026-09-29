@@ -27,10 +27,10 @@ test('読み込んだら全体を予圧縮し、実測の平均ビットレー�
   expect(d).toMatch(/予圧縮を開始 720 1280x720 mode=quality 1200kbps fps=60→30/);   // なるべく圧縮は下限ビットレート
   expect(d).toMatch(/予圧縮が完了 /);
   expect(d).not.toMatch(/試し圧縮/);
-  // 予圧縮が済んだら、予想は書き出した量とほぼ同じ。表示のビットレートは実測の平均、秒数は収まる秒数の90%
+  // 予圧縮が済んだら、予想は書き出した量とほぼ同じ。表示のビットレートは実測の平均、秒数は収まる秒数の95%
   const r = await pc(page, () => { const p = window.__compressor.state.plan; return { bytes: window.__compressor.precomp().pre.bytes, est: p.estBytes, bps: p.expectedBps, audio: p.audioBitrate, fit: p.fitSec }; });
   expect(Math.abs(r.est - r.bytes) / r.bytes).toBeLessThan(0.02);
-  expect(r.fit).toBe(Math.floor(20000000 * 8 / (r.bps + r.audio) * 0.9));
+  expect(r.fit).toBe(Math.floor(20000000 * 8 / (r.bps + r.audio) * 0.95));
   const label = r.bps >= 1000000 ? (r.bps / 1000000).toFixed(1) + 'Mbps' : Math.round(r.bps / 1000) + 'kbps';
   expect(u.planInfo).toContain('・' + label + '・予想');
 });
