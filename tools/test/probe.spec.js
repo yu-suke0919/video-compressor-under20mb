@@ -238,6 +238,7 @@ test('「◯MB以内」でも、予圧縮を切り出した大きさが目標の
   expect(await page.textContent('#quickNoteSize')).toBe(label);
   expect(await page.isVisible('#quickNoteSize')).toBe(true);
   expect(await page.textContent('#quickNote')).toBe(label);   // 「なるべく圧縮」の下にも同じ大きさ
+  expect(await pc(page, () => window.__compressor.state.plan.estBytes)).toBe(cut);   // 予想の行も切り出したときの大きさ
   await compress(page);
   const d = await diag(page);
   expect(d).toMatch(/予圧縮を使う（完了済み）/);
