@@ -207,3 +207,18 @@ test('「◯MB以内」の予想は、範囲が目安の長さを超えるかど
   expect(outside.est).toBeGreaterThanOrEqual(inside.est);
   expect(await page.textContent('#planWarn')).toContain('（目安は約' + fit + '秒まで）');
 });
+
+test('予圧縮が範囲の終わりまで済んでいれば、切り出したときの大きさを1コマごとの表から正確に予想する', async ({ page }) => {
+  await open(page, '?probe=on&mode=quality');
+  await pick(page, '720p-60s.mp4');
+  await preDone(page);
+  for (const [a, b] of [[0, 21.4], [10.3, 37.7]]) {   // 区切り（約2秒）の途中で始まり・終わる範囲
+    await setTrim(page, a, b);
+    const est = await pc(page, () => { const p = window.__compressor.state.plan; return p.exactEst ? p.estBytes : null; });
+    expect(est).not.toBe(null);
+    await compress(page);
+    const size = await pc(page, () => window.__compressor.state.out.blob.size);
+    expect(Math.abs(est - size) / size).toBeLessThan(0.003);   // 0.3%以内（実測では 0.01〜0.03%）
+    await page.click('#runBtn');   // やり直す
+  }
+});
