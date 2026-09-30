@@ -288,3 +288,27 @@ test('VBR の指定を守らない端末（Android）でも、予圧縮は VBR �
   const size = await pc(page, () => window.__compressor.state.out.blob.size);
   expect(Math.abs(size - est) / size).toBeLessThan(0.01);
 });
+
+test('指定ビットレートを下げても予圧縮の大きさが変わらなければ、「この端末ではこれ以上ビットレートを下げられないみたいです。」と出す', async ({ page }) => {
+  // 3Mbps より下げられないエンコーダー（Android の実機では約2.4Mbps より下がらなかった）
+  await page.addInitScript(() => {
+    const orig = VideoEncoder.prototype.configure;
+    VideoEncoder.prototype.configure = function (c) { return orig.call(this, c.bitrate ? Object.assign({}, c, { bitrate: Math.max(c.bitrate, 3000000) }) : c); };
+  });
+  await open(page, '?probe=on&mode=quality&audio=off');
+  await pick(page, '720p-60s.mp4');
+  await preDone(page);
+  expect((await ui(page)).planWarn).not.toContain('下げられない');
+  await page.click('details.settings:not(#diagBox) > summary');
+  await page.fill('#minRate720', '800');   // 1200kbps → 800kbps
+  await page.waitForFunction(() => (document.getElementById('diagOut').value.match(/予圧縮が完了/g) || []).length >= 2, null, { timeout: 120000 });
+  expect(await diag(page)).toMatch(/指定ビットレートを下げても小さくならない（1\.2Mbps .+ → 800kbps .+）/);
+  expect((await ui(page)).planWarn).toContain('この端末ではこれ以上ビットレートを下げられないみたいです。');
+
+  // 「◯MB以内」で収まらないときは、指定ビットレートを下げる案内の代わりに出す
+  await page.evaluate(() => { const s = document.getElementById('modeSize'); s.checked = true; s.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.fill('#targetSize', '3');
+  const w = (await ui(page)).planWarn;
+  expect(w).toContain('目標サイズに圧縮できません。この端末ではこれ以上ビットレートを下げられないみたいです。');
+  expect(w).not.toContain('指定ビットレートを引き下げてください');
+});
