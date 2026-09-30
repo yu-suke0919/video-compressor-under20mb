@@ -25,3 +25,14 @@ test('手元の動画でも試せる', async ({ page }) => {
   expect(results.filter(r => r.status === 'ng')).toEqual([]);
   expect(results[0].title).toContain('1280×720');
 });
+
+test('予圧縮のテストが最後まで動き、失敗がない', async ({ page }) => {
+  test.setTimeout(10 * 60 * 1000);
+  await page.goto('/selftest.html');
+  await page.click('#preBtn');
+  await page.waitForFunction(() => /^6\/6 件完了/.test(document.getElementById('summary').textContent), null, { timeout: 9 * 60 * 1000 });
+  const results = await page.evaluate(() => window.__selftest.results.map(r => ({ title: r.title, status: r.status, detail: r.detail })));
+  console.log(await page.evaluate(() => window.__selftest.resultText()));
+  expect(results.filter(r => r.status === 'ng')).toEqual([]);
+  expect(results.filter(r => r.status === 'ok').length).toBeGreaterThanOrEqual(4);
+});
