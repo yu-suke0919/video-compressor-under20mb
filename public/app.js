@@ -59,7 +59,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-29w';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-30a';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1369,11 +1369,13 @@
   var PRE_DELAY_MS = 1500;           // 設定を変えてから予圧縮をやり直すまで待つ（続けて変えたときに何度もやり直さない）
   var PRE_FRAGMENT_SEC = 1;          // 予圧縮の書き出しの区切りの最短の長さ（実際はキーフレームごと＝約2秒ごとに書き出される）
   var PRE_TAIL_SEC = 1;              // 範囲の終わりからこれだけ先まで書き出せたら、範囲の終わりまで書き出せたとみる
+  var PRE_CBR_CHECK_SEC = 4;         // 予圧縮がここまで進んだら、VBR の指定を守っているかを確かめる（下の preOvershoot）
   // URL に probe=off があれば予圧縮しない（自動テスト・自己テストで、本番の圧縮だけを確かめるため）
   var PROBE_OFF = /[?&]probe=off\b/.test(location.search);
   // pre … { file, key, plan, enc, job, chunks, bytes, marks: [{ t: 書き出したときの進み（秒）, bytes: そこまでの量 }],
-  //         time: 進み（秒）, done, failed, audioLost, t0 }
-  var pre = null, preTimer = null;
+  //         time: 進み（秒）, done, failed, audioLost, t0, cbrChecked }
+  // preCbrFile … VBR の指定を守らなかった動画（この動画の予圧縮は、設定を変えても最初から CBR で行う）
+  var pre = null, preTimer = null, preCbrFile = null;
 
   function canProbe() {
     return !PROBE_OFF && !!(state.file && state.meta) && state.engine === 'fast' && !state.running && !state.busy && !isCompressed() &&
@@ -1637,6 +1639,7 @@
   // 予圧縮。書き出しは区切りごと（fragmented MP4）に受け取って持っておく（途中で止めても、区切りまでは読める）
   function startPre(pp, key) {
     var file = state.file;
+    if (preCbrFile === file && !pp.preferCbr) pp = Object.assign({}, pp, { preferCbr: true });
     var rec = pre = { file: file, key: key, plan: pp, job: newJob(), chunks: [], bytes: 0, marks: [{ t: 0, bytes: 0 }],
       time: 0, done: false, failed: false, audioLost: false, t0: Date.now() };
     var job = rec.job;
@@ -1652,6 +1655,7 @@
         else rec.marks.push({ t: rec.time, bytes: end });
         // 表を読めなければ、以後は読まず、割合で数える予想のままにする
         if (!rec.parseFailed) { try { parseFragments(rec); } catch (e) { rec.parseFailed = true; rec.samples = null; } }
+        if (checkPreOvershoot(rec)) return;
         if (pre === rec && state.file === file && !state.running) refresh();   // 予想を出し直す
       }
     });
@@ -1675,6 +1679,7 @@
       rec.marks[rec.marks.length - 1].t = pp.duration;   // 最後の書き出しは、動画の終わりまでの分
       rec.done = true;
       log('予圧縮が完了 ' + fmtBytes(rec.bytes) + '（' + secondsSince(rec.t0) + '）');
+      checkPreOvershoot(rec);   // 短い動画（確かめる秒数まで届かなかった）
     }, function (err) {
       if (isCancel(job, err)) return;
       rec.failed = true;   // 同じ設定では何度もやり直さない
@@ -1683,6 +1688,31 @@
       if (rec.job === job) rec.job = null;
       if (pre === rec && state.file === file && !state.running) refresh();
     });
+  }
+  // Android の一部の端末は、VBR の指定を守らず、下限の約2倍以上で書き出す。本番の「なるべく圧縮」はそのとき CBR で
+  // 圧縮し直す（retryQualityWithCbr）ので、予圧縮も CBR でやり直す（そのままでは、切り出しても圧縮し直しになり、予想も合わない）。
+  // やり直したら true。圧縮中（予圧縮を切り出しに使っている）ときはやり直さない（本番の方で CBR で圧縮し直す）
+  function checkPreOvershoot(rec) {
+    if (rec.cbrChecked || rec.plan.preferCbr || !rec.enc || rec.enc.bitrateMode !== 'variable' || isIOS()) return false;
+    var last = rec.marks[rec.marks.length - 1];
+    if (!rec.done && !(last.t >= PRE_CBR_CHECK_SEC)) return false;
+    rec.cbrChecked = true;
+    var bps = last.t > 0 ? last.bytes * 8 / last.t - rec.plan.audioBitrate : 0;
+    if (bps < rec.plan.videoBitrate * QUALITY_CBR_OVERSHOOT || pre !== rec || state.running) return false;
+    log('予圧縮で指定より大きく書き出した（映像 ' + fmtRate(bps) + '／指定 ' + fmtRate(rec.plan.videoBitrate) + '）→ 固定ビットレート（CBR）でやり直し');
+    preCbrFile = rec.file;
+    var job = rec.job;
+    rec.job = null;
+    rec.failed = true;   // 使わない（やり直しが始まる前に押されたら、普通に圧縮する）
+    setTimeout(function () {
+      if (job) stopJob(job, CANCELLED);
+      Promise.resolve(job && job.stopped).then(function () {
+        if (pre !== rec) return;
+        pre = null;
+        if (state.file === rec.file && !state.running) refresh();   // CBR で予圧縮を始める
+      });
+    }, 0);
+    return true;
   }
   function stopPre(why) {
     if (preTimer) { clearTimeout(preTimer.id); preTimer = null; }
