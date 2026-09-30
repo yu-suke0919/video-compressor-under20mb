@@ -53,7 +53,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-30c';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-30d';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -2472,9 +2472,14 @@
         // 下限を下回る値は下限に揃え、それ以上下げられないならやめる
         if (next) next = Math.max(next, plan.floorBitrate);
         // 圧縮し直しても小さくならなかったら、ビットレートを下げても減らない見込みなので、それ以上は圧縮し直さない
+        // （前回の方が小さければ、前回の結果を使う）
         if (index > 0 && prevSize > 0 && res.blob.size > prevSize * (1 - MIN_SHRINK)) {
           log('圧縮し直しても小さくならないため、圧縮し直しをやめる');
-          return null;
+          if (!lastGood || lastGood.res.blob.size > res.blob.size) return null;
+          log('前回の結果の方が小さいため、前回の結果を使う');
+          plan = lastGood.plan;
+          lastGood.res.attempts = index;
+          return Promise.resolve(lastGood.res);
         }
         if (!next || next >= plan.videoBitrate) return null;
         lastGood = { res: res, plan: plan };

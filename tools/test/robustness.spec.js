@@ -319,6 +319,26 @@ test.describe('エンコーダーが可変ビットレートの指定を守ら�
     expect(u.outWarn).toContain('目標サイズに圧縮できません');
   });
 
+  test('◯MB以内で圧縮し直してかえって大きくなったら、前回の小さい方の結果を使う', async ({ page }) => {
+    // 指定を下げるほど大きく書き出すエンコーダー
+    await page.addInitScript(() => {
+      const orig = VideoEncoder.prototype.configure;
+      VideoEncoder.prototype.configure = function (c) { return orig.call(this, c.bitrate ? Object.assign({}, c, { bitrate: 12000000 - c.bitrate }) : c); };
+    });
+    await open(page, '?mode=size&target=3&audio=off');
+    await pick(page, '720p-60s.mp4');
+    await setTrim(page, 0, 10);
+    await compress(page);
+    const u = await ui(page);
+    expect(u.diag).toContain('圧縮し直しても小さくならないため、圧縮し直しをやめる');
+    expect(u.diag).toContain('前回の結果の方が小さいため、前回の結果を使う');
+    const sizes = [...u.diag.matchAll(/完了 ([\d.]+) MB/g)].map(m => Number(m[1]));
+    expect(sizes).toHaveLength(2);
+    expect(sizes[1]).toBeGreaterThan(sizes[0]);
+    expect((await outputInfo(page)).size / 1e6).toBeCloseTo(sizes[0], 1);
+    expect(u.outWarn).toContain('目標サイズに圧縮できません');
+  });
+
   test('ハードウェアの VBR が使えない端末では、ハードウェアの CBR を使う', async ({ page }) => {
     // ハードウェアは CBR だけ使える（テストの Chrome にはハードウェアがないので、ソフトウェアで代わりに動かす）
     await page.addInitScript(() => {
