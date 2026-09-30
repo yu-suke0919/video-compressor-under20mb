@@ -321,7 +321,7 @@
     { title: '目標以下なら元の動画をそのまま渡す', video: 'v720', query: 'res=720&mode=size&target=20', noRun: true, expect: { w: 1280, h: 720, original: true } },
     { title: 'トリミング（2〜5秒）', video: 'v720', query: 'res=720&mode=quality', trim: [2, 5], expect: { w: 1280, h: 720, duration: 3 } },
     // 目標に収まるので、再エンコードせずに切り出す（区切りはキーフレームに合わせて広がることがある）
-    { title: 'トリミングのみ（再圧縮なし）', video: 'v720', query: 'res=720&mode=size&target=20', trim: [2, 5], expect: { w: 1280, h: 720, trimOnly: true, duration: 3, durationTol: 1.2 } },
+    { title: 'トリミングのみ（再圧縮なし）', video: 'v720', query: 'res=720&mode=size&target=20', trim: [2, 5], expect: { w: 1280, h: 720, trimOnly: true, duration: 3 } },
     { title: '1080p60 → 720p30', video: 'v1080p60', query: 'res=720&mode=quality', expect: { w: 1280, h: 720, fps: 30, audio: true } },
     { title: '1080p60 → 1080p60（fps そのまま）', video: 'v1080p60', query: 'res=1080&mode=quality&fps=source', expect: { w: 1920, h: 1080, fps: 60, audio: true } },
     { title: '縦長 → 720p', video: 'vVert', query: 'res=720&mode=quality', expect: { w: 720, h: 1280, audio: true } },
@@ -595,13 +595,13 @@
     var bps = pre.done && pre.plan.duration ? pre.bytes * 8 / pre.plan.duration - pre.plan.audioBitrate : 0;
     return bps > pre.plan.videoBitrate * 1.5 ? '・エンコーダーが指定より大きく書き出した（映像 ' + (bps / 1e6).toFixed(2) + 'Mbps）' : '';
   }
-  // 書き出した動画を確かめる（解像度・音声・長さ）。e.duration … 範囲の長さ、e.early … 始まりが早まってよい秒数
-  // （予圧縮から切り出すと、始まりはキーフレーム（2秒ごと）に合わせて早まることがある）
+  // 書き出した動画を確かめる（解像度・音声・長さ）。e.duration … 範囲の長さ
+  // （予圧縮から切り出すと、ファイルにはキーフレームから入るが、範囲の始まりより前は再生されないので、長さは範囲どおり）
   function checkPreOutput(info, source, e, problems) {
     if (info.w !== 1280 || info.h !== 720) problems.push('解像度が ' + info.w + '×' + info.h + '（正しくは 1280×720）');
     if (source.audio && (source.audio === 'AAC' || appState().caps.aac) && !info.audio) problems.push('音声が消えた');
     if (info.audio && info.audioOk === false) problems.push('書き出した音声を読めない（' + (info.audioCodec || info.audio) + '）');
-    if (e.duration && (info.duration < e.duration - 0.3 || info.duration > e.duration + (e.early || 0.6))) {
+    if (e.duration && Math.abs(info.duration - e.duration) > 0.3) {
       problems.push('長さが ' + info.duration.toFixed(1) + '秒（正しくは約' + e.duration + '秒）');
     }
   }
@@ -652,19 +652,19 @@
         else {
           var info = await inspect(s.out.blob);
           r.detail = describe(info) + '・' + sec + 'で完了・予想 ' + fmtMB(est) + '（実際との差 ' + diffPct(info.size, est) + '）';
-          checkPreOutput(info, source, { duration: 10.3, early: 2.3 }, problems);
+          checkPreOutput(info, source, { duration: 10.3 }, problems);
           if (Math.abs(info.size / est - 1) > 0.03) warns.push('予想と実際の大きさが3%以上ずれた');
         }
         judge(r, problems, warns);
       }
     },
     {
-      title: '予圧縮の途中で押しても、範囲（6〜11秒）の始まりを越えていれば、範囲の終わりまで続けて使う',
+      title: '予圧縮の途中で押しても、範囲（6.5〜11.5秒）の始まりを越えていれば、範囲の終わりまで続けて使う',
       run: async function (source, r) {
         var s = await openAndPick(PRE_QUERY, source.file, r, true);
         if (!s) return;
-        setTrim(6, 11);
-        await waitFor(function () { var p = appPre(); return p && p.file === s.file && (p.done || p.failed || p.time >= 6.5); }, PRE_TIMEOUT_MS, '予圧縮', 20);
+        setTrim(6.5, 11.5);
+        await waitFor(function () { var p = appPre(); return p && p.file === s.file && (p.done || p.failed || p.time >= 7); }, PRE_TIMEOUT_MS, '予圧縮', 20);
         var pre = appPre(), at = pre.time, problems = [], warns = [];
         if (pre.failed) return fail(r, '予圧縮に失敗した');
         await runInApp(COMPRESS_TIMEOUT_MS);
@@ -677,7 +677,7 @@
         else {
           var info = await inspect(s.out.blob);
           r.detail = describe(info) + '・押したとき予圧縮 ' + at.toFixed(1) + '秒まで';
-          checkPreOutput(info, source, { duration: 5, early: 2.3 }, problems);
+          checkPreOutput(info, source, { duration: 5 }, problems);
         }
         judge(r, problems, warns);
       }

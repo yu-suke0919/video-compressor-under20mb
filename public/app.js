@@ -53,7 +53,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-30g';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-30h';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1606,7 +1606,8 @@
     });
   }
   // 範囲を切り出したときの大きさ（バイト）。予圧縮がまだ範囲の終わりまで届いていなければ null
-  //   映像の始まりは、切り出すときと同じく、範囲の始まり以前でいちばん近いキーフレームまで早める（音声は範囲の始まりから）
+  //   映像は、切り出すときと同じく、範囲の始まり以前でいちばん近いキーフレームから数える（音声は範囲の始まりから）。
+  //   キーフレームから範囲の始まりまでは再生されないが、ファイルには入る
   function exactCutBytes(plan, rec) {
     var v = rec.samples && rec.samples.video;
     if (!v || !v.length) return null;
@@ -1733,7 +1734,8 @@
             input: inp, output: output, video: {},
             audio: plan.audio.mode === 'none' ? { discard: true } : {},
             trim: { start: plan.trimStart, end: plan.trimEnd },
-            // 区切りはキーフレームに合わせて広げる（開始が最大2秒早まることがある）
+            // 始まりはキーフレーム（最大2秒前）から入れる。範囲の始まりより前は、エディットリストで再生しないようにする
+            // （Mediabunny が書く。再生される始まりと長さは範囲どおり）
             copy: { mode: 'forced', boundaryPolicy: 'expand', shiftTolerance: Infinity },
             tags: outputTags, showWarnings: false
           };
@@ -1824,7 +1826,8 @@
           video: {},
           audio: plan.audio.mode === 'none' ? { discard: true } : {},
           trim: { start: plan.trimStart, end: plan.trimEnd },
-          // 区切りはキーフレームに合わせて広げる（開始が少し早まることがある）
+          // 始まりはキーフレームから入れる。範囲の始まりより前は、エディットリストで再生しないようにする
+          // （Mediabunny が書く。再生される始まりと長さは範囲どおり）
           copy: { mode: 'forced', boundaryPolicy: 'expand', shiftTolerance: Infinity },
           tags: outputTags,
           showWarnings: false
@@ -2711,7 +2714,7 @@
         (res.rateMode && !isWebKit() ? (res.rateMode === 'variable' ? '・VBR' : '・CBR') : '') +
         (plan.audio.mode === 'none' && plan.wantAudio ? '・音声なし' : '') + (engine === 'compat' ? '・互換モード' : '');
     }
-    // まず範囲の長さで出し、書き出した動画の長さが分かったら出し直す（予圧縮から切り出すと、始まりが少し早まることがある）
+    // まず範囲の長さで出し、書き出した動画の長さが分かったら出し直す（コマの区切りの分、範囲の長さとわずかに違うことがある）
     els.outInfo.textContent = info(plan.duration);
     var out = state.out;
     blobDuration(res.blob).then(function (d) {

@@ -14,6 +14,12 @@ const outDuration = page => page.evaluate(async () => {
   const input = new M.Input({ source: new M.BlobSource(out.blob), formats: [M.MP4] });
   return input.computeDuration();
 });
+// 書き出した動画の映像の最初のコマの時刻（秒。負なら、その分は再生されない）
+const videoStart = page => page.evaluate(async () => {
+  const M = window.Mediabunny, out = window.__compressor.state.out;
+  const input = new M.Input({ source: new M.BlobSource(out.blob), formats: [M.MP4] });
+  return (await input.getPrimaryVideoTrack()).getFirstTimestamp();
+});
 
 test('読み込んだら全体を予圧縮し、実測の平均ビットレート・予想・目標サイズに収まる秒数を出す', async ({ page }) => {
   await open(page, '?probe=on&mode=quality');
@@ -39,7 +45,7 @@ test('「なるべく圧縮」で、予圧縮が済んでいれば、押した�
   await open(page, '?probe=on&mode=quality');
   await pick(page, '720p-60s.mp4');
   await preDone(page);
-  await setTrim(page, 10, 30);   // 「なるべく圧縮」では、範囲を変えても予圧縮はやり直さない
+  await setTrim(page, 10.7, 30.7);   // 「なるべく圧縮」では、範囲を変えても予圧縮はやり直さない（始まりはキーフレームの間）
   expect((await ui(page)).planInfo).toMatch(/（予圧縮済み）/);
   const est = await pc(page, () => window.__compressor.state.plan.estBytes);
   await compress(page);
@@ -52,8 +58,10 @@ test('「なるべく圧縮」で、予圧縮が済んでいれば、押した�
   expect(u.hasOut).toBe(true);
   expect(u.outWarn).toBe('');
   const dur = await outDuration(page);
-  expect(dur).toBeGreaterThanOrEqual(19.9);
-  expect(dur).toBeLessThanOrEqual(22.1);   // 始まりはキーフレームに合わせて最大2秒早まる
+  // ファイルにはキーフレーム（10秒）から入るが、範囲の始まりより前は再生されないので、長さは範囲どおり
+  expect(dur).toBeGreaterThanOrEqual(19.8);
+  expect(dur).toBeLessThanOrEqual(20.2);
+  expect(await videoStart(page)).toBeLessThan(-0.5);   // 再生しない部分（キーフレームから範囲の始まりまで）
   const size = await pc(page, () => window.__compressor.state.out.blob.size);
   expect(Math.abs(size - est) / size).toBeLessThan(0.15);
   // 結果の欄のビットレートは、書き出した大きさと動画の長さから求めた実際の値
@@ -66,7 +74,7 @@ test('「なるべく圧縮」で、予圧縮が済んでいれば、押した�
 test('予圧縮の途中で押しても、範囲の始まりを越えていれば、範囲の終わりまで続けて使う', async ({ page }) => {
   await open(page, '?probe=on&mode=quality');
   await pick(page, '720p-60s.mp4');
-  await setTrim(page, 2, 20);
+  await setTrim(page, 2.5, 20.5);
   await waitPc(page, () => { const p = window.__compressor.precomp().pre; return p && !p.done && p.time >= 3; });
   await compress(page);
   const d = await diag(page);
@@ -74,8 +82,8 @@ test('予圧縮の途中で押しても、範囲の始まりを越えていれ�
   expect(d).toMatch(/予圧縮を範囲の終わりで止める/);
   expect(d).not.toMatch(/変換を開始/);
   const dur = await outDuration(page);
-  expect(dur).toBeGreaterThanOrEqual(17.9);
-  expect(dur).toBeLessThanOrEqual(20.1);
+  expect(dur).toBeGreaterThanOrEqual(17.8);
+  expect(dur).toBeLessThanOrEqual(18.2);
 });
 
 test('予圧縮が範囲の始まりまで届いていなければ、使わずに範囲だけを圧縮する', async ({ page }) => {
