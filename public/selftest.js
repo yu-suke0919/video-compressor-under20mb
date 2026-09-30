@@ -320,7 +320,7 @@
     // 読み込んだ時点で元の動画を渡せるようになる（「圧縮する」は押さない）
     { title: '目標以下なら元の動画をそのまま渡す', video: 'v720', query: 'res=720&mode=size&target=20', noRun: true, expect: { w: 1280, h: 720, original: true } },
     { title: 'トリミング（2〜5秒）', video: 'v720', query: 'res=720&mode=quality', trim: [2, 5], expect: { w: 1280, h: 720, duration: 3 } },
-    // 目標に収まるので、再エンコードせずに切り出す（区切りはキーフレームに合わせて広がることがある）
+    // 目標に収まるので、再エンコードせずに切り出す（範囲の始まりより前はファイルに入るが再生されないので、長さは範囲どおり）
     { title: 'トリミングのみ（再圧縮なし）', video: 'v720', query: 'res=720&mode=size&target=20', trim: [2, 5], expect: { w: 1280, h: 720, trimOnly: true, duration: 3 } },
     { title: '1080p60 → 720p30', video: 'v1080p60', query: 'res=720&mode=quality', expect: { w: 1280, h: 720, fps: 30, audio: true } },
     { title: '1080p60 → 1080p60（fps そのまま）', video: 'v1080p60', query: 'res=1080&mode=quality&fps=source', expect: { w: 1920, h: 1080, fps: 60, audio: true } },
