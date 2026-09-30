@@ -629,7 +629,7 @@
           if (!plan.exactEst) warns.push('区切りの表を読めず、割合で予想した');
           if (plan.estBytes && Math.abs(plan.estBytes / pre.bytes - 1) > 0.03) warns.push('予想が予圧縮の大きさとずれている');
           r.detail = '予圧縮 ' + fmtMB(pre.bytes) + '（' + sec + '）・予想 ' + fmtMB(plan.estBytes) + '・映像 ' + (plan.expectedBps / 1e6).toFixed(2) +
-            'Mbps・約' + plan.fitSec + '秒まで20MB' + overNote(pre) + '・' + appText('planInfo');
+            'Mbps・約' + plan.fitSec + '秒まで20MB' + overNote(pre) + '・' + appText('planInfo').replace(/\n/g, '・');
           ctx.ready = s;   // 次のテストは、この画面のまま続ける
         }
         judge(r, problems, warns);
@@ -745,7 +745,7 @@
       }
     },
     {
-      title: '設定を変えたら予圧縮をやり直し、新しい設定の予圧縮を使う（下限ビットレートを1500kbpsに）',
+      title: '設定を変えたら予圧縮をやり直し、新しい設定の予圧縮を使う（指定ビットレートを1500kbpsに）',
       run: async function (source, r) {
         var s = await openAndPick(PRE_QUERY, source.file, r, true);
         if (!s) return;

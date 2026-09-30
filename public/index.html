@@ -588,6 +588,7 @@
     min-height: 1.2em;
     line-height: 1.35;
   }
+  #planInfo { white-space: pre-line; }   /* 目標サイズに収まる長さの目安は次の行に出す */
 
   /* トリミング（2本のレンジを重ね、つまみの部分だけ触れるようにする） */
   /* つまみを画面の端から離す（iPhoneの「端からスワイプで戻る」と重ならないように）。
@@ -948,14 +949,14 @@
     </div>
     <p class="hint">目標サイズの97%（<span id="capLabel">19.4 MB</span>）を狙って圧縮し、目標サイズ未満に収まらなければ自動で圧縮し直します（1MB＝100万バイト）。</p>
     <div class="row" style="margin-top: 8px">
-      <label for="minRate720">下限ビットレート（720p）</label>
+      <label for="minRate720">指定ビットレート（720p）</label>
       <span><input id="minRate720" type="number" inputmode="numeric" min="100" max="50000" step="100" value="1200"> kbps</span>
     </div>
     <div class="row" style="margin-top: 6px">
-      <label for="minRate1080">下限ビットレート（1080p）</label>
+      <label for="minRate1080">指定ビットレート（1080p）</label>
       <span><input id="minRate1080" type="number" inputmode="numeric" min="100" max="50000" step="100" value="2700"> kbps</span>
     </div>
-    <p class="hint">「なるべく圧縮」はこの値で圧縮します。「MB以内に圧縮」は、この値を下回らない範囲で目標サイズに収まるなるべく高いビットレートにします。「元の解像度」のときは、720pの値を画素数に比例させて使います。60fpsのまま圧縮するときは、この値の1.5倍を使います。</p>
+    <p class="hint">「なるべく圧縮」はこの値で圧縮します（端末によっては、これより下げられず大きくなることがあります）。「MB以内に圧縮」は、この値を下回らない範囲で目標サイズに収まるなるべく高いビットレートにします。「元の解像度」のときは、720pの値を画素数に比例させて使います。60fpsのまま圧縮するときは、この値の1.5倍を使います。</p>
     <div class="check">
       <input type="checkbox" id="halfFps" checked>
       <label for="halfFps">60fpsの動画は30fpsにする（容量を抑えられます）</label>
