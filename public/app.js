@@ -47,19 +47,13 @@
   var DEFAULT_FPS = 30;
   var MAX_FPS = 60;
   var MAX_ATTEMPTS = 3;                  // 初回 + 最大2回の再圧縮
-  // 可変ビットレート（VBR）で書き出した結果が、指定のビットレートよりこれ以上大きい、
-  // または圧縮し直しても MIN_SHRINK 以上小さくならないなら、エンコーダーが指定を守っていない（Android の実機であった）。
-  // 次の再圧縮から固定ビットレート（CBR）にする
-  var CBR_OVERSHOOT = 1.2;
+  // 「◯MB以内」で圧縮し直しても、前回よりこの割合以上小さくならなければ、それ以上は圧縮し直さない
+  // （VBR の指定を守らず、ビットレートを下げても小さくならないエンコーダーがある。Android の実機であった）
   var MIN_SHRINK = 0.05;
-  // 「なるべく圧縮」（目標サイズなし）では、VBR の結果が指定の約2倍以上になったときだけ、CBR でもう一度圧縮して小さい方を使う。
-  // CBR はソフトウェアのエンコーダーになることがあり、時間が2〜3倍かかるので、短い動画（この秒数以内）だけにする
-  var QUALITY_CBR_OVERSHOOT = 1.8;
-  var QUALITY_CBR_MAX_SECONDS = 20;
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-30a';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-30b';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -920,9 +914,8 @@
     };
   }
 
-  // 計画の音声のバイト数と、書き出した動画の映像ビットレートの実測値（音声のぶんを引く）
+  // 計画の音声のバイト数
   function audioBytesOf(plan) { return plan.audioBitrate * plan.duration / 8; }
-  function videoBpsOf(res, plan) { return Math.round((res.blob.size - audioBytesOf(plan)) * 8 / plan.duration); }
 
   // 書き出した実サイズから、目標に収まる映像ビットレートを計算し直す（無理なら null）
   function nextBitrate(plan, videoBytes, audioBytes) {
@@ -1190,23 +1183,19 @@
 
   // ---------------------------------------------------------------- 高速モード（Mediabunny Conversion）
   function encKey(c) { return c.codec + '/' + c.hw + '/' + c.bitrateMode; }
+  // エンコーダーの候補の順番（高速モード・互換モードで共通）。
+  // ハードウェアの可変ビットレート（VBR）→ ハードウェアの VBR が使えないときだけハードウェアの固定ビットレート（CBR）→
+  // ソフトウェア（ブラウザに任せる）の VBR。どのモードでも、指定を守らないエンコーダーでも、CBR で圧縮し直すことはしない
+  // （サイズは予圧縮で実際に書き出した量から予想する）
+  var ENCODER_ORDER = [
+    { hw: 'prefer-hardware', bitrateMode: 'variable' },
+    { hw: 'prefer-hardware', bitrateMode: 'constant' },
+    { hw: 'no-preference', bitrateMode: 'variable' }
+  ];
   function pickFastEncoding(plan) {
-    // 可変ビットレート（VBR）を優先し、使えなければ固定ビットレート（CBR）にする。
-    // plan.preferCbr（VBR では指定のサイズに収まらなかった）なら CBR を優先する
-    // （CBR を優先するときは、ハードウェアの CBR が使えなければ、ハードウェアの VBR より先にソフトウェアの CBR を試す。
-    //   Android の実機で、ハードウェアは VBR しか使えず、VBR ではビットレートを下げても小さくならなかった）
-    var hws = ['prefer-hardware', 'no-preference'];
     var cands = [];
     FAST_VIDEO_CODECS.forEach(function (codec) {
-      if (plan.preferCbr) {
-        ['constant', 'variable'].forEach(function (bm) {
-          hws.forEach(function (hw) { cands.push({ codec: codec, hw: hw, bitrateMode: bm }); });
-        });
-      } else {
-        hws.forEach(function (hw) {
-          ['variable', 'constant'].forEach(function (bm) { cands.push({ codec: codec, hw: hw, bitrateMode: bm }); });
-        });
-      }
+      ENCODER_ORDER.forEach(function (o) { cands.push({ codec: codec, hw: o.hw, bitrateMode: o.bitrateMode }); });
     });
     return (function next(i) {
       if (i >= cands.length) return Promise.resolve(null);
@@ -1369,13 +1358,11 @@
   var PRE_DELAY_MS = 1500;           // 設定を変えてから予圧縮をやり直すまで待つ（続けて変えたときに何度もやり直さない）
   var PRE_FRAGMENT_SEC = 1;          // 予圧縮の書き出しの区切りの最短の長さ（実際はキーフレームごと＝約2秒ごとに書き出される）
   var PRE_TAIL_SEC = 1;              // 範囲の終わりからこれだけ先まで書き出せたら、範囲の終わりまで書き出せたとみる
-  var PRE_CBR_CHECK_SEC = 4;         // 予圧縮がここまで進んだら、VBR の指定を守っているかを確かめる（下の preOvershoot）
   // URL に probe=off があれば予圧縮しない（自動テスト・自己テストで、本番の圧縮だけを確かめるため）
   var PROBE_OFF = /[?&]probe=off\b/.test(location.search);
   // pre … { file, key, plan, enc, job, chunks, bytes, marks: [{ t: 書き出したときの進み（秒）, bytes: そこまでの量 }],
-  //         time: 進み（秒）, done, failed, audioLost, t0, cbrChecked }
-  // preCbrFile … VBR の指定を守らなかった動画（この動画の予圧縮は、設定を変えても最初から CBR で行う）
-  var pre = null, preTimer = null, preCbrFile = null;
+  //         time: 進み（秒）, done, failed, audioLost, t0 }
+  var pre = null, preTimer = null;
 
   function canProbe() {
     return !PROBE_OFF && !!(state.file && state.meta) && state.engine === 'fast' && !state.running && !state.busy && !isCompressed() &&
@@ -1639,7 +1626,6 @@
   // 予圧縮。書き出しは区切りごと（fragmented MP4）に受け取って持っておく（途中で止めても、区切りまでは読める）
   function startPre(pp, key) {
     var file = state.file;
-    if (preCbrFile === file && !pp.preferCbr) pp = Object.assign({}, pp, { preferCbr: true });
     var rec = pre = { file: file, key: key, plan: pp, job: newJob(), chunks: [], bytes: 0, marks: [{ t: 0, bytes: 0 }],
       time: 0, done: false, failed: false, audioLost: false, t0: Date.now() };
     var job = rec.job;
@@ -1655,7 +1641,6 @@
         else rec.marks.push({ t: rec.time, bytes: end });
         // 表を読めなければ、以後は読まず、割合で数える予想のままにする
         if (!rec.parseFailed) { try { parseFragments(rec); } catch (e) { rec.parseFailed = true; rec.samples = null; } }
-        if (checkPreOvershoot(rec)) return;
         if (pre === rec && state.file === file && !state.running) refresh();   // 予想を出し直す
       }
     });
@@ -1679,7 +1664,6 @@
       rec.marks[rec.marks.length - 1].t = pp.duration;   // 最後の書き出しは、動画の終わりまでの分
       rec.done = true;
       log('予圧縮が完了 ' + fmtBytes(rec.bytes) + '（' + secondsSince(rec.t0) + '）');
-      checkPreOvershoot(rec);   // 短い動画（確かめる秒数まで届かなかった）
     }, function (err) {
       if (isCancel(job, err)) return;
       rec.failed = true;   // 同じ設定では何度もやり直さない
@@ -1688,31 +1672,6 @@
       if (rec.job === job) rec.job = null;
       if (pre === rec && state.file === file && !state.running) refresh();
     });
-  }
-  // Android の一部の端末は、VBR の指定を守らず、下限の約2倍以上で書き出す。本番の「なるべく圧縮」はそのとき CBR で
-  // 圧縮し直す（retryQualityWithCbr）ので、予圧縮も CBR でやり直す（そのままでは、切り出しても圧縮し直しになり、予想も合わない）。
-  // やり直したら true。圧縮中（予圧縮を切り出しに使っている）ときはやり直さない（本番の方で CBR で圧縮し直す）
-  function checkPreOvershoot(rec) {
-    if (rec.cbrChecked || rec.plan.preferCbr || !rec.enc || rec.enc.bitrateMode !== 'variable' || isIOS()) return false;
-    var last = rec.marks[rec.marks.length - 1];
-    if (!rec.done && !(last.t >= PRE_CBR_CHECK_SEC)) return false;
-    rec.cbrChecked = true;
-    var bps = last.t > 0 ? last.bytes * 8 / last.t - rec.plan.audioBitrate : 0;
-    if (bps < rec.plan.videoBitrate * QUALITY_CBR_OVERSHOOT || pre !== rec || state.running) return false;
-    log('予圧縮で指定より大きく書き出した（映像 ' + fmtRate(bps) + '／指定 ' + fmtRate(rec.plan.videoBitrate) + '）→ 固定ビットレート（CBR）でやり直し');
-    preCbrFile = rec.file;
-    var job = rec.job;
-    rec.job = null;
-    rec.failed = true;   // 使わない（やり直しが始まる前に押されたら、普通に圧縮する）
-    setTimeout(function () {
-      if (job) stopJob(job, CANCELLED);
-      Promise.resolve(job && job.stopped).then(function () {
-        if (pre !== rec) return;
-        pre = null;
-        if (state.file === rec.file && !state.running) refresh();   // CBR で予圧縮を始める
-      });
-    }, 0);
-    return true;
   }
   function stopPre(why) {
     if (preTimer) { clearTimeout(preTimer.id); preTimer = null; }
@@ -1882,17 +1841,15 @@
   // ---------------------------------------------------------------- 互換モード（再生しながら取り込み）
   function findCompatVideoConfig(plan, job) {
     var cands = [];
-    ['prefer-hardware', 'no-preference'].forEach(function (accel) {
-      ['variable', 'constant'].forEach(function (mode) {
-        COMPAT_VIDEO_CODECS.forEach(function (c) {
-          var cfg = {
-            codec: c.codec, width: plan.width, height: plan.height, bitrate: plan.videoBitrate,
-            framerate: Math.round(plan.outFps) || DEFAULT_FPS, hardwareAcceleration: accel, latencyMode: 'quality'
-          };
-          Object.keys(c.extra).forEach(function (k) { cfg[k] = c.extra[k]; });
-          if (mode) cfg.bitrateMode = mode;
-          cands.push({ config: cfg, mb: c.mb });
-        });
+    ENCODER_ORDER.forEach(function (o) {
+      COMPAT_VIDEO_CODECS.forEach(function (c) {
+        var cfg = {
+          codec: c.codec, width: plan.width, height: plan.height, bitrate: plan.videoBitrate,
+          framerate: Math.round(plan.outFps) || DEFAULT_FPS, hardwareAcceleration: o.hw, latencyMode: 'quality',
+          bitrateMode: o.bitrateMode
+        };
+        Object.keys(c.extra).forEach(function (k) { cfg[k] = c.extra[k]; });
+        cands.push({ config: cfg, mb: c.mb });
       });
     });
     return (function next(i) {
@@ -2404,14 +2361,8 @@
     // （使わない）予圧縮の途中なら止め、エンコーダーなどを片付け終わるのを少し待ってから始める
     var probeStopped = usePre ? Promise.resolve() : stopPre('圧縮を開始');
     var bgRetries = 0;   // 別のアプリに切り替えたためにやり直した回数
-    var preferCbr = false;   // VBR では指定のサイズに収まらなかったので、CBR を優先する
-    var vbrResult = null;    // 「なるべく圧縮」で CBR を試す前の VBR の結果（CBR の方が大きければ、こちらを使う）
     var lastGood = null;     // 圧縮し直す前にできた結果と、その計画（圧縮し直しに失敗したら、こちらを使う）
     var audioRetried = false;   // 元の音声をそのまま使えず、音声を作り直す（外す）やり直しをした
-
-    // CBR に切り替えて意味があるか（高速モードで、VBR で書き出したとき。
-    // iPhone の Safari は CBR/VBR の指定をエンコーダーに渡さないので、切り替えても変わらない）
-    function canSwitchToCbr(res) { return engine === 'fast' && !preferCbr && res.rateMode === 'variable' && !isIOS(); }
 
     // prevSize: 前回の圧縮結果のサイズ（再圧縮のときに表示する）。note: 進捗の欄に出す補足
     // afterBg: 別のアプリから戻ってのやり直し（iPhone は戻ったあとも動画の読み込み・書き出しが固まったままのことがあるので、
@@ -2495,12 +2446,8 @@
           plan.audio = noAudio();
           plan.audioBitrate = 0;
         }
-        var retry = retryQualityWithCbr(res) || retrySmaller(res);
+        var retry = retrySmaller(res);
         if (retry) return retry;
-        if (vbrResult && vbrResult.blob.size <= res.blob.size) {
-          log('CBR の方が小さくならなかったため、最初の結果を使う');
-          res = vbrResult;
-        }
         res.attempts = index + 1;
         return res;
       }
@@ -2517,19 +2464,6 @@
         return attempt(0, 0, 'トリミングのみでは' + (res.blob.size / MB).toFixed(2) + 'MBで目標超過→圧縮中');
       }
 
-      // 「なるべく圧縮」で、VBR なのに指定の約2倍以上の大きさになったら、CBR でもう一度圧縮する（小さい方を使う）。
-      // CBR は時間がかかることがあるので、短い動画だけ
-      function retryQualityWithCbr(res) {
-        if (plan.mode !== 'quality' || !canSwitchToCbr(res) || plan.duration > QUALITY_CBR_MAX_SECONDS || index + 1 >= MAX_ATTEMPTS) return null;
-        var bps = videoBpsOf(res, plan);
-        if (bps < plan.videoBitrate * QUALITY_CBR_OVERSHOOT) return null;
-        preferCbr = plan.preferCbr = true;
-        vbrResult = res;
-        lastGood = { res: res, plan: plan };
-        log('指定より大きく書き出した（映像 ' + fmtRate(bps) + '／指定 ' + fmtRate(plan.videoBitrate) + '）→ 固定ビットレート（CBR）で圧縮し直し');
-        return attempt(index + 1, res.blob.size, '指定より大きくなったため、固定ビットレートで圧縮し直し中');
-      }
-
       // 「◯MB以内に圧縮」で目標を超えたら、実際のサイズからビットレートを計算し直して、圧縮し直す
       function retrySmaller(res) {
         if (plan.mode !== 'size' || res.blob.size < plan.targetBytes || index + 1 >= MAX_ATTEMPTS) return null;
@@ -2537,24 +2471,15 @@
         var next = nextBitrate(plan, res.blob.size - audioBytes, audioBytes);
         // 下限を下回る値は下限に揃え、それ以上下げられないならやめる
         if (next) next = Math.max(next, plan.floorBitrate);
-        // VBR で、指定より大きく書き出した・圧縮し直しても小さくならないなら、ビットレートを下げても減らない見込みなので CBR にする
-        // （CBR にするときは、同じビットレート（下限）でもやり直す）
-        var switchCbr = false;
-        if (canSwitchToCbr(res)) {
-          var actualBps = videoBpsOf(res, plan);
-          var overshoot = actualBps > plan.videoBitrate * CBR_OVERSHOOT;
-          var noShrink = index > 0 && prevSize > 0 && res.blob.size > prevSize * (1 - MIN_SHRINK);
-          if (overshoot || noShrink) {
-            switchCbr = preferCbr = true;
-            log((overshoot ? '指定より大きく書き出した（映像 ' + fmtRate(actualBps) + '／指定 ' + fmtRate(plan.videoBitrate) + '）'
-              : '圧縮し直しても小さくならない') + '→ 固定ビットレート（CBR）に切り替え');
-          }
+        // 圧縮し直しても小さくならなかったら、ビットレートを下げても減らない見込みなので、それ以上は圧縮し直さない
+        if (index > 0 && prevSize > 0 && res.blob.size > prevSize * (1 - MIN_SHRINK)) {
+          log('圧縮し直しても小さくならないため、圧縮し直しをやめる');
+          return null;
         }
-        if (!next || (next >= plan.videoBitrate && !switchCbr)) return null;
+        if (!next || next >= plan.videoBitrate) return null;
         lastGood = { res: res, plan: plan };
         plan = replan(plan, { bitrate: next });
-        plan.preferCbr = preferCbr;
-        log('再圧縮 映像 ' + fmtRate(plan.videoBitrate) + (preferCbr ? '（CBR）' : ''));
+        log('再圧縮 映像 ' + fmtRate(plan.videoBitrate));
         return attempt(index + 1, res.blob.size);
       }
 
@@ -2625,7 +2550,6 @@
           : Object.assign(noAudio(MSG_AUDIO_COPY_FAILED), { afterFailure: true });
         log('元の音声をそのまま使えないため、' + (audio.mode === 'aac' ? '音声を AAC に作り直して' : '音声を外して') + '高速モードでやり直し');
         plan = replan(plan, { audio: audio });
-        plan.preferCbr = preferCbr;
         return attempt(0);
       }
     }
