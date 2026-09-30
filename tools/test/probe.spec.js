@@ -254,3 +254,40 @@ test('「◯MB以内」でも、予圧縮を切り出した大きさが目標の
   expect(await page.isVisible('#quickNoteSize')).toBe(false);
   expect(await page.isVisible('#quickNote')).toBe(true);
 });
+
+test('VBR の指定を守らない端末（Android）では、予圧縮を CBR でやり直し、押したら圧縮し直さずに切り出す', async ({ page }) => {
+  // VBR のときだけ、指定の3倍のビットレートで書き出すエンコーダー（robustness.spec.js と同じ）
+  await page.addInitScript(() => {
+    const orig = VideoEncoder.prototype.configure;
+    VideoEncoder.prototype.configure = function (c) {
+      if (c.bitrateMode !== 'constant' && c.bitrate) c = Object.assign({}, c, { bitrate: c.bitrate * 3 });
+      return orig.call(this, c);
+    };
+  });
+  await open(page, '?probe=on&mode=quality&audio=off');
+  await pick(page, '720p-60s.mp4');
+  await setTrim(page, 0, 10);
+  await preDone(page);
+  const d0 = await diag(page);
+  expect(d0).toMatch(/予圧縮で指定より大きく書き出した（映像 .+／指定 1\.2Mbps）→ 固定ビットレート（CBR）でやり直し/);
+  expect(d0.match(/予圧縮を開始/g)).toHaveLength(2);
+  expect(await pc(page, () => window.__compressor.precomp().pre.enc.bitrateMode)).toBe('constant');
+  const est = await pc(page, () => window.__compressor.state.plan.estBytes);
+  expect(est).toBeLessThan(1200 * 1000 * 10 / 8 * 1.3);   // 予想も CBR の大きさ
+  await compress(page);
+  const d = await diag(page);
+  expect(d).toMatch(/予圧縮を使う（完了済み）/);
+  expect(d).not.toMatch(/変換を開始/);
+  expect(d).not.toMatch(/で圧縮し直し/);
+  const size = await pc(page, () => window.__compressor.state.out.blob.size);
+  expect(Math.abs(size - est) / size).toBeLessThan(0.01);
+
+  // 設定を変えても、この動画は最初から CBR で予圧縮する
+  await page.click('details.settings:not(#diagBox) > summary');
+  await page.click('#runBtn');   // やり直す
+  await page.fill('#minRate720', '1500');
+  await page.waitForFunction(() => (document.getElementById('diagOut').value.match(/予圧縮を開始/g) || []).length >= 3, null, { timeout: 30000 });
+  await preDone(page);
+  expect((await diag(page)).match(/固定ビットレート（CBR）でやり直し/g)).toHaveLength(1);
+  expect(await pc(page, () => window.__compressor.precomp().pre.enc.bitrateMode)).toBe('constant');
+});
