@@ -8,7 +8,7 @@
  *
  * 圧縮の方針（解像度は選んだもの（720p / 1080p / 元の解像度）で固定し、ビットレートだけで容量を調整する）:
  *   元の解像度 … 720p・1080p より大きい動画（スマホの画面録画など）のときだけ選べる。解像度を変えずに圧縮する
- *   なるべく圧縮 … 解像度ごとの「下限ビットレート」で圧縮する
+ *   なるべく圧縮 … 解像度ごとの「指定ビットレート」で圧縮する
  *   ◯MB以内に圧縮 … 下限を下回らない範囲で、目標サイズに収まるなるべく高いビットレートにする。
  *                   超えたら実サイズからビットレートを直し、最大2回まで再圧縮
  *
@@ -39,7 +39,7 @@
   // 映像ビットレートの上限（元の動画のビットレートに対する倍率）。元より高いビットレートで焼き直しても、画質は上がらず容量が増えるだけ。
   // 元が HEVC のときは、書き出す H.264 で同じ画質にするのに約1.5倍のビットレートが要るので、1.5倍まで許す
   var SRC_CAP_RATIO = 1, SRC_CAP_RATIO_HEVC = 1.5;
-  var MSG_UNREACHABLE = '目標サイズに圧縮できません。解像度を下げるか、詳細設定にて下限ビットレートを引き下げてください。';
+  var MSG_UNREACHABLE = '目標サイズに圧縮できません。解像度を下げるか、詳細設定にて指定ビットレートを引き下げてください。';
   var MSG_OVER_DISCORD = '20MBを超えるため、Discordの無料アカウントでは送信できません。';
   var MSG_HALF_FPS_HINT = '詳細設定の「60fpsの動画は30fpsにする」をオンにすると収まりやすくなります。';
   var MSG_LOCATION = '位置情報が含まれている動画です。この情報はアップロードされず、圧縮後の動画には位置情報を含めません。';
@@ -53,7 +53,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-30d';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-30e';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -999,9 +999,9 @@
         plan.width + '×' + plan.height + '・予想' + fmtBytes(trimEst)
       : '→ ' + plan.width + '×' + plan.height + '・' + fmtFps(plan.outFps) + '・' +
         // 予圧縮で測れたら、ビットレートは実測の平均。目標サイズに収まる秒数の目安も出す
-        // （範囲が目安を超えていればトリミングを促し、収まっていれば収まる長さを伝える）
+        // （範囲が目安を超えていればトリミングを促し、収まっていれば収まる長さを伝える。見やすいように次の行に出す）
         fmtRate(plan.probed ? plan.expectedBps : plan.videoBitrate) + '・予想' + fmtBytes(plan.estBytes) + probeLabel(plan) +
-        (plan.probed && plan.fitSec ? '・' + (plan.duration <= plan.fitSec
+        (plan.probed && plan.fitSec ? '\n' + (plan.duration <= plan.fitSec
           ? '約' + fmtDuration(plan.fitSec) + 'まで' + plan.targetMB + 'MBに収まるよ'
           : plan.preFits ? plan.targetMB + 'MBに収まるよ'   // 目安より長いが、予圧縮の大きさ（正確な値）で収まると分かっている
           : plan.targetMB + 'MBに収めるなら約' + fmtDuration(plan.fitSec) + '以内にトリミングしてね') : '');
