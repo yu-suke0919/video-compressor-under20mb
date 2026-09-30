@@ -424,7 +424,13 @@
       if (e.audio === false && info.audio) problems.push('音声をオフにしたのに音声がある');
       // 元の音声が AAC か、この端末が AAC で書き出せるなら、音声が残るはず
       if (e.audio === true && source.audio && (source.audio === 'AAC' || s.caps.aac) && !info.audio) problems.push('音声が消えた');
-      if (e.maxBytes && info.size >= e.maxBytes) problems.push('目標サイズ（' + fmtMB(e.maxBytes) + '）を超えた');
+      if (e.maxBytes && info.size >= e.maxBytes) {
+        // エンコーダーが指定より小さく書き出せない端末（Android の実機であった。CBR で圧縮し直すことはしない）では、
+        // アプリが圧縮し直しをやめて目標を超えたことを知らせていれば、正しい動き（注意にする）
+        if (/圧縮し直しても小さくならないため/.test(appText('diagOut')) && /目標サイズに圧縮できません/.test(appText('outWarn'))) {
+          warns.push('目標サイズ（' + fmtMB(e.maxBytes) + '）を超えた。この端末のエンコーダーはこれ以上小さく書き出せない（目標を超えたことは知らせた）');
+        } else problems.push('目標サイズ（' + fmtMB(e.maxBytes) + '）を超えた');
+      }
       if (e.original !== undefined && !!out.original !== e.original) problems.push(e.original ? '元の動画のまま渡されなかった' : '元の動画のまま渡された');
       if (info.audio && info.audioOk === false) problems.push('書き出した音声を読めない（' + (info.audioCodec || info.audio) + '）');
       if (e.trimOnly && !/再圧縮なし/.test(appText('outInfo'))) problems.push('トリミングのみにならなかった');
