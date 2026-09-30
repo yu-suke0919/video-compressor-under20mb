@@ -316,7 +316,8 @@ test.describe('エンコーダーが可変ビットレートの指定を守ら�
     expect(u.diag).toContain('圧縮し直しても小さくならないため、圧縮し直しをやめる');
     expect(u.diag.match(/変換を開始/g)).toHaveLength(2);
     expect(u.hasOut).toBe(true);
-    expect(u.outWarn).toContain('目標サイズに圧縮できません');
+    expect(u.outWarn).toContain('目標サイズに圧縮できません。この端末ではこれ以上ビットレートを下げられないみたいです。');
+    expect(u.outWarn).not.toContain('指定ビットレートを引き下げてください');
   });
 
   test('◯MB以内で圧縮し直してかえって大きくなったら、前回の小さい方の結果を使う', async ({ page }) => {

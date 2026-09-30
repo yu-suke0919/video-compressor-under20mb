@@ -40,6 +40,9 @@
   // 元が HEVC のときは、書き出す H.264 で同じ画質にするのに約1.5倍のビットレートが要るので、1.5倍まで許す
   var SRC_CAP_RATIO = 1, SRC_CAP_RATIO_HEVC = 1.5;
   var MSG_UNREACHABLE = '目標サイズに圧縮できません。解像度を下げるか、詳細設定にて指定ビットレートを引き下げてください。';
+  // 指定ビットレートを下げても大きさが変わらない端末（エンコーダーがそれ以上下げない）。下げる案内の代わりに出す
+  var MSG_DEVICE_FLOOR = 'この端末ではこれ以上ビットレートを下げられないみたいです。';
+  var MSG_UNREACHABLE_FLOOR = '目標サイズに圧縮できません。' + MSG_DEVICE_FLOOR;
   var MSG_OVER_DISCORD = '20MBを超えるため、Discordの無料アカウントでは送信できません。';
   var MSG_HALF_FPS_HINT = '詳細設定の「60fpsの動画は30fpsにする」をオンにすると収まりやすくなります。';
   var MSG_LOCATION = '位置情報が含まれている動画です。この情報はアップロードされず、圧縮後の動画には位置情報を含めません。';
@@ -47,13 +50,14 @@
   var DEFAULT_FPS = 30;
   var MAX_FPS = 60;
   var MAX_ATTEMPTS = 3;                  // 初回 + 最大2回の再圧縮
-  // 「◯MB以内」で圧縮し直しても、前回よりこの割合以上小さくならなければ、それ以上は圧縮し直さない
-  // （VBR の指定を守らず、ビットレートを下げても小さくならないエンコーダーがある。Android の実機であった）
-  var MIN_SHRINK = 0.05;
+  // ビットレートを下げて圧縮し直しても（予圧縮をやり直しても）、前回よりこの割合以上小さくならなければ、
+  // この端末ではそれ以上下げられないとみる（VBR の指定を守らず、下げても小さくならないエンコーダーがある。Android の実機であった）。
+  // 「◯MB以内」の圧縮し直しはそこでやめ、指定ビットレートを下げる案内の代わりに MSG_DEVICE_FLOOR を出す
+  var MIN_SHRINK = 0.03;
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-30j';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-30k';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1008,10 +1012,12 @@
 
     var warns = [];
     if (plan.mode === 'size' && plan.unreachable && !trimEst) {
-      warns.push(MSG_UNREACHABLE);
+      warns.push(plan.deviceFloor ? MSG_UNREACHABLE_FLOOR : MSG_UNREACHABLE);
       // 今の解像度と下限ビットレートで、目標サイズに収まる長さの目安
       var fitSec = Math.floor(plan.targetBytes * 8 * SIZE_SAFETY / (plan.floorBitrate + plan.audioBitrate));
       warns.push(resLabel(plan) + 'なら' + fmtDuration(fitSec) + 'まで' + plan.targetMB + 'MBに収められます。');
+    } else if (plan.deviceFloor && !trimEst) {
+      warns.push(MSG_DEVICE_FLOOR);   // 指定ビットレートを下げても、予圧縮の大きさが変わらなかった
     }
     var probeOver = plan.probeOver && !trimEst;
     if (probeOver) warns.push(probeOverMessage(plan));
@@ -1436,6 +1442,7 @@
     // 「◯MB以内」で予圧縮をそのまま使えるなら、下限ビットレートの計算では収まらなくても（エンコーダーが下限ちょうどに
     // 収めた軽い映像では、目標の97%を下限の大きさが超えることがある）押せるようにする
     if (p.preFits && plan.mode === 'size') { p.unreachable = false; p.probeOver = false; }
+    p.deviceFloor = !!pre.floorHit;
     p.expectedBps = Math.max(0, Math.round(p.estBytes * 8 / p.duration - p.audioBitrate));
     p.overDiscord = p.estBytes > DISCORD_FREE_BYTES;
     return p;
@@ -1665,6 +1672,7 @@
       rec.marks[rec.marks.length - 1].t = pp.duration;   // 最後の書き出しは、動画の終わりまでの分
       rec.done = true;
       log('予圧縮が完了 ' + fmtBytes(rec.bytes) + '（' + secondsSince(rec.t0) + '）');
+      checkDeviceFloor(rec);
     }, function (err) {
       if (isCancel(job, err)) return;
       rec.failed = true;   // 同じ設定では何度もやり直さない
@@ -1673,6 +1681,23 @@
       if (rec.job === job) rec.job = null;
       if (pre === rec && state.file === file && !state.running) refresh();
     });
+  }
+  // 同じ動画・同じ解像度とfpsと音声で、指定ビットレートを下げて予圧縮をやり直したのに、前回より MIN_SHRINK 以上
+  // 小さくならなければ、この端末ではそれ以上下げられないとみる（rec.floorHit。予想の注意に出す）
+  var lastDonePre = null;
+  function checkDeviceFloor(rec) {
+    var prev = lastDonePre;
+    lastDonePre = rec;
+    if (!prev || prev.file !== rec.file) return;
+    var a = prev.plan, b = rec.plan;
+    var same = a.width === b.width && a.height === b.height && Math.round(a.outFps) === Math.round(b.outFps) &&
+      a.audio.mode === b.audio.mode && a.audioBitrate === b.audioBitrate;
+    if (!same || !(b.videoBitrate < a.videoBitrate)) return;
+    if (rec.bytes > prev.bytes * (1 - MIN_SHRINK)) {
+      rec.floorHit = true;
+      log('指定ビットレートを下げても小さくならない（' + fmtRate(a.videoBitrate) + ' ' + fmtBytes(prev.bytes) + ' → ' +
+        fmtRate(b.videoBitrate) + ' ' + fmtBytes(rec.bytes) + '）');
+    }
   }
   function stopPre(why) {
     if (preTimer) { clearTimeout(preTimer.id); preTimer = null; }
@@ -2478,10 +2503,12 @@
         // （前回の方が小さければ、前回の結果を使う）
         if (index > 0 && prevSize > 0 && res.blob.size > prevSize * (1 - MIN_SHRINK)) {
           log('圧縮し直しても小さくならないため、圧縮し直しをやめる');
+          res.deviceFloor = true;
           if (!lastGood || lastGood.res.blob.size > res.blob.size) return null;
           log('前回の結果の方が小さいため、前回の結果を使う');
           plan = lastGood.plan;
           lastGood.res.attempts = index;
+          lastGood.res.deviceFloor = true;
           return Promise.resolve(lastGood.res);
         }
         if (!next || next >= plan.videoBitrate) return null;
@@ -2685,6 +2712,10 @@
     updateMediaLayout();
   }
 
+  // 今の動画の予圧縮で、この端末ではそれ以上ビットレートを下げられないと分かっているか
+  function deviceFloorKnown(plan) {
+    return !!(pre && pre.file === state.file && pre.floorHit && pre.key === preKey(prePlan(plan)));
+  }
   function showResult(res, plan, engine, elapsed) {
     var base = fileBase();
     var kind = !res.trimOnly ? 'compressed' : isFullTrimOf(plan) ? 'copy' : 'trimmed';
@@ -2728,7 +2759,8 @@
 
     var warns = [];
     if (plan.mode === 'size' && size >= plan.targetBytes) {
-      warns.push(MSG_UNREACHABLE);
+      // 圧縮し直しても小さくならなかった・予圧縮で下げても小さくならなかったなら、下げる案内はしない
+      warns.push(res.deviceFloor || deviceFloorKnown(plan) ? MSG_UNREACHABLE_FLOOR : MSG_UNREACHABLE);
       // 60fpsのままだと、エンコーダが下限ビットレートまで下げきれず目標を超えることがある
       if (plan.outFps > 40 && !plan.halfFps) warns.push(MSG_HALF_FPS_HINT);
     }
