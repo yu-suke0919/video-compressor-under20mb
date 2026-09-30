@@ -580,13 +580,15 @@
     el.dispatchEvent(new (appWin().Event)('input'));
   }
   function diffPct(a, b) { return (a >= b ? '+' : '') + ((a / b - 1) * 100).toFixed(1) + '%'; }
-  // 予圧縮に失敗したか（VBR の指定を守らない端末で CBR でやり直すときは、前の予圧縮を「失敗」にして止めるので、ログで見分ける）
-  function preFailed() { return /予圧縮に失敗/.test(appDiag()); }
-  // 今の動画の予圧縮が、済むか失敗するまで待つ（CBR でやり直すときは、やり直した方が済むまで待つ）
+  // 今の動画の予圧縮が、済むか失敗するまで待つ
   function waitPreDone(s) {
-    return waitFor(function () { var p = appPre(); return p && p.file === s.file && ((p.done && !p.failed) || preFailed()); }, PRE_TIMEOUT_MS, '予圧縮');
+    return waitFor(function () { var p = appPre(); return p && p.file === s.file && (p.done || p.failed); }, PRE_TIMEOUT_MS, '予圧縮');
   }
-  function cbrNote(pre) { return pre.plan.preferCbr ? '・VBR では指定より大きくなるため CBR で予圧縮' : ''; }
+  // 予圧縮のエンコーダーが指定のビットレートを守らなかったとき（Android の実機であった。CBR で圧縮し直さずに、そのまま使う）
+  function overNote(pre) {
+    var bps = pre.done && pre.plan.duration ? pre.bytes * 8 / pre.plan.duration - pre.plan.audioBitrate : 0;
+    return bps > pre.plan.videoBitrate * 1.5 ? '・エンコーダーが指定より大きく書き出した（映像 ' + (bps / 1e6).toFixed(2) + 'Mbps）' : '';
+  }
   // 書き出した動画を確かめる（解像度・音声・長さ）。e.duration … 範囲の長さ、e.early … 始まりが早まってよい秒数
   // （予圧縮から切り出すと、始まりはキーフレーム（2秒ごと）に合わせて早まることがある）
   function checkPreOutput(info, source, e, problems) {
@@ -600,8 +602,7 @@
   // 予圧縮から切り出したはずの圧縮で、普通の圧縮をしていないか
   function checkUsedPre(d, problems) {
     if (/予圧縮を使えないため/.test(d)) problems.push('予圧縮から切り出せず、普通に圧縮した');
-    else if (/変換を開始/.test(d)) problems.push(/固定ビットレート（CBR）で圧縮し直し/.test(d)
-      ? '予圧縮から切り出したが、指定の約2倍以上だったため CBR で圧縮し直した' : '予圧縮を使わず、普通に圧縮した');
+    else if (/変換を開始/.test(d)) problems.push('予圧縮を使わず、普通に圧縮した');
   }
 
   var PRE_CASES = [
@@ -613,7 +614,7 @@
         var t0 = Date.now();
         await waitPreDone(s);
         var sec = secondsSince(t0), pre = appPre(), plan = s.plan, problems = [], warns = [];
-        if (pre.failed || !pre.done) problems.push('予圧縮に失敗した');
+        if (pre.failed) problems.push('予圧縮に失敗した');
         else {
           if (!plan.probed) problems.push('予想に予圧縮の結果を使っていない');
           if (!/（予圧縮済み）/.test(appText('planInfo'))) problems.push('「予圧縮済み」と出ない');
@@ -622,7 +623,7 @@
           if (!plan.exactEst) warns.push('区切りの表を読めず、割合で予想した');
           if (plan.estBytes && Math.abs(plan.estBytes / pre.bytes - 1) > 0.03) warns.push('予想が予圧縮の大きさとずれている');
           r.detail = '予圧縮 ' + fmtMB(pre.bytes) + '（' + sec + '）・予想 ' + fmtMB(plan.estBytes) + '・映像 ' + (plan.expectedBps / 1e6).toFixed(2) +
-            'Mbps・約' + plan.fitSec + '秒まで20MB' + cbrNote(pre) + '・' + appText('planInfo');
+            'Mbps・約' + plan.fitSec + '秒まで20MB' + overNote(pre) + '・' + appText('planInfo');
           ctx.ready = s;   // 次のテストは、この画面のまま続ける
         }
         judge(r, problems, warns);
@@ -657,10 +658,9 @@
         var s = await openAndPick(PRE_QUERY, source.file, r, true);
         if (!s) return;
         setTrim(6, 11);
-        // 範囲の始まりを越えるまで待つ（VBR の指定を守らない端末では、4秒の時点で CBR でやり直すので、やり直した方を待つ）
-        await waitFor(function () { var p = appPre(); return p && p.file === s.file && ((!p.failed && (p.done || p.time >= 6.5)) || preFailed()); }, PRE_TIMEOUT_MS, '予圧縮', 20);
+        await waitFor(function () { var p = appPre(); return p && p.file === s.file && (p.done || p.failed || p.time >= 6.5); }, PRE_TIMEOUT_MS, '予圧縮', 20);
         var pre = appPre(), at = pre.time, problems = [], warns = [];
-        if (preFailed()) return fail(r, '予圧縮に失敗した');
+        if (pre.failed) return fail(r, '予圧縮に失敗した');
         await runInApp(COMPRESS_TIMEOUT_MS);
         var d = appDiag();
         if (/予圧縮を使う（完了済み）/.test(d)) warns.push('予圧縮が速く、押す前に済んでしまった（途中で押す場合を試せなかった）');
@@ -670,7 +670,7 @@
         if (!s.out) problems.push('圧縮できない: ' + (appText('outWarn') || '（理由不明）'));
         else {
           var info = await inspect(s.out.blob);
-          r.detail = describe(info) + '・押したとき予圧縮 ' + at.toFixed(1) + '秒まで' + cbrNote(pre);
+          r.detail = describe(info) + '・押したとき予圧縮 ' + at.toFixed(1) + '秒まで';
           checkPreOutput(info, source, { duration: 5, early: 2.3 }, problems);
         }
         judge(r, problems, warns);
@@ -708,7 +708,7 @@
         if (!s) return;
         await waitPreDone(s);
         var pre = appPre(), problems = [], warns = [];
-        if (preFailed()) return fail(r, '予圧縮に失敗した');
+        if (pre.failed) return fail(r, '予圧縮に失敗した');
         var cut = appWin().__compressor.exactCutBytes(s.plan, pre);
         if (!cut) return fail(r, '予圧縮の区切りの表を読めず、切り出したときの大きさが分からない');
         // 目標を、予圧縮の大きさが目標の約97.5%になる値にする
@@ -750,7 +750,7 @@
         await waitPreDone(s);
         var pre = appPre(), d = appDiag();
         if (pre === first) problems.push('予圧縮をやり直さなかった');
-        if (preFailed()) return fail(r, 'やり直した予圧縮に失敗した');
+        if (pre.failed) return fail(r, 'やり直した予圧縮に失敗した');
         if (pre.plan.videoBitrate !== 1500000) problems.push('やり直した予圧縮のビットレートが ' + pre.plan.videoBitrate / 1000 + 'kbps（正しくは 1500kbps）');
         if (wasRunning && !/予圧縮を中断（設定を変えた/.test(d)) problems.push('前の予圧縮を止めなかった');
         if (!/（予圧縮済み）/.test(appText('planInfo'))) problems.push('「予圧縮済み」と出ない');

@@ -276,74 +276,84 @@ test.describe('エンコーダーが可変ビットレートの指定を守ら�
     };
   });
 
-  test('目標を超えたら、固定ビットレート（CBR）に切り替えて目標に収める', async ({ page }) => {
+  test('なるべく圧縮で指定より大きく書き出しても、CBR で圧縮し直さず VBR のまま', async ({ page }) => {
+    await greedyVbr(page);
+    await open(page, '?mode=quality&audio=off');
+    await pick(page, '720p-60s.mp4');
+    await setTrim(page, 0, 10);
+    await compress(page);
+    const u = await ui(page);
+    expect(u.diag).not.toContain('CBR');
+    expect(u.diag.match(/変換を開始/g)).toHaveLength(1);
+    expect(u.outInfo).toContain('・VBR');
+    expect(await page.evaluate(() => window.__modes.includes('constant'))).toBe(false);
+  });
+
+  test('◯MB以内で目標を超えたら、VBR のままビットレートを下げて圧縮し直す（CBR にはしない）', async ({ page }) => {
     await greedyVbr(page);
     await open(page, '?mode=size&target=3&audio=off');
     await pick(page, '720p-60s.mp4');
     await setTrim(page, 0, 10);
     await compress(page);
     const u = await ui(page);
-    expect(u.diag).toContain('→ 固定ビットレート（CBR）に切り替え');
-    expect(u.diag).toMatch(/再圧縮 映像 .+（CBR）/);
-    const info = await outputInfo(page);
-    expect(info.size).toBeLessThan(3 * 1000 * 1000);
-    expect(await page.evaluate(() => window.__modes.includes('constant'))).toBe(true);
+    expect(u.diag).toMatch(/再圧縮 映像 \d+/);
+    expect(u.diag).not.toContain('CBR');
+    expect(await page.evaluate(() => window.__modes.includes('constant'))).toBe(false);
+    expect(u.hasOut).toBe(true);
   });
 
-  test('ハードウェアの CBR が使えない端末では、ソフトウェアの CBR に切り替える', async ({ page }) => {
-    await greedyVbr(page);
-    // その Android と同じく、ハードウェアは VBR だけ使える（テストの Chrome にはハードウェアがないので、ソフトウェアで代わりに動かす）
+  test('◯MB以内で圧縮し直しても小さくならなければ、それ以上は圧縮し直さない', async ({ page }) => {
+    // 指定にかかわらず 6Mbps で書き出すエンコーダー（ビットレートを下げても小さくならない）
+    await page.addInitScript(() => {
+      const orig = VideoEncoder.prototype.configure;
+      VideoEncoder.prototype.configure = function (c) { return orig.call(this, c.bitrate ? Object.assign({}, c, { bitrate: 6000000 }) : c); };
+    });
+    await open(page, '?mode=size&target=3&audio=off');
+    await pick(page, '720p-60s.mp4');
+    await setTrim(page, 0, 10);
+    await compress(page);
+    const u = await ui(page);
+    expect(u.diag).toContain('圧縮し直しても小さくならないため、圧縮し直しをやめる');
+    expect(u.diag.match(/変換を開始/g)).toHaveLength(2);
+    expect(u.hasOut).toBe(true);
+    expect(u.outWarn).toContain('目標サイズに圧縮できません');
+  });
+
+  test('ハードウェアの VBR が使えない端末では、ハードウェアの CBR を使う', async ({ page }) => {
+    // ハードウェアは CBR だけ使える（テストの Chrome にはハードウェアがないので、ソフトウェアで代わりに動かす）
     await page.addInitScript(() => {
       const soft = c => Object.assign({}, c, { hardwareAcceleration: 'no-preference' });
       const orig = VideoEncoder.isConfigSupported.bind(VideoEncoder);
       VideoEncoder.isConfigSupported = c => {
         if (c.hardwareAcceleration !== 'prefer-hardware') return orig(c);
-        if (c.bitrateMode === 'constant') return Promise.resolve({ supported: false, config: c });
+        if (c.bitrateMode !== 'constant') return Promise.resolve({ supported: false, config: c });
         return orig(soft(c)).then(r => Object.assign({}, r, { config: c }));
       };
       const configure = VideoEncoder.prototype.configure;
       VideoEncoder.prototype.configure = function (c) { return configure.call(this, c.hardwareAcceleration === 'prefer-hardware' ? soft(c) : c); };
     });
-    await open(page, '?mode=size&target=3&audio=off');
+    await open(page, '?mode=quality&audio=off');
     await pick(page, '720p-60s.mp4');
     await setTrim(page, 0, 10);
     await compress(page);
     const u = await ui(page);
+    expect(u.diag).toContain('エンコード設定 avc/prefer-hardware/variable → 使えない');
+    expect(u.diag).toContain('エンコード設定 avc/prefer-hardware/constant → 使える');
+    expect(u.diag).not.toContain('no-preference');
+    expect(u.outInfo).toContain('・CBR');
+  });
+
+  test('ハードウェアが使えなければソフトウェアの VBR を使い、ソフトウェアの CBR は試さない', async ({ page }) => {
+    await open(page, '?mode=quality&audio=off');   // テストの Chrome にはハードウェアのエンコーダーがない
+    await pick(page, '720p-60s.mp4');
+    await setTrim(page, 0, 10);
+    await compress(page);
+    const u = await ui(page);
+    expect(u.diag).toContain('エンコード設定 avc/prefer-hardware/variable → 使えない');
     expect(u.diag).toContain('エンコード設定 avc/prefer-hardware/constant → 使えない');
-    expect(u.diag).toContain('エンコード設定 avc/no-preference/constant → 使える');
-    expect((await outputInfo(page)).size).toBeLessThan(3 * 1000 * 1000);
-  });
-
-  test('なるべく圧縮で約2倍以上になったら、CBR でもう一度圧縮して小さい方を使う', async ({ page }) => {
-    await greedyVbr(page);
-    await open(page, '?mode=quality&audio=off');
-    await pick(page, '720p-60s.mp4');
-    await setTrim(page, 0, 10);
-    await compress(page);
-    const u = await ui(page);
-    expect(u.diag).toContain('→ 固定ビットレート（CBR）で圧縮し直し');
-    expect(u.outInfo).toContain('CBR');
-    // 指定（1200kbps）の3倍で書き出した VBR の結果より、かなり小さい
-    expect((await outputInfo(page)).size).toBeLessThan(1200 * 1000 * 10 / 8 * 1.5);
-  });
-
-  test('CBR での圧縮し直しに失敗しても、エラーにせず最初の結果を使う', async ({ page }) => {
-    await greedyVbr(page);
-    await open(page, '?mode=quality&audio=off');
-    await page.evaluate(() => {   // 2回目（CBR）の変換だけ失敗させる
-      const C = window.Mediabunny.Conversion.prototype, orig = C.execute;
-      let n = 0;
-      C.execute = function () { return ++n === 2 ? Promise.reject(new Error('encoder failed')) : orig.call(this); };
-    });
-    await pick(page, '720p-60s.mp4');
-    await setTrim(page, 0, 10);
-    await compress(page);
-    const u = await ui(page);
-    expect(u.diag).toContain('→ 固定ビットレート（CBR）で圧縮し直し');
-    expect(u.diag).toContain('圧縮し直しに失敗したため、前の結果を使う');
-    expect(u.diag).not.toContain('互換モードに切り替え');
-    expect(u.hasOut).toBe(true);
-    expect(u.outWarn).not.toContain('エラー');
+    expect(u.diag).toContain('エンコード設定 avc/no-preference/variable → 使える');
+    expect(u.diag).not.toContain('no-preference/constant');
+    expect(u.outInfo).toContain('・VBR');
   });
 
   test('◯MB以内に圧縮で圧縮し直しに失敗したら、前の結果を使い、目標を超えたことを知らせる', async ({ page }) => {
@@ -381,33 +391,6 @@ test.describe('エンコーダーが可変ビットレートの指定を守ら�
     const retry = /再圧縮 映像 (\d+)kbps/.exec(diag);
     expect(retry).not.toBe(null);
     expect(Number(retry[1])).toBeLessThan(first);
-  });
-
-  test('なるべく圧縮で20秒より長いときは、時間がかかるので CBR で圧縮し直さない', async ({ page }) => {
-    await greedyVbr(page);
-    await open(page, '?mode=quality&audio=off');
-    await pick(page, '720p-60s.mp4');
-    await setTrim(page, 0, 25);
-    await compress(page);
-    expect((await ui(page)).diag).not.toContain('CBR）で圧縮し直し');
-  });
-
-  test('なるべく圧縮で、指定を守るエンコーダーなら CBR で圧縮し直さない', async ({ page }) => {
-    await open(page, '?mode=quality&audio=off');
-    await pick(page, '720p-60s.mp4');
-    await setTrim(page, 0, 10);
-    await compress(page);
-    expect((await ui(page)).diag).not.toContain('CBR）で圧縮し直し');
-  });
-
-  test('指定を守るエンコーダーなら、可変ビットレート（VBR）のまま', async ({ page }) => {
-    await open(page, '?mode=size&target=3&audio=off');
-    await pick(page, '720p-60s.mp4');
-    await setTrim(page, 0, 10);
-    await compress(page);
-    const u = await ui(page);
-    expect(u.diag).not.toContain('固定ビットレート（CBR）に切り替え');
-    expect((await outputInfo(page)).size).toBeLessThan(3 * 1000 * 1000);
   });
 });
 
