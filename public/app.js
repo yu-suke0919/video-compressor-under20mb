@@ -59,7 +59,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-29v';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-09-29w';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1008,9 +1008,10 @@
         // 予圧縮で測れたら、ビットレートは実測の平均。目標サイズに収まる秒数の目安も出す
         // （範囲が目安を超えていればトリミングを促し、収まっていれば収まる長さを伝える）
         fmtRate(plan.probed ? plan.expectedBps : plan.videoBitrate) + '・予想' + fmtBytes(plan.estBytes) + probeLabel(plan) +
-        (plan.probed && plan.fitSec ? '・' + (plan.duration > plan.fitSec
-          ? plan.targetMB + 'MBに収めるなら約' + fmtDuration(plan.fitSec) + '以内にトリミングしてね'
-          : '約' + fmtDuration(plan.fitSec) + 'まで' + plan.targetMB + 'MBに収まるよ') : '');
+        (plan.probed && plan.fitSec ? '・' + (plan.duration <= plan.fitSec
+          ? '約' + fmtDuration(plan.fitSec) + 'まで' + plan.targetMB + 'MBに収まるよ'
+          : plan.preFits ? plan.targetMB + 'MBに収まるよ'   // 目安より長いが、予圧縮の大きさ（正確な値）で収まると分かっている
+          : plan.targetMB + 'MBに収めるなら約' + fmtDuration(plan.fitSec) + '以内にトリミングしてね') : '');
 
     var warns = [];
     if (plan.mode === 'size' && plan.unreachable && !trimEst) {
@@ -1412,6 +1413,8 @@
   //   expectedBps … 映像のビットレートの予想（予想のサイズから求める）
   //   fitSec      … 目標サイズに収まる秒数の目安（下限ビットレートでの実測の平均で収まる秒数の95%）
   //   probeOver   … 「◯MB以内」で、範囲が fitSec より長い（目標サイズに収まらない可能性がある。押せなくはしない）
+  //   preFits     … 予圧縮を切り出した大きさ（正確な値）が目標サイズ未満（「◯MB以内」では、押せば予圧縮をそのまま使えるとき）。
+  //                 目安（fitSec）より長くても収まるので、収まらない注意・トリミングの促し・黄色の帯は出さない
   function withEstimate(plan) {
     if (state.engine !== 'fast' || !pre || pre.file !== state.file || pre.key !== preKey(prePlan(plan))) return plan;
     var floorEst = preEstimate(plan, pre, 0);
@@ -1440,6 +1443,10 @@
       p.estBytes = exact || floorBytes;
       p.exactEst = !!exact;
     }
+    p.preFits = !!p.exactEst && p.estBytes < p.targetBytes && (plan.mode !== 'size' || !precompressWhyNot(p));
+    // 「◯MB以内」で予圧縮をそのまま使えるなら、下限ビットレートの計算では収まらなくても（エンコーダーが下限ちょうどに
+    // 収めた軽い映像では、目標の97%を下限の大きさが超えることがある）押せるようにする
+    if (p.preFits && plan.mode === 'size') { p.unreachable = false; p.probeOver = false; }
     p.expectedBps = Math.max(0, Math.round(p.estBytes * 8 / p.duration - p.audioBitrate));
     p.overDiscord = p.estBytes > DISCORD_FREE_BYTES;
     return p;
@@ -1453,7 +1460,7 @@
   // 予圧縮が済んでいれば、押せばすぐ出せる選択肢（なるべく圧縮・条件を満たせば◯MB以内）の下に、その大きさを出す
   function showPrecompressHints(plan) {
     var idle = !!plan && !state.running && !isCompressed();
-    els.trimBox.classList.toggle('is-over', idle && !!plan.probed && plan.fitSec > 0 && plan.duration > plan.fitSec);
+    els.trimBox.classList.toggle('is-over', idle && !!plan.probed && plan.fitSec > 0 && plan.duration > plan.fitSec && !plan.preFits);
     // 「なるべく圧縮」「◯MB以内」それぞれ、押せば予圧縮をそのまま使えるなら、その大きさを選択肢の下に出す
     var note = '', noteSize = '';
     if (idle && pre && pre.done) {
