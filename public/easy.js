@@ -1,7 +1,7 @@
 /*
- * 簡単モード（easy.html）
+ * 3ステップの画面（index.html）
  * ステップ（1. 圧縮の仕方を選ぶ →（「詳しく設定する」なら 設定）→ 2. 動画を選んでトリミング → 3. 共有・保存）を1つずつ出す。
- * 圧縮そのものは app.js（アプリの画面と同じ）。app.js が画面を出し直すたびに知らせてくる（compressor:update）ので、
+ * 圧縮そのものは app.js（従来の画面 old.html と同じ）。app.js が画面を出し直すたびに知らせてくる（compressor:update）ので、
  * 今の状態（圧縮中・圧縮後など）に合わせてステップを切り替える。
  */
 'use strict';
@@ -28,13 +28,13 @@
     update();
   }
 
-  // 1. 圧縮の仕方を選んだら、その設定にして、「詳しく設定する」なら設定のステップへ、2択なら 2 へ
-  function choose(name) {
+  // 1. 圧縮の仕方を選んだら、その設定にして、「詳しく設定する」なら設定のステップへ（skipSet なら飛ばす）、2択なら 2 へ
+  function choose(name, skipSet) {
     preset = name;
     C.setEasyPreset(name);
     $('easyModeName').textContent = LABELS[name];
     document.querySelectorAll('.choice').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.preset === name)); });
-    setStep(name === 'custom' ? 'set' : '2');
+    setStep(name === 'custom' && !skipSet ? 'set' : '2');
   }
 
   // 圧縮した動画を消して、トリミングと設定を変えられる状態に戻す
@@ -104,5 +104,7 @@
   // 動画を選んだら（3 で「別の動画を圧縮する」を選んだときも）2 へ
   $('file').addEventListener('change', function () { if (preset) setStep('2'); });
   document.addEventListener('compressor:update', update);
-  update();
+  // URL に設定があれば（ショートカットから開いたときなど）、その設定の「詳しく設定する」にして、すぐ動画を選べるようにする
+  if (C.urlSettings) choose('custom', true);
+  else update();
 })();

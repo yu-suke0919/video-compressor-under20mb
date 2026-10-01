@@ -1,12 +1,13 @@
-// 簡単モード（easy.html）：1. 圧縮の仕方を選ぶ → 2. 動画を選んでトリミング → 3. 共有・保存 の3ステップ
+// アプリの画面（index.html・3ステップ）：1. 圧縮の仕方を選ぶ → 2. 動画を選んでトリミング → 3. 共有・保存
+// （従来の画面 old.html のテストは、ほかのファイルで helpers の open を使う）
 'use strict';
 
 const { test, expect } = require('@playwright/test');
 const { open, pick, setTrim, outputInfo } = require('./helpers');
 
-// 簡単モードを開き、端末の対応状況を調べ終わるまで待つ（予圧縮は probe= を指定したとき以外は止める）
+// 3ステップの画面を開き、端末の対応状況を調べ終わるまで待つ（予圧縮は probe= を指定したとき以外は止める）
 async function openEasy(page, query = '?probe=off') {
-  await page.goto('/easy' + query);
+  await page.goto('/' + query);
   await page.waitForFunction(() => /対応 VideoEncoder=/.test(document.getElementById('diagOut').value));
 }
 const currentStep = page => page.evaluate(() => ['step1', 'stepSet', 'step2', 'step3'].filter(id => document.getElementById(id).classList.contains('is-current')));
@@ -109,7 +110,7 @@ test('圧縮中にキャンセルしたら 2 に戻る。手順の帯で 1 に�
   expect(await page.evaluate(() => !!window.__compressor.state.meta)).toBe(true);   // 選んだ動画はそのまま
 });
 
-test('簡単モードは、アプリの画面の保存してある設定を使わず、変えもしない', async ({ page }) => {
+test('2択は、従来の画面と共通の保存してある設定を使わず、変えもしない', async ({ page }) => {
   await open(page);
   await page.evaluate(() => {
     localStorage.setItem('video-compressor-under20mb:settings', JSON.stringify({ res: '1080', mode: 'size', target: 50, min720: 800, halfFps: false }));
@@ -124,14 +125,29 @@ test('簡単モードは、アプリの画面の保存してある設定を使�
   expect(await page.evaluate(() => localStorage.getItem('video-compressor-under20mb:settings'))).toBe(before);
 });
 
-test('アプリの画面に簡単モードへのリンクがあり、動画を選んだら（「別の動画」と並ばないよう）隠す', async ({ page }) => {
-  await open(page);
-  expect(await page.getAttribute('#easyLink', 'href')).toBe('./easy');
+test('3ステップの画面と従来の画面（/old）を行き来できる。従来の画面のリンクは、動画を選んだら（「別の動画」と並ばないよう）隠す', async ({ page }) => {
+  await openEasy(page);
+  expect(await page.title()).toBe('アップロード不要の動画圧縮');
+  expect(await page.getAttribute('header a', 'href')).toBe('./old');
+  await open(page);   // 従来の画面
+  expect(await page.title()).toBe('従来の画面｜アップロード不要の動画圧縮');
+  expect(await page.getAttribute('#easyLink', 'href')).toBe('./');
   expect(await page.isVisible('#easyLink')).toBe(true);
   await pick(page, 'small-5mb.mp4');
   expect(await page.isVisible('#easyLink')).toBe(false);
-  await page.goto('/easy');
-  expect(await page.title()).toContain('かんたん圧縮');
+});
+
+test('URL に設定があれば（ショートカットから開いたとき）、その設定の「詳しく設定する」にして、すぐ動画を選べる', async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => localStorage.setItem('video-compressor-under20mb:settings', JSON.stringify({ res: '720', mode: 'size', target: 50 })));
+  await openEasy(page, '?res=1080&mode=quality&auto=on&probe=off');
+  expect(await currentStep(page)).toEqual(['step2']);
+  expect(await page.textContent('#easyModeName')).toBe('詳しく設定する');
+  const s = await settings(page);
+  expect([s.res, s.mode, s.targetMB, s.autoRun]).toEqual(['1080', 'quality', 20, true]);   // 保存してある設定ではなく URL の設定
+  // 「動画を選んだらすぐ圧縮」なら、選んだらそのまま圧縮して 3 へ
+  await pick(page, 'small-5mb.mp4');
+  await page.waitForFunction(() => document.getElementById('step3').classList.contains('is-current') && !window.__compressor.state.running && !!window.__compressor.state.out, null, { timeout: 120000 });
 });
 
 test('詳しく設定する：1 と 2 の間の設定のステップで、アプリの画面と同じ設定を決める（保存してある設定を使い、変えたら保存する。2択は保存しない）', async ({ page }) => {
@@ -177,7 +193,7 @@ test('詳しく設定する：1 と 2 の間の設定のステップで、アプ
   s = await settings(page);
   expect([s.res, s.mode, s.targetMB]).toEqual(['1080', 'size', 50]);
 
-  // 「設定を記憶したURL」は、アプリの画面の URL にする（簡単モードは URL の設定を使わないため）
+  // 「設定を記憶したURL」は、この画面の URL（開けば、その設定の「詳しく設定する」になる）
   const url = await page.evaluate(() => {
     let copied = null;
     navigator.clipboard.writeText = t => { copied = t; return Promise.resolve(); };

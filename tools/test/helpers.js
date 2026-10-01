@@ -29,7 +29,7 @@ function video(name) {
 // 試し圧縮は、probe= を指定したとき以外は止める（本番の圧縮だけを確かめる。試し圧縮は probe.spec.js で確かめる）
 async function open(page, query = '') {
   if (!/[?&]probe=/.test(query)) query += (query ? '&' : '?') + 'probe=off';
-  await page.goto('/' + query);
+  await page.goto('/old' + query);   // 従来の画面（3ステップの画面のテストは easy.spec.js）
   await page.waitForFunction(() => /対応 VideoEncoder=/.test(document.getElementById('diagOut').value));
 }
 

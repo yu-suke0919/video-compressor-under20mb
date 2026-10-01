@@ -29,7 +29,7 @@ async function copiedUrl(page, context) {
 test('何も指定しなければ初期値。URL は res だけ付ける（前回の設定を使わせないため）', async ({ page, context }) => {
   await open(page);
   expect(await readUi(page)).toEqual(DEFAULTS);
-  expect(await copiedUrl(page, context)).toBe('http://127.0.0.1:' + (process.env.PORT || 8777) + '/?res=720');
+  expect(await copiedUrl(page, context)).toBe('http://127.0.0.1:' + (process.env.PORT || 8777) + '/old?res=720');
 });
 
 test('URL の設定をすべて読み取り、同じ URL を作れる', async ({ page, context }) => {
