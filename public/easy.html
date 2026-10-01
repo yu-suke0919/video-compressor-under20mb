@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>かんたん圧縮｜アップロード不要の動画圧縮</title>
+<meta name="description" content="3ステップで、動画をDiscordに投稿できるサイズ（20MB以下）に圧縮します。端末内の処理能力を利用して圧縮するため、アップロードは不要です。">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icons/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="20MB圧縮">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<link rel="stylesheet" href="./style.css">
+</head>
+<!-- 簡単モード：アプリの画面（index.html）と同じ app.js を使い、同じ id の部品を置く。
+     ステップの切り替えと2択は easy.js。設定の部品は下の隠した欄に置く（2択で決めるので、画面には出さない） -->
+<body class="easy">
+<main class="app easy-app">
+
+  <header class="row">
+    <h1>かんたん圧縮</h1>
+    <a class="btn btn-sm" href="./">詳しく設定する</a>
+  </header>
+
+  <ol class="steps" aria-label="手順">
+    <li data-step="1"><button type="button"><b>1</b>選ぶ</button></li>
+    <li data-step="2"><button type="button"><b>2</b>動画</button></li>
+    <li data-step="3"><button type="button"><b>3</b>保存</button></li>
+  </ol>
+
+  <div id="unsupported" class="alert danger hidden" role="alert"></div>
+
+  <!-- 1. 圧縮の仕方を選ぶ -->
+  <section id="step1" class="easy-step is-current" aria-labelledby="step1Title">
+    <h2 class="step-title" id="step1Title">どう圧縮しますか？</h2>
+    <button type="button" class="choice" data-preset="quality" aria-pressed="false">
+      <span class="choice-title">なるべく圧縮</span>
+      <span class="choice-text">720p・30fpsにして、なるべく小さくします。長い動画や、軽く送りたいときに。</span>
+    </button>
+    <button type="button" class="choice" data-preset="size" aria-pressed="false">
+      <span class="choice-title">画質優先（20MB以内）</span>
+      <span class="choice-text">元の画質とfps（最大1080p）のまま、20MBに収まるなるべく高い画質にします。</span>
+    </button>
+  </section>
+
+  <!-- 2. 動画を選んでトリミング -->
+  <section id="step2" class="easy-step" aria-labelledby="step2Title">
+    <h2 class="step-title" id="step2Title">動画を選んで、範囲を決めてください</h2>
+    <div class="easy-mode"><span>圧縮の仕方：<b id="easyModeName"></b></span><button id="easyChange" type="button" class="btn btn-sm">変更</button></div>
+    <input id="file" type="file" accept="video/*" class="visually-hidden">
+    <div class="media-box is-large" id="srcBox">
+      <video id="srcVideo" class="hidden" playsinline webkit-playsinline controls preload="metadata"></video>
+      <button id="pickBtn" type="button" class="media-empty">
+        動画を選択
+        <small>写真アプリやファイルから選べます（端末の外には送信しません）</small>
+      </button>
+    </div>
+    <div id="srcInfo" class="meta-line"></div>
+    <section aria-label="トリミング">
+      <div class="trim" id="trimBox">
+        <div class="trim-track"></div>
+        <div class="trim-ticks" id="trimTicks"></div>
+        <div class="trim-fill" id="trimFill"></div>
+        <input type="range" id="trimSeek" class="trim-seek hidden" min="0" max="1" step="any" value="0" aria-label="再生位置" disabled>
+        <input type="range" id="trimStart" min="0" max="1" step="0.1" value="0" aria-label="開始位置" disabled>
+        <input type="range" id="trimEnd" min="0" max="1" step="0.1" value="1" aria-label="終了位置" disabled>
+      </div>
+      <div class="trim-times"><span id="trimLabel">トリミング</span></div>
+    </section>
+    <div id="planInfo" class="meta-line"></div>
+    <div id="easyQuick" class="easy-quick hidden"></div>
+    <div id="planWarn" class="alert hidden" role="status"></div>
+    <button id="runBtn" type="button" class="btn btn-primary" disabled>圧縮する</button>
+    <!-- 目標サイズ以下の動画は圧縮しなくてよい（元の動画のまま渡せる） -->
+    <button id="easyPass" type="button" class="btn hidden">圧縮せずに、このまま共有・保存へ</button>
+  </section>
+
+  <!-- 3. 共有・保存 -->
+  <section id="step3" class="easy-step" aria-labelledby="step3Title">
+    <h2 class="step-title" id="step3Title">圧縮しています…</h2>
+    <div id="progressWrap" class="hidden">
+      <div class="progress" role="progressbar" aria-label="進捗"><i id="progressBar"></i></div>
+      <div class="row meta-line" style="margin-top: 4px"><span id="phase"></span><span id="pct"></span></div>
+      <p id="progressNote" class="meta-line hidden" style="margin-top: 4px">圧縮が終わるまで、ほかのアプリに切り替えないでください。</p>
+    </div>
+    <button id="easyCancel" type="button" class="btn hidden">キャンセル</button>
+    <div class="media-box is-small" id="outBox">
+      <video id="outVideo" class="hidden" playsinline webkit-playsinline controls></video>
+      <div id="outEmpty" class="media-empty">圧縮後の動画がここに表示されます</div>
+    </div>
+    <div id="outInfo" class="meta-line"></div>
+    <div id="outNote" class="meta-line hidden"></div>
+    <div id="outWarn" class="alert hidden" role="status"></div>
+    <div class="grid2">
+      <button id="shareBtn" type="button" class="btn btn-discord" disabled><span>Discord等に</span><span>共有</span></button>
+      <button id="saveBtn" type="button" class="btn" disabled>保存</button>
+    </div>
+    <div id="easyMore" class="easy-more hidden">
+      <button id="easyBack" type="button" class="btn">範囲を変えて<br>やり直す</button>
+      <button id="easyAnother" type="button" class="btn">別の動画を<br>圧縮する</button>
+    </div>
+  </section>
+
+  <!-- アプリの画面と同じ設定の部品（簡単モードでは2択で決めるので隠す） -->
+  <div class="hidden" aria-hidden="true">
+    <button id="repickBtn" type="button" class="btn btn-sm hidden" tabindex="-1">別の動画</button>
+    <div class="seg" id="resSeg">
+      <input type="radio" class="seg-input" name="res" id="res720" value="720" checked tabindex="-1">
+      <input type="radio" class="seg-input" name="res" id="res1080" value="1080" tabindex="-1">
+      <input type="radio" class="seg-input" name="res" id="resSource" value="source" tabindex="-1">
+    </div>
+    <input type="radio" class="seg-input" name="mode" id="modeQuality" value="quality" tabindex="-1">
+    <input type="radio" class="seg-input" name="mode" id="modeSize" value="size" checked tabindex="-1">
+    <span id="quickNote" class="hidden"></span><span id="quickNoteSize" class="hidden"></span><span id="sizeLabel">20</span>
+    <input id="targetSize" type="number" value="20" tabindex="-1"><span id="capLabel"></span>
+    <input id="minRate720" type="number" value="1200" tabindex="-1">
+    <input id="minRate1080" type="number" value="2700" tabindex="-1">
+    <input type="checkbox" id="halfFps" checked tabindex="-1">
+    <input type="checkbox" id="autoRun" tabindex="-1">
+    <input type="checkbox" id="audioOn" checked tabindex="-1"><span id="audioLabel"></span>
+    <input type="checkbox" id="nameOn" tabindex="-1">
+    <div id="nameBox"><ol id="nameList"></ol><span id="namePreview"></span></div>
+    <button id="urlCopy" type="button" tabindex="-1"></button><span id="urlStatus"></span>
+    <button id="resetSettings" type="button" tabindex="-1"></button>
+  </div>
+
+  <footer>
+    ブラウザの付属機能を利用して圧縮するため、ここに表示される動画はネット上にアップロードされません。
+    本サイトは現状のまま無保証で提供しており、動作や圧縮結果を保証するものではありません。
+    <p class="credit">動画の処理に <a href="https://mediabunny.dev/" target="_blank" rel="noopener noreferrer">Mediabunny</a>（<a href="./vendor/mediabunny.LICENSE.txt" target="_blank" rel="noopener">MPL-2.0</a>）を使っています。</p>
+    <p class="credit"><span>Discord は Discord Inc. の商標です。</span><span>本サイトは Discord 公式とは関係ありません。</span></p>
+  </footer>
+
+  <!-- 診断情報（うまく動かないときの報告用。圧縮を始めるかエラーが出ると表示） -->
+  <details class="settings hidden" id="diagBox">
+    <summary>診断情報</summary>
+    <p class="hint">うまく圧縮できないときは、これをコピーして、下のX（@inkaroma0431）あるいはDiscordに送ってください。端末の種類や処理の経過だけで、動画やファイル名は含みません。</p>
+    <textarea id="diagOut" rows="10" readonly aria-label="診断情報"></textarea>
+    <button id="diagCopy" type="button" class="btn btn-sm" style="width: 100%; margin-top: 8px">コピー</button>
+    <p id="diagStatus" class="hint" role="status"></p>
+  </details>
+
+  <p class="contact">不具合の報告・ご要望は <a href="https://x.com/inkaroma0431" target="_blank" rel="noopener noreferrer">X（@inkaroma0431）</a> あるいはDiscordへ</p>
+</main>
+
+<script src="./vendor/mediabunny.min.js"></script>
+<script src="./app.js"></script>
+<script src="./easy.js"></script>
+</body>
+</html>

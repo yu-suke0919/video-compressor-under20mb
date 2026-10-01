@@ -29,6 +29,8 @@ const EXTRA = readHeaders();
 http.createServer((req, res) => {
   let p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
   if (p.endsWith('/')) p += 'index.html';
+  // Cloudflare Pages と同じく、拡張子なしの URL（/easy）は .html を返す
+  else if (!path.extname(p) && fs.existsSync(path.join(ROOT, p + '.html'))) p += '.html';
   const file = path.normalize(path.join(ROOT, p));
   // public/ の外は読ませない（「public-other」のような似た名前のフォルダも外として扱う）
   if (!file.startsWith(ROOT + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
