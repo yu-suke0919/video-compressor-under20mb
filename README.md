@@ -463,7 +463,7 @@ iPhone・Android の実機では、`https://maka-u20mb.pages.dev/selftest.html` 
 | `public/_headers` | Cloudflare Pages が付けるセキュリティ用のHTTPヘッダー（CSP など。読み込めるのはこのサイトのファイルだけ、他サイトへの埋め込みは禁止。同じサイトの中の埋め込みは自己テストのために許可） |
 | `public/manifest.json` | PWAの定義（名前「アップロード不要の動画圧縮」、ホーム画面のアイコン名「20MB圧縮」、スタンドアロン表示） |
 | `public/icons/` | アイコン（PNG） |
-| `public/help/` | 説明書の画像（WebP。説明書を開いたときだけ読み込む）。アプリの画面の `step-1〜4.webp` は `node tools/make-help-images.js` で作る（テスト用のサーバーで画面を撮り、番号・枠・矢印を書き込む。画面を変えたら作り直す）。従来の画面の `help-1〜3.webp` は手で作ったもの |
+| `public/help/` | 説明書の画像（WebP。説明書を開いたときだけ読み込む）。アプリの画面の `step-1〜4.webp` と、ショートカットのページの `sc-url.webp` は `node tools/make-help-images.js` で作る（テスト用のサーバーで画面を撮り、番号・枠・矢印を書き込む。画面を変えたら作り直す）。従来の画面の `help-1〜3.webp` は手で作ったもの |
 | `public/shortcut.html` | iPhoneのショートカットを併用した使い方のページ（説明書のカードから開く。画像は `public/help/sc-*.webp`） |
 | `public/selftest.html` / `public/selftest.js` | 実機での自己テストのページ（どこからもリンクしない。開発者向け） |
 | `package.json` / `tools/mediabunny-entry.js` | 同梱ライブラリを作り直すときと、テストに使う設定（公開はされない） |
