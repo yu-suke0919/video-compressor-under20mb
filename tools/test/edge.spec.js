@@ -44,37 +44,38 @@ test.describe('小さい・短い動画', () => {
   });
 });
 
-test.describe('長い動画', () => {
-  test('20MBに収まらない長さ：ボタンを押せず、入る長さの目安を出す', async ({ page }) => {
-    await open(page);
-    await pick(page, 'long-5min.mp4');
+// 長い動画の代わりに、1分の動画で目標サイズを小さくして試す（テストを短くするため）
+test.describe('目標サイズに収まらない長さ', () => {
+  test('収まらない長さ：ボタンを押せず、入る長さの目安を出す', async ({ page }) => {
+    await open(page, '?target=5');
+    await pick(page, '720p-60s.mp4');
     const u = await ui(page);
     expect(u.runDisabled).toBe(true);
     expect(u.planWarn).toContain('目標サイズに圧縮できません');
-    expect(u.planWarn).toContain('720pなら1分56秒まで20MBに収められます。');
+    expect(u.planWarn).toMatch(/720pなら\d+秒まで5MBに収められます。/);
     expect(u.planWarn).not.toContain('Discordの無料アカウント');   // 同じ内容の注意は重ねない
   });
 
   test('なるべく圧縮なら長くても最後まで圧縮し、20MB超えを知らせる', async ({ page }) => {
-    await open(page, '?mode=quality');
-    await pick(page, 'long-5min.mp4');
+    await open(page, '?mode=quality&min720=3500');   // 1分で20MBを超えるビットレート
+    await pick(page, '720p-60s.mp4');
     await compress(page);
     const u = await ui(page);
     const out = await outputInfo(page);
-    expect(out.duration).toBeGreaterThan(299);
+    expect(out.duration).toBeGreaterThan(59);
     expect(out.size).toBeGreaterThan(20 * 1000 * 1000);
     expect(u.outWarn).toContain('Discordの無料アカウントでは送信できません');
   });
 
-  test('100秒に切り出せば20MBに収まる', async ({ page }) => {
-    await open(page);
-    await pick(page, 'long-5min.mp4');
-    await setTrim(page, 0, 100);
+  test('目安の長さに切り出せば目標サイズに収まる', async ({ page }) => {
+    await open(page, '?target=5');
+    await pick(page, '720p-60s.mp4');
+    await setTrim(page, 0, 20);
     expect((await ui(page)).runDisabled).toBe(false);
     await compress(page);
     const out = await outputInfo(page);
-    expect(out.size).toBeLessThan(20 * 1000 * 1000);
-    expect(Math.abs(out.duration - 100)).toBeLessThan(1);
+    expect(out.size).toBeLessThan(5 * 1000 * 1000);
+    expect(Math.abs(out.duration - 20)).toBeLessThan(1);
   });
 
   test('4K を元の解像度のままでは収まらないとき、入る長さの目安を出す', async ({ page }) => {

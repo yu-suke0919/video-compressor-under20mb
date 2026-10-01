@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-01a';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-01c';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -107,10 +107,12 @@
   };
 
   // ---------------------------------------------------------------- 簡単モード（easy.html）
-  // 同じ画面の部品（同じ id）を使い、設定は2択（EASY_PRESETS）で決める。設定の部品は隠してあり、
-  // この端末に保存してある設定（アプリの画面で変えたもの）は読まず、保存もしない。URL の設定も使わない
+  // 同じ画面の部品（同じ id）を使い、設定は3択で決める。URL の設定は使わない
+  //   なるべく圧縮・画質優先 … 決めた設定（EASY_PRESETS）。この端末に保存してある設定は読まず、保存もしない
+  //   詳しく設定する（custom） … アプリの画面と同じ設定の部品を出し、保存してある設定を読んで、変えたら保存する（アプリの画面と共通）
   var EASY = document.body.classList.contains('easy');
-  var EASY_MAX_SHORT = 1080;   // 簡単モードの「元の解像度」は短い辺がここまでの動画だけ（それより大きければ 1080p にする）
+  var easyPreset = null;       // 簡単モードで選んだもの（quality・size・custom）
+  var EASY_MAX_SHORT = 1080;   // 「画質優先」の「元の解像度」は短い辺がここまでの動画だけ（それより大きければ 1080p にする）
   var EASY_PRESETS = {
     // なるべく圧縮：720p・30fps・指定ビットレートは初期値
     quality: { res: '720', mode: 'quality', halfFps: true },
@@ -284,7 +286,7 @@
   function isSmallSource(meta) { return !!meta && Math.min(meta.width, meta.height) <= 720 + 8; }
   function syncResOption() {
     var show = !!(state.meta && !isStandardRes(state.meta) && Math.min(state.meta.width, state.meta.height) > 720 + 8) &&
-      !(EASY && Math.min(state.meta.width, state.meta.height) > EASY_MAX_SHORT + 8);
+      !(EASY && easyPreset === 'size' && Math.min(state.meta.width, state.meta.height) > EASY_MAX_SHORT + 8);
     els.resSeg.classList.toggle('is-three', show);
     var small = isSmallSource(state.meta);
     els.res1080.classList.toggle('is-locked', small);
@@ -551,7 +553,7 @@
   // URL パラメータで開いたときの値は保存しない（画面で変えたときだけ保存する）
   var SAVED_FIELDS = SETTING_DEFS.reduce(function (ids, d) { return ids.concat(d.ids); }, []);
   function saveSettings() {
-    if (EASY) return;   // 簡単モードは保存しない（アプリの画面の設定を変えない）
+    if (EASY && easyPreset !== 'custom') return;   // 簡単モードの2択は保存しない（アプリの画面の設定を変えない）
     var data = {};
     SETTING_DEFS.forEach(function (d) { data[d.key] = d.read(); });
     data.name = { on: naming.on, order: naming.order, enabled: naming.enabled, text1: naming.text.text1, text2: naming.text.text2 };
@@ -2977,12 +2979,17 @@
     run();
   }
 
-  // 簡単モードの2択を選ぶ（初期値の設定に、選んだ方の設定を重ねる）。圧縮した動画があれば消す
+  // 簡単モードで選ぶ。圧縮した動画があれば消す
+  //   2択 … 初期値の設定に、選んだ方の設定を重ねる。custom … 初期値に保存してある設定を重ねる（アプリの画面と同じ）
   function setEasyPreset(name) {
     var p = EASY_PRESETS[name];
-    if (!p || state.running) return;
+    if ((!p && name !== 'custom') || state.running) return;
     if (isCompressed()) clearOutput();
-    SETTING_DEFS.forEach(function (d) { d.write(d.key in p ? p[d.key] : d.def); });
+    easyPreset = name;
+    SETTING_DEFS.forEach(function (d) { d.write(p && d.key in p ? p[d.key] : d.def); });
+    naming = defaultNaming();
+    if (name === 'custom') loadSavedSettings();
+    renderNameList();
     log('簡単モード ' + name);
     refresh();
   }
@@ -3176,7 +3183,8 @@
     }
     // すべて初期値でも1つは付ける（URL に設定の項目がないと、開いたときに前回の設定が使われるため）
     if (!q.length) q.push('res=' + SETTING_DEFS[0].read());
-    return location.origin + location.pathname + '?' + q.join('&');
+    // 簡単モードは URL の設定を使わないので、アプリの画面の URL にする
+    return (EASY ? new URL('./', location.href).href : location.origin + location.pathname) + '?' + q.join('&');
   }
   // 文字をコピーする（クリップボードAPIが使えなければ、隠した欄を選択してコピー）
   function copyText(text, status, failMsg) {
