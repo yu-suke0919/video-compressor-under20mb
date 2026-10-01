@@ -1,4 +1,5 @@
-// アプリの画面（3ステップ）の説明書の画像を作る（public/help/step-1.webp 〜 step-4.webp）
+// アプリの画面（3ステップ）の説明書の画像（public/help/step-1.webp 〜 step-4.webp）と、
+// ショートカットのページの「設定を指定して開く」の画像（public/help/sc-url.webp）を作る
 // テスト用のサーバーでアプリを開き、iPhone の画面の大きさで撮って、説明の書き込み（番号・枠・矢印）を重ね、WebP にする。
 // 画面を変えたら作り直す。
 //   使い方: node tools/make-help-images.js
@@ -75,8 +76,8 @@ function draw(marks) {
   }
 }
 
-async function shoot(page, name, marks) {
-  await page.evaluate(() => window.scrollTo(0, 0));
+async function shoot(page, name, marks, keepScroll) {
+  if (!keepScroll) await page.evaluate(() => window.scrollTo(0, 0));
   await page.evaluate(draw, marks);
   const png = path.join(os.tmpdir(), name + '.png');
   await page.screenshot({ path: png });
@@ -145,6 +146,24 @@ async function shoot(page, name, marks) {
       { type: 'frame', sel: '#shareBtn' },
       { type: 'note', n: '⑤', text: 'Discordに送る・写真に保存', x: 40, y: share.t - 62, to: [{ x: 195, y: share.t - 6 }] }
     ]);
+
+    // ショートカットのページ：「詳しく設定する」の設定の画面で「現在の設定を記憶したURLを生成してコピー」を押す
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(BASE + '/?probe=off');
+    await page.waitForFunction(() => /対応 VideoEncoder=/.test(document.getElementById('diagOut').value));
+    await page.click('.choice[data-preset="custom"]');
+    await page.evaluate(() => {
+      navigator.clipboard.writeText = () => Promise.resolve();   // コピーしたことにする（「コピーしました」を出す）
+      document.getElementById('urlCopy').click();
+      const r = document.getElementById('urlCopy').getBoundingClientRect();
+      window.scrollBy(0, r.top - 560);   // ボタンが画面の下の方に来るようにする
+    });
+    await page.waitForTimeout(300);
+    const copy = await box('#urlCopy');
+    await shoot(page, 'sc-url', [
+      { type: 'frame', sel: '#urlCopy', pad: 6 },
+      { type: 'note', n: '★', text: '押すとURLがコピーされる', x: 70, y: copy.t - 58, to: [{ x: 300, y: copy.t - 8 }] }
+    ], true);
     await browser.close();
   } finally {
     server.kill();
