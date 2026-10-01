@@ -44,7 +44,7 @@
     </button>
     <button type="button" class="choice" data-preset="size" aria-pressed="false">
       <span class="choice-title">画質優先（20MB以内）</span>
-      <span class="choice-text">元の画質とfps（最大1080p）のまま、20MBに収まるなるべく高い画質にします。</span>
+      <span class="choice-text">元の画質とfpsのまま、20MBに収まるなるべく高い画質にします。</span>
     </button>
     <button type="button" class="choice choice-sub" data-preset="custom" aria-pressed="false">
       <span class="choice-title">詳しく設定する</span>
@@ -67,6 +67,7 @@
         <label class="seg-opt seg-opt-source" for="resSource">元の解像度</label>
         <span class="seg-thumb" aria-hidden="true"></span>
       </div>
+      <div id="resFixedNote" class="adj-note hidden"></div>
       <div class="seg" role="radiogroup" aria-label="圧縮方法">
         <input type="radio" class="seg-input" name="mode" id="modeQuality" value="quality">
         <label class="seg-opt" for="modeQuality"><span>なるべく圧縮</span><span id="quickNote" class="seg-sub hidden"></span></label>
@@ -147,6 +148,16 @@
       </div>
       <div class="trim-times"><span id="trimLabel">トリミング</span></div>
     </section>
+    <!-- この動画だけ、ビットレート・解像度・fps を上げ下げする（保存しない） -->
+    <div class="adj hidden" id="adjBox" role="group" aria-label="画質の調整">
+      <button id="adjRateUp" type="button" class="btn btn-sm" disabled>ビットレートを上げる</button>
+      <button id="adjRateDown" type="button" class="btn btn-sm" disabled>ビットレートを下げる</button>
+      <button id="adjResUp" type="button" class="btn btn-sm" disabled>解像度を上げる</button>
+      <button id="adjResDown" type="button" class="btn btn-sm" disabled>解像度を下げる</button>
+      <button id="adjFpsUp" type="button" class="btn btn-sm" disabled>fpsを上げる</button>
+      <button id="adjFpsDown" type="button" class="btn btn-sm" disabled>fpsを下げる</button>
+    </div>
+    <div id="adjNote" class="adj-note hidden"></div>
     <div id="planInfo" class="meta-line"></div>
     <div id="easyQuick" class="easy-quick hidden"></div>
     <div id="planWarn" class="alert hidden" role="status"></div>
@@ -234,7 +245,7 @@
     <div class="help-slides" id="helpSlides" tabindex="0" aria-label="手順の画像（横にスワイプで次の画像）">
       <img data-src="./help/step-1.webp" width="390" height="780" alt="①どう圧縮するか選ぶ（なるべく圧縮は軽さ重視、画質優先（20MB以内）は画質重視。細かく決めたいときは「詳しく設定する」）">
       <img data-src="./help/step-2.webp" width="390" height="780" alt="②「動画を選択」をタップして動画を選ぶ">
-      <img data-src="./help/step-3.webp" width="390" height="780" alt="③青い線で使う範囲を決める、④「圧縮する」を押す">
+      <img data-src="./help/step-3.webp" width="390" height="780" alt="③青い線で使う範囲を決める（お好みで、下のボタンでビットレート・解像度・fpsを調整）、④「圧縮する」を押す">
       <img data-src="./help/step-4.webp" width="390" height="780" alt="小さくなった動画ができたら、⑤「Discord等に共有・動画保存」でDiscordに送るか写真に保存する">
       <!-- 別のページ（開いたときに初めて読み込む）。アプリの画面はそのまま残るよう、新しいタブで開く -->
       <a class="help-card" href="./shortcut.html" target="_blank" rel="noopener">
