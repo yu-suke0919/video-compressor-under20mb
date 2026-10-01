@@ -865,7 +865,10 @@
     var want = original ? '圧縮しなくても送れます' : 'できました';
     if (easyTitle().indexOf(want) < 0) problems.push('3 の題が「' + easyTitle() + '」（正しくは「' + want + '…」）');
     if (!visible('shareBtn') || appDoc().getElementById('shareBtn').disabled) problems.push('共有ボタンが押せない');
-    if (!visible('saveBtn') || appDoc().getElementById('saveBtn').disabled) problems.push('保存ボタンが押せない');
+    // iPhone では保存ボタンを出さない（共有ボタンの「Discord等に共有・動画保存」から保存する）
+    var ios = appDoc().querySelector('.app.is-ios');
+    if (ios && visible('saveBtn')) problems.push('iPhone なのに保存ボタンが出ている');
+    if (!ios && (!visible('saveBtn') || appDoc().getElementById('saveBtn').disabled)) problems.push('保存ボタンが押せない');
     if (!visible('easyBack') || !visible('easyAnother')) problems.push('「やり直す」「別の動画」が出ない');
     if (visible('easyCancel')) problems.push('終わったのに「キャンセル」が出ている');
   }
