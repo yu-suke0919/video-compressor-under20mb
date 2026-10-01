@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-01m';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-01n';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -111,15 +111,25 @@
   //   なるべく圧縮・画質優先 … 決めた設定（EASY_PRESETS）。この端末に保存してある設定は読まず、保存もしない
   //   詳しく設定する（custom） … 従来の画面と同じ設定の部品を出し、保存してある設定を読んで、変えたら保存する（従来の画面と共通）。
   //     URL に設定があれば（ショートカットから開いたときなど）、保存してある設定の代わりに URL の設定を使う（従来の画面と同じ）
+  //   720p・1080p ではない動画（スマホの画面録画など）は、どれを選んでも元の解像度のまま（解像度は変えられない）
+  //   2 のボタンで、ビットレート・解像度・fps をその動画だけ上げ下げできる（adjust。保存しない）
   var EASY = document.body.classList.contains('easy');
   var easyPreset = null;       // 3ステップの画面で選んだもの（quality・size・custom）
-  var EASY_MAX_SHORT = 1080;   // 「画質優先」の「元の解像度」は短い辺がここまでの動画だけ（それより大きければ 1080p にする）
   var EASY_PRESETS = {
     // なるべく圧縮：720p・30fps・指定ビットレートは初期値
     quality: { res: '720', mode: 'quality', halfFps: true },
-    // 画質優先（20MB以内）：元の画質（最大1080p）とfpsのまま、20MB に収まるなるべく高いビットレート
+    // 画質優先（20MB以内）：元の画質とfpsのまま、20MB に収まるなるべく高いビットレート
     size: { res: 'source', mode: 'size', halfFps: false }
   };
+
+  // 3ステップの画面の 2 のボタンで変えた値（その動画だけ。新しい動画を選ぶ・圧縮の仕方を選び直す・設定のステップで設定を変えると戻す）
+  //   rate    … ビットレートの段（1段で ×1.2 / ÷1.2。なるべく圧縮のときだけ。◯MB以内は目標サイズから決まる）
+  //   res     … 解像度（'1080' | '720' | '480'。null なら設定のまま）
+  //   halfFps … 60fpsの動画を30fpsにするか（null なら設定のまま）
+  var RATE_STEP = 1.2;
+  var RES_LEVELS = [1080, 720, 480];
+  var adjust = { rate: 0, res: null, halfFps: null };
+  function resetAdjust() { adjust = { rate: 0, res: null, halfFps: null }; }
 
   // ---------------------------------------------------------------- 状態
   var state = {
@@ -286,8 +296,7 @@
   var want1080 = false;
   function isSmallSource(meta) { return !!meta && Math.min(meta.width, meta.height) <= 720 + 8; }
   function syncResOption() {
-    var show = !!(state.meta && !isStandardRes(state.meta) && Math.min(state.meta.width, state.meta.height) > 720 + 8) &&
-      !(EASY && easyPreset === 'size' && Math.min(state.meta.width, state.meta.height) > EASY_MAX_SHORT + 8);
+    var show = !!(state.meta && !isStandardRes(state.meta) && Math.min(state.meta.width, state.meta.height) > 720 + 8);
     els.resSeg.classList.toggle('is-three', show);
     var small = isSmallSource(state.meta);
     els.res1080.classList.toggle('is-locked', small);
@@ -314,7 +323,7 @@
   }
   function readSettings() {
     var mb = readTargetMB();
-    return {
+    var s = {
       res: resValue(radioValue('res', '720')),
       mode: radioValue('mode', 'size') === 'quality' ? 'quality' : 'size',
       targetMB: mb,
@@ -329,6 +338,20 @@
         '1080': readKbps(els.minRate1080, DEFAULT_MIN_KBPS['1080']) * 1000
       }
     };
+    // 480p（3ステップの画面のボタンだけで選べる）は、720p の下限を画素数に比例させる
+    s.minBitrate['480'] = Math.round(s.minBitrate['720'] * 4 / 9);
+    if (!EASY) return s;
+    // 3ステップの画面：720p・1080p ではない動画は元の解像度のまま。ボタンで変えた値を重ねる
+    if (easyResFixed()) s.res = 'source';
+    else if (adjust.res) s.res = adjust.res;
+    if (adjust.halfFps !== null) s.halfFps = adjust.halfFps;
+    if (adjust.rate && s.mode === 'quality') {
+      var f = Math.pow(RATE_STEP, adjust.rate);
+      Object.keys(s.minBitrate).forEach(function (k) {
+        s.minBitrate[k] = Math.max(MIN_KBPS_LIMITS[0] * 1000, Math.round(s.minBitrate[k] * f));
+      });
+    }
+    return s;
   }
 
   // ---------------------------------------------------------------- 書き出す動画のファイル名
@@ -867,7 +890,7 @@
   // ---------------------------------------------------------------- 圧縮プラン
   function resolutionCap(meta, res) {
     if (res === 'source') return 1;   // 元の解像度のまま
-    var limit = res === '1080' ? 1080 : 720;
+    var limit = res === '1080' ? 1080 : res === '480' ? 480 : 720;
     var shortSide = Math.min(meta.width, meta.height);
     return shortSide > limit ? limit / shortSide : 1;   // 拡大はしない
   }
@@ -998,6 +1021,8 @@
     [els.res720, els.res1080, els.resSource, els.modeQuality, els.modeSize, els.targetSize, els.halfFps, els.audioOn,
       els.minRate720, els.minRate1080, els.autoRun, els.nameOn, els.resetSettings].forEach(function (el) { el.disabled = state.running || done; });
     if (isSmallSource(state.meta)) els.res1080.disabled = true;   // 720p以下の動画は 1080p を選べない
+    if (easyResFixed()) [els.res720, els.res1080, els.resSource].forEach(function (el) { el.disabled = true; });
+    updateAdjust(hasFile && !locked && !done);
     Array.prototype.forEach.call(els.nameList.querySelectorAll('input, button'), function (el) {
       el.disabled = state.running || done || (el.dataset.move === 'up' && !el.parentNode.previousSibling) ||
         (el.dataset.move === 'down' && !el.parentNode.nextSibling);
@@ -2906,6 +2931,7 @@
     state.meta = null;
     state.nameRand = randDigits();   // 元の動画のまま渡すときの乱数（同じ動画のあいだは変えない）
     state.compatAudio = null;
+    resetAdjust();   // 3ステップの画面のボタンで変えた値は、その動画だけ
     clearOutput();
     setProgress(0, '');
     show(els.progressWrap, false);
@@ -2980,6 +3006,69 @@
     run();
   }
 
+  // ---------------------------------------------------------------- 3ステップの画面：2 のボタン（ビットレート・解像度・fps を上げる・下げる）
+  // 720p・1080p ではない動画は、圧縮の仕方に関係なく元の解像度のまま（解像度のボタンは押せない）
+  function easyResFixed() { return EASY && !!state.meta && !isStandardRes(state.meta); }
+  // 今の設定（ボタンで変えた値を含む）の計画の映像ビットレート。rate … ビットレートの段を仮に変えて計算する
+  function rateAt(rate) {
+    var keep = adjust.rate;
+    adjust.rate = rate;
+    try {
+      var settings = readSettings();
+      return makePlan(state.meta, state.trim, settings, audioStrategy(state.meta, settings.audio, state.engine), state.file.size).videoBitrate;
+    } finally { adjust.rate = keep; }
+  }
+  // 解像度の段（短い辺。元より大きい段は出さない）と、今の段の位置
+  function resSteps(settings) {
+    var short = Math.min(state.meta.width, state.meta.height);
+    var levels = RES_LEVELS.filter(function (l) { return l <= short + 8; });
+    var cur = settings.res === 'source' ? short : Math.min(Number(settings.res) || 720, short);
+    var index = 0;
+    levels.forEach(function (l, i) { if (Math.abs(l - cur) < Math.abs(levels[index] - cur)) index = i; });
+    return { levels: levels, index: index };
+  }
+  // 上げる・下げるを押せるか
+  function adjustOptions() {
+    var settings = readSettings();
+    var bps = rateAt(adjust.rate);
+    var res = resSteps(settings);
+    var fps = (state.meta.fps || DEFAULT_FPS) > 40;   // 30fps にできるのは 60fps などの動画だけ
+    return {
+      rate: settings.mode === 'quality' ? { up: rateAt(adjust.rate + 1) > bps, down: rateAt(adjust.rate - 1) < bps } : { up: false, down: false },
+      res: easyResFixed() || !res.levels.length ? { up: false, down: false } : { up: res.index > 0, down: res.index < res.levels.length - 1, steps: res },
+      fps: { up: fps && settings.halfFps, down: fps && !settings.halfFps }
+    };
+  }
+  var ADJ_BUTTONS = [['rate', 1, 'adjRateUp'], ['rate', -1, 'adjRateDown'], ['res', 1, 'adjResUp'], ['res', -1, 'adjResDown'],
+    ['fps', 1, 'adjFpsUp'], ['fps', -1, 'adjFpsDown']];
+  function updateAdjust(enabled) {
+    if (!$('adjBox')) return;
+    show($('adjBox'), !!(state.file && state.meta));   // 動画を選ぶまでは出さない
+    var opts = enabled ? adjustOptions() : null;
+    ADJ_BUTTONS.forEach(function (b) { $(b[2]).disabled = !opts || !opts[b[0]][b[1] > 0 ? 'up' : 'down']; });
+    var notes = [];
+    if (easyResFixed()) {
+      notes.push('720p・1080pではない動画のため、そのままの解像度（' + state.meta.width + '×' + state.meta.height + '）で圧縮します。');
+    }
+    if (state.meta && readSettings().mode === 'size') notes.push('ビットレートは、目標サイズに収まるように自動で決まります。');
+    $('adjNote').textContent = notes.join('\n');
+    show($('adjNote'), !!notes.length);
+    $('resFixedNote').textContent = notes.length && easyResFixed() ? notes[0] : '';
+    show($('resFixedNote'), easyResFixed());
+  }
+  // 押したボタンのとおりに変える（dir … 1: 上げる、-1: 下げる）
+  function easyAdjust(kind, dir) {
+    if (!state.meta || state.running || state.busy || isCompressed()) return;
+    var o = adjustOptions()[kind];
+    if (!o || !o[dir > 0 ? 'up' : 'down']) return;
+    if (kind === 'rate') adjust.rate += dir;
+    else if (kind === 'res') adjust.res = String(o.steps.levels[o.steps.index - dir]);
+    else adjust.halfFps = dir < 0;
+    log('ボタンで変更 ' + kind + (dir > 0 ? ' 上げる' : ' 下げる') + '（ビットレート' + (adjust.rate >= 0 ? '+' : '') + adjust.rate + '段・解像度 ' +
+      (adjust.res || '設定のまま') + '・fps ' + (adjust.halfFps === null ? '設定のまま' : adjust.halfFps ? '30' : '元のまま') + '）');
+    refresh();
+  }
+
   // 3ステップの画面で選ぶ。圧縮した動画があれば消す
   //   2択 … 初期値の設定に、選んだ方の設定を重ねる。custom … 初期値に保存してある設定を重ねる（アプリの画面と同じ）
   function setEasyPreset(name) {
@@ -2987,6 +3076,7 @@
     if ((!p && name !== 'custom') || state.running) return;
     if (isCompressed()) clearOutput();
     easyPreset = name;
+    resetAdjust();
     SETTING_DEFS.forEach(function (d) { d.write(p && d.key in p ? p[d.key] : d.def); });
     naming = defaultNaming();
     if (name === 'custom') {
@@ -2999,6 +3089,9 @@
 
   // ---------------------------------------------------------------- 配線
   els.pickBtn.addEventListener('click', function () { els.file.click(); });
+  // 3ステップの画面の 2 のボタン。設定のステップで設定を変えたら、ボタンで変えた値は戻す（設定のとおりにする）
+  ADJ_BUTTONS.forEach(function (b) { if ($(b[2])) $(b[2]).addEventListener('click', function () { easyAdjust(b[0], b[1]); }); });
+  if ($('stepSet')) ['input', 'change'].forEach(function (t) { $('stepSet').addEventListener(t, resetAdjust, true); });
   els.repickBtn.addEventListener('click', function () { els.file.click(); });
 
   // 説明書: 開く・閉じる（外側をタップしても閉じる）。説明書のないページ（3ステップの画面）では何もしない
