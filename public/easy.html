@@ -16,17 +16,19 @@
 <link rel="stylesheet" href="./style.css">
 </head>
 <!-- 簡単モード：アプリの画面（index.html）と同じ app.js を使い、同じ id の部品を置く。
-     ステップの切り替えと2択は easy.js。設定の部品は下の隠した欄に置く（2択で決めるので、画面には出さない） -->
+     ステップの切り替えと3択は easy.js。設定の部品（解像度・圧縮方法・詳細設定）は「詳しく設定する」のときだけ、
+     1 と 2 の間の「設定」のステップに出す -->
 <body class="easy">
 <main class="app easy-app">
 
   <header class="row">
     <h1>かんたん圧縮</h1>
-    <a class="btn btn-sm" href="./">詳しく設定する</a>
+    <a class="btn btn-sm" href="./">通常の画面</a>
   </header>
 
   <ol class="steps" aria-label="手順">
     <li data-step="1"><button type="button"><b>1</b>選ぶ</button></li>
+    <li data-step="set" class="hidden"><button type="button"><b>2</b>設定</button></li>
     <li data-step="2"><button type="button"><b>2</b>動画</button></li>
     <li data-step="3"><button type="button"><b>3</b>保存</button></li>
   </ol>
@@ -44,12 +46,87 @@
       <span class="choice-title">画質優先（20MB以内）</span>
       <span class="choice-text">元の画質とfps（最大1080p）のまま、20MBに収まるなるべく高い画質にします。</span>
     </button>
+    <button type="button" class="choice choice-sub" data-preset="custom" aria-pressed="false">
+      <span class="choice-title">詳しく設定する</span>
+      <span class="choice-text">解像度・圧縮方法・目標サイズなどを自分で決めます（アプリの画面と同じ設定。次に開いたときも同じ設定になります）。</span>
+    </button>
+  </section>
+
+  <!-- 1.5 「詳しく設定する」を選んだときだけ：アプリの画面と同じ設定（解像度・圧縮方法・詳細設定を広げたもの） -->
+  <section id="stepSet" class="easy-step" aria-labelledby="stepSetTitle">
+    <h2 class="step-title" id="stepSetTitle">設定を決めてください</h2>
+    <p class="step-lead">アプリの画面と同じ設定です。変えた設定は保存され、次に開いたときも同じになります。</p>
+    <div class="segs">
+      <div class="seg" id="resSeg" role="radiogroup" aria-label="解像度">
+        <input type="radio" class="seg-input" name="res" id="res720" value="720" checked>
+        <label class="seg-opt" for="res720">720p</label>
+        <input type="radio" class="seg-input" name="res" id="res1080" value="1080">
+        <label class="seg-opt" for="res1080">1080p</label>
+        <!-- 720p・1080p 以外の動画（スマホの画面録画など）のときだけ出す -->
+        <input type="radio" class="seg-input" name="res" id="resSource" value="source">
+        <label class="seg-opt seg-opt-source" for="resSource">元の解像度</label>
+        <span class="seg-thumb" aria-hidden="true"></span>
+      </div>
+      <div class="seg" role="radiogroup" aria-label="圧縮方法">
+        <input type="radio" class="seg-input" name="mode" id="modeQuality" value="quality">
+        <label class="seg-opt" for="modeQuality"><span>なるべく圧縮</span><span id="quickNote" class="seg-sub hidden"></span></label>
+        <input type="radio" class="seg-input" name="mode" id="modeSize" value="size" checked>
+        <label class="seg-opt" for="modeSize"><span><span id="sizeLabel">20</span>MB以内に圧縮</span><span id="quickNoteSize" class="seg-sub hidden"></span></label>
+        <span class="seg-thumb" aria-hidden="true"></span>
+      </div>
+    </div>
+    <details class="settings easy-settings" open>
+      <summary>詳細設定</summary>
+      <div class="row" style="margin-top: 6px">
+        <label for="targetSize">目標サイズ（「MB以内に圧縮」用）</label>
+        <span><input id="targetSize" type="number" inputmode="decimal" min="1" max="500" step="1" value="20"> MB</span>
+      </div>
+      <p class="hint">目標サイズの97%（<span id="capLabel">19.4 MB</span>）を狙って圧縮し、目標サイズ未満に収まらなければ自動で圧縮し直します（1MB＝100万バイト）。</p>
+      <div class="row" style="margin-top: 8px">
+        <label for="minRate720">指定ビットレート（720p）</label>
+        <span><input id="minRate720" type="number" inputmode="numeric" min="100" max="50000" step="100" value="1200"> kbps</span>
+      </div>
+      <div class="row" style="margin-top: 6px">
+        <label for="minRate1080">指定ビットレート（1080p）</label>
+        <span><input id="minRate1080" type="number" inputmode="numeric" min="100" max="50000" step="100" value="2700"> kbps</span>
+      </div>
+      <p class="hint">「なるべく圧縮」ではこの指定の値を利用します。けれども、スマホによっては画質を優先して指定を守らず、かなり高いビットレートで作ることがあります。<br>さらに圧縮したい時は、指定ビットレート値をもっと下げるか、別の圧縮ソフトを検討してね。60fpsのままなら指定の1.5倍、「元の解像度」では720pの値を画素数に比例させて使います。</p>
+      <div class="check">
+        <input type="checkbox" id="halfFps" checked>
+        <label for="halfFps">60fpsの動画は30fpsにする（容量を抑えられます）</label>
+      </div>
+      <div class="check">
+        <input type="checkbox" id="autoRun">
+        <label for="autoRun">動画を選んだらすぐ圧縮</label>
+      </div>
+      <div class="check">
+        <input type="checkbox" id="audioOn" checked>
+        <label for="audioOn" id="audioLabel">音声を残す</label>
+      </div>
+      <div class="check">
+        <input type="checkbox" id="nameOn">
+        <label for="nameOn">書き出す動画のファイル名を指定する</label>
+      </div>
+      <!-- ファイル名の項目（チェックで使う・使わない、↑↓で並べる順番。行は app.js で作る） -->
+      <div id="nameBox" class="name-box hidden">
+        <p class="hint">使う項目にチェックを入れ、↑↓で並べる順番を変えます（上にあるほど名前の前）。全部オフのときは今までの名前になります。自由入力は、文字と数字（「-」「_」も可）で10文字までです。</p>
+        <ol id="nameList" class="name-list"></ol>
+        <p class="hint">例：<span id="namePreview" class="name-preview"></span></p>
+      </div>
+      <p class="hint">Discordの無料アカウントは20MB、Nitro Basicは50MBが目安です（上限は変更されることがあります）。</p>
+      <p class="hint">設定は、画面で変えるとこの端末のブラウザに保存され、次に開いたときも同じになります。</p>
+      <p class="hint">下のボタンで作ったURLで開くと、同じ設定から始まります（ショートカットやブックマーク用。初期値と同じ項目はURLから省きます）。</p>
+      <button id="urlCopy" type="button" class="btn btn-sm" style="width: 100%; margin-top: 6px">現在の設定を記憶したURLを生成してコピー</button>
+      <p id="urlStatus" class="hint" role="status"></p>
+      <button id="resetSettings" type="button" class="btn btn-sm" style="width: 100%; margin-top: 6px">設定を初期値に戻す</button>
+    </details>
+    <button id="easySetNext" type="button" class="btn btn-primary">次へ（動画を選ぶ）</button>
   </section>
 
   <!-- 2. 動画を選んでトリミング -->
   <section id="step2" class="easy-step" aria-labelledby="step2Title">
     <h2 class="step-title" id="step2Title">動画を選んで、範囲を決めてください</h2>
-    <div class="easy-mode"><span>圧縮の仕方：<b id="easyModeName"></b></span><button id="easyChange" type="button" class="btn btn-sm">変更</button></div>
+    <div class="easy-mode"><span>圧縮の仕方：<b id="easyModeName"></b></span><span class="easy-mode-btns"><button id="repickBtn" type="button" class="btn btn-sm hidden">別の動画</button><button id="easyChange" type="button" class="btn btn-sm">変更</button></span></div>
     <input id="file" type="file" accept="video/*" class="visually-hidden">
     <div class="media-box is-large" id="srcBox">
       <video id="srcVideo" class="hidden" playsinline webkit-playsinline controls preload="metadata"></video>
@@ -103,29 +180,6 @@
       <button id="easyAnother" type="button" class="btn">別の動画を<br>圧縮する</button>
     </div>
   </section>
-
-  <!-- アプリの画面と同じ設定の部品（簡単モードでは2択で決めるので隠す） -->
-  <div class="hidden" aria-hidden="true">
-    <button id="repickBtn" type="button" class="btn btn-sm hidden" tabindex="-1">別の動画</button>
-    <div class="seg" id="resSeg">
-      <input type="radio" class="seg-input" name="res" id="res720" value="720" checked tabindex="-1">
-      <input type="radio" class="seg-input" name="res" id="res1080" value="1080" tabindex="-1">
-      <input type="radio" class="seg-input" name="res" id="resSource" value="source" tabindex="-1">
-    </div>
-    <input type="radio" class="seg-input" name="mode" id="modeQuality" value="quality" tabindex="-1">
-    <input type="radio" class="seg-input" name="mode" id="modeSize" value="size" checked tabindex="-1">
-    <span id="quickNote" class="hidden"></span><span id="quickNoteSize" class="hidden"></span><span id="sizeLabel">20</span>
-    <input id="targetSize" type="number" value="20" tabindex="-1"><span id="capLabel"></span>
-    <input id="minRate720" type="number" value="1200" tabindex="-1">
-    <input id="minRate1080" type="number" value="2700" tabindex="-1">
-    <input type="checkbox" id="halfFps" checked tabindex="-1">
-    <input type="checkbox" id="autoRun" tabindex="-1">
-    <input type="checkbox" id="audioOn" checked tabindex="-1"><span id="audioLabel"></span>
-    <input type="checkbox" id="nameOn" tabindex="-1">
-    <div id="nameBox"><ol id="nameList"></ol><span id="namePreview"></span></div>
-    <button id="urlCopy" type="button" tabindex="-1"></button><span id="urlStatus"></span>
-    <button id="resetSettings" type="button" tabindex="-1"></button>
-  </div>
 
   <footer>
     ブラウザの付属機能を利用して圧縮するため、ここに表示される動画はネット上にアップロードされません。

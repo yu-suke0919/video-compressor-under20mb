@@ -29,8 +29,8 @@ const VIDEOS = {
   'tiny-160x120.mp4': [...noisy('160x120', 30), ...tone(), '-t', '10', ...x264('300k'), ...aac()],
   'short-0.3s.mp4': [...noisy('1280x720', 30), ...tone(), '-t', '0.3', ...x264('4M'), ...aac()],
   'oneframe.mp4': [...plain('1280x720', 30), '-frames:v', '1', ...x264('4M')],
-  'long-5min.mp4': [...noisy('1280x720', 30), ...tone(), '-t', '300', ...x264('2M'), ...aac()],
-  'long-10min-25mb-noaudio.mp4': [...plain('1280x720', 30), '-t', '600', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
+  // 元のビットレートが指定ビットレート（1200kbps）よりずっと低い動画（1分で約2.5MB）
+  'lowrate-60s-noaudio.mp4': [...plain('1280x720', 30), '-t', '60', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
     '-b:v', '330k', '-maxrate', '330k', '-bufsize', '660k', '-g', '60'],
   'noaudio.mp4': [...noisy('1280x720', 30), '-t', '30', ...x264('8M')],
   'small-5mb.mp4': [...noisy('1280x720', 30), ...tone(), '-t', '10', ...x264('3M'), ...aac()],

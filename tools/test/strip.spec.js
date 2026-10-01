@@ -100,16 +100,16 @@ test.describe('全体かどうかの判定とトリミングのみ', () => {
   });
 
   test('再圧縮では収まらなくても、トリミングのみで収まるなら実行できる', async ({ page }) => {
-    await open(page);
-    await pick(page, 'long-10min-25mb-noaudio.mp4');
-    await setTrim(page, 0, 240);
+    await open(page, '?target=2');
+    await pick(page, 'lowrate-60s-noaudio.mp4');   // 1分で約2.5MB（元のビットレートが低い）
+    await setTrim(page, 0, 40);
     const u = await ui(page);
     expect(u.planInfo).toContain('トリミングのみ（再圧縮なし）');
     expect(u.runDisabled).toBe(false);
     await compress(page);
     const out = await outputInfo(page);
-    expect(out.size).toBeLessThan(20 * 1000 * 1000);
-    expect(Math.abs(out.duration - 240)).toBeLessThan(3);
+    expect(out.size).toBeLessThan(2 * 1000 * 1000);
+    expect(Math.abs(out.duration - 40)).toBeLessThan(3);
     expect((await ui(page)).outInfo).toContain('トリミングのみ（再圧縮なし）');
   });
 });

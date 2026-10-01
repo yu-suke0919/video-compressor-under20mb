@@ -1017,3 +1017,19 @@ header:has(#repickBtn:not(.hidden)) #easyLink {
   font-size: 14px;
   font-weight: 500;
 }
+.easy-mode-btns {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+/* 「詳しく設定する」は2択より控えめに */
+.choice.choice-sub {
+  padding: 12px 16px;
+}
+.choice.choice-sub .choice-title {
+  font-size: 16px;
+}
+/* 「詳しく設定する」の設定のステップ：詳細設定は開いたまま（見出しは出さない） */
+details.settings.easy-settings > summary {
+  display: none;
+}

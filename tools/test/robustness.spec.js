@@ -401,7 +401,7 @@ test.describe('エンコーダーが可変ビットレートの指定を守ら�
       VideoEncoder.prototype.configure = function (c) { return orig.call(this, c.bitrate ? Object.assign({}, c, { bitrate: Math.round(c.bitrate * 1.15) }) : c); };
     });
     await open(page, '?mode=size&target=2');
-    await pick(page, 'long-10min-25mb-noaudio.mp4');   // 10分で約25MB（元のビットレートが下限 1200kbps よりずっと低い）
+    await pick(page, 'lowrate-60s-noaudio.mp4');   // 1分で約2.5MB（元のビットレートが下限 1200kbps よりずっと低い）
     await setTrim(page, 0, 60);
     await compress(page);
     const diag = (await ui(page)).diag;

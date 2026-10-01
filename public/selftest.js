@@ -27,7 +27,7 @@
     vVert: { label: '1080×1920（縦長）・30fps・5秒', w: 1080, h: 1920, fps: 30, dur: 5, bitrate: 10e6 },
     vSmall: { label: '320×240・30fps・3秒', w: 320, h: 240, fps: 30, dur: 3, bitrate: 1e6 },
     vShort: { label: '1280×720・30fps・0.4秒', w: 1280, h: 720, fps: 30, dur: 0.4, bitrate: 6e6 },
-    vLong: { label: '1280×720・30fps・3分', w: 1280, h: 720, fps: 30, dur: 180, bitrate: 2e6 },
+    vLong: { label: '1280×720・30fps・1分', w: 1280, h: 720, fps: 30, dur: 60, bitrate: 2e6 },
     vPre: { label: '1280×720・30fps・30秒', w: 1280, h: 720, fps: 30, dur: 30, bitrate: 6e6 }
   };
   var made = {};   // 作った動画 { file, audio: 'AAC' | 'Opus' | null }
