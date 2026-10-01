@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-01d';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-01e';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -3216,6 +3216,13 @@
   });
 
   // ---------------------------------------------------------------- 起動
+  // 開発ブランチのプレビュー（<ブランチ名>.<プロジェクト名>.pages.dev）では、見出しにサイト名の代わりに版を出す
+  // （どの版を見ているか分かるように。本番の <プロジェクト名>.pages.dev はサイト名のまま）
+  function isPreviewHost(host) { return /\.pages\.dev$/.test(host) && host.split('.').length > 3; }
+  if (isPreviewHost(location.hostname)) {
+    var heading = document.querySelector('header h1');
+    if (heading) heading.textContent = 'ver ' + APP_VERSION;
+  }
   setupIOSButtons();
   // URL に設定の項目が1つでもあれば、前回の設定は使わず、初期値に URL の設定だけを重ねて始める
   // （保存してある前回の設定は消さない。URL なしで開いたときは前回の設定で始まる）
@@ -3252,7 +3259,7 @@
     state: state, precomp: function () { return { pre: pre }; },
     pickFile: function (file) { onFileChosen(file); },   // 自己テスト（selftest.html）から動画を渡す
     setEasyPreset: setEasyPreset, redo: redo, isCompressed: isCompressed,   // 3ステップの画面（easy.js）から使う
-    urlSettings: hasSettingParams(),
+    urlSettings: hasSettingParams(), isPreviewHost: isPreviewHost,
     constants: {
       SIZE_SAFETY: SIZE_SAFETY, AUDIO_BITRATE: AUDIO_BITRATE, DEFAULT_MIN_KBPS: DEFAULT_MIN_KBPS,
       DISCORD_FREE_BYTES: DISCORD_FREE_BYTES, MAX_ATTEMPTS: MAX_ATTEMPTS, MB: MB

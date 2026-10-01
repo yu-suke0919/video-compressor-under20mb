@@ -202,3 +202,13 @@ test('詳しく設定する：1 と 2 の間の設定のステップで、アプ
   });
   expect(url).toMatch(/^http:\/\/[^/]+\/\?/);
 });
+
+test('開発ブランチのプレビューだけ、見出しにサイト名の代わりに版を出す', async ({ page }) => {
+  await openEasy(page);
+  const r = await page.evaluate(() => {
+    const c = window.__compressor;
+    return [c.isPreviewHost('feat-easy-mode.maka-u20mb.pages.dev'), c.isPreviewHost('maka-u20mb.pages.dev'), c.isPreviewHost('127.0.0.1')];
+  });
+  expect(r).toEqual([true, false, false]);
+  expect(await page.textContent('header h1')).toBe('アップロード不要の動画圧縮');   // テストのサーバーはプレビューではない
+});
