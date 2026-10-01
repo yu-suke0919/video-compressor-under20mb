@@ -36,3 +36,14 @@ test('予圧縮のテストが最後まで動き、失敗がない', async ({ pa
   expect(results.filter(r => r.status === 'ng')).toEqual([]);
   expect(results.filter(r => r.status === 'ok').length).toBeGreaterThanOrEqual(4);
 });
+
+test('新しい画面（3ステップ）のテストが最後まで動き、失敗がない', async ({ page }) => {
+  test.setTimeout(10 * 60 * 1000);
+  await page.goto('/selftest.html');
+  await page.click('#easyBtn');
+  await page.waitForFunction(() => /^9\/9 件完了/.test(document.getElementById('summary').textContent), null, { timeout: 9 * 60 * 1000 });
+  const results = await page.evaluate(() => window.__selftest.results.map(r => ({ title: r.title, status: r.status, detail: r.detail })));
+  console.log(await page.evaluate(() => window.__selftest.resultText()));
+  expect(results.filter(r => r.status === 'ng')).toEqual([]);
+  expect(results.filter(r => r.status === 'ok').length).toBeGreaterThanOrEqual(8);
+});
