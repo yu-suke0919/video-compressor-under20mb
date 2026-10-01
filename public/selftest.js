@@ -246,7 +246,8 @@
     });
   }
 
-  // アプリを開き直す（毎回まっさらな状態から始める）。query には必ず設定を1つ以上入れる（保存してある設定を使わないため）
+  // アプリを開き直す（毎回まっさらな状態から始める）。query には設定を1つ以上入れる（保存してある設定を使わないため。
+  // 3ステップの画面の 2択を試すときだけ空にする）
   //   probe … 予圧縮をする（予圧縮のテスト）。ほかのテストでは予圧縮はしない（本番の圧縮だけを確かめる）
   //   page … 開く画面（省略時は、アプリの画面。page=old なら従来の画面）。query が空なら設定なしで開く（3ステップの画面の 1 から始まる）
   function openApp(query, probe, page) {
@@ -884,7 +885,6 @@
       title: '1 から始まり、「なるべく圧縮」→ 動画を選ぶ → 圧縮すると 3 に進み、720p・30fps になる',
       video: 'v1080p60',
       run: async function (source, r, ctx) {
-        ctx.stored = storedSettings();
         await openEasy(r);
         var problems = [], warns = [];
         if (stepNames() !== '選ぶ・動画・保存') problems.push('手順の帯が「' + stepNames() + '」');
@@ -1127,7 +1127,7 @@
     setBusy(true);
     setNotice('');
     var rows = EASY_CASES.map(function (c) { return addResult('新しい画面: ' + c.title); });
-    var ctx = {};
+    var ctx = { stored: storedSettings() };   // 始める前の保存してある設定（最後に変わっていないか確かめる）
     try {
       for (var i = 0; i < EASY_CASES.length; i++) {
         var c = EASY_CASES[i], r = rows[i];
