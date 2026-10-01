@@ -125,10 +125,10 @@ test('2択は、従来の画面と共通の保存してある設定を使わず�
   expect(await page.evaluate(() => localStorage.getItem('video-compressor-under20mb:settings'))).toBe(before);
 });
 
-test('3ステップの画面と従来の画面（/old）を行き来できる。従来の画面のリンクは、動画を選んだら（「別の動画」と並ばないよう）隠す', async ({ page }) => {
+test('3ステップの画面（下のリンク）と従来の画面（/old）を行き来できる。従来の画面のリンクは、動画を選んだら（「別の動画」と並ばないよう）隠す', async ({ page }) => {
   await openEasy(page);
   expect(await page.title()).toBe('アップロード不要の動画圧縮');
-  expect(await page.getAttribute('header a', 'href')).toBe('./old');
+  expect(await page.textContent('footer a[href="./old"]')).toBe('従来の画面');
   await open(page);   // 従来の画面
   expect(await page.title()).toBe('従来の画面｜アップロード不要の動画圧縮');
   expect(await page.getAttribute('#easyLink', 'href')).toBe('./');
@@ -211,4 +211,22 @@ test('開発ブランチのプレビューだけ、見出しにサイト名の�
   });
   expect(r).toEqual([true, false, false]);
   expect(await page.textContent('header h1')).toBe('アップロード不要の動画圧縮');   // テストのサーバーはプレビューではない
+});
+
+test('見出しの「使い方」で、3ステップの画面の説明書（手順の画像4枚・ショートカット・よくある質問・更新情報）を開ける', async ({ page }) => {
+  await openEasy(page);
+  await page.click('#helpBtn');
+  expect(await page.isVisible('#helpDlg')).toBe(true);
+  const r = await page.evaluate(() => ({
+    slides: document.getElementById('helpSlides').children.length,
+    dots: document.getElementById('helpDots').children.length,
+    imgs: Array.from(document.querySelectorAll('#helpSlides img')).map(i => i.getAttribute('src'))
+  }));
+  expect(r.slides).toBe(17);
+  expect(r.dots).toBe(17);
+  expect(r.imgs).toEqual(['./help/step-1.webp', './help/step-2.webp', './help/step-3.webp', './help/step-4.webp']);
+  await expect.poll(() => page.evaluate(() => document.querySelector('#helpSlides img').naturalWidth), { timeout: 10000 }).toBeGreaterThan(0);
+  expect(await page.textContent('#helpHint')).toContain('全17枚');
+  await page.click('#helpClose');
+  expect(await page.isVisible('#helpDlg')).toBe(false);
 });
