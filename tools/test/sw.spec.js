@@ -45,3 +45,16 @@ test('一度開いた説明書の画像は、ネットにつながっていな�
   await page.click('#helpBtn');
   await expect.poll(firstImage, { timeout: 10000 }).toBeGreaterThan(0);
 });
+
+test('簡単モード（/easy・/easy.html）も、一度開いたあとはオフラインで開ける', async ({ page, context }) => {
+  await page.goto('/');   // アプリの画面を開くと、簡単モードもキャッシュに入る
+  await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 20000 });
+  await context.setOffline(true);
+  for (const url of ['/easy', '/easy.html']) {
+    await page.goto(url);
+    expect(await page.title()).toContain('かんたん圧縮');
+    await page.waitForFunction(() => !!window.__compressor && document.getElementById('step1').classList.contains('is-current'));
+  }
+  await page.goto('/');
+  expect(await page.title()).toBe('アップロード不要の動画圧縮');
+});

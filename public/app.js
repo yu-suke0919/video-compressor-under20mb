@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-09-30k';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-01a';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -104,6 +104,18 @@
     shareBtn: $('shareBtn'), saveBtn: $('saveBtn'),
     nameOn: $('nameOn'), nameBox: $('nameBox'), nameList: $('nameList'), namePreview: $('namePreview'),
     diagBox: $('diagBox'), diagOut: $('diagOut'), diagCopy: $('diagCopy'), diagStatus: $('diagStatus')
+  };
+
+  // ---------------------------------------------------------------- 簡単モード（easy.html）
+  // 同じ画面の部品（同じ id）を使い、設定は2択（EASY_PRESETS）で決める。設定の部品は隠してあり、
+  // この端末に保存してある設定（アプリの画面で変えたもの）は読まず、保存もしない。URL の設定も使わない
+  var EASY = document.body.classList.contains('easy');
+  var EASY_MAX_SHORT = 1080;   // 簡単モードの「元の解像度」は短い辺がここまでの動画だけ（それより大きければ 1080p にする）
+  var EASY_PRESETS = {
+    // なるべく圧縮：720p・30fps・指定ビットレートは初期値
+    quality: { res: '720', mode: 'quality', halfFps: true },
+    // 画質優先（20MB以内）：元の画質（最大1080p）とfpsのまま、20MB に収まるなるべく高いビットレート
+    size: { res: 'source', mode: 'size', halfFps: false }
   };
 
   // ---------------------------------------------------------------- 状態
@@ -271,7 +283,8 @@
   var want1080 = false;
   function isSmallSource(meta) { return !!meta && Math.min(meta.width, meta.height) <= 720 + 8; }
   function syncResOption() {
-    var show = !!(state.meta && !isStandardRes(state.meta) && Math.min(state.meta.width, state.meta.height) > 720 + 8);
+    var show = !!(state.meta && !isStandardRes(state.meta) && Math.min(state.meta.width, state.meta.height) > 720 + 8) &&
+      !(EASY && Math.min(state.meta.width, state.meta.height) > EASY_MAX_SHORT + 8);
     els.resSeg.classList.toggle('is-three', show);
     var small = isSmallSource(state.meta);
     els.res1080.classList.toggle('is-locked', small);
@@ -538,6 +551,7 @@
   // URL パラメータで開いたときの値は保存しない（画面で変えたときだけ保存する）
   var SAVED_FIELDS = SETTING_DEFS.reduce(function (ids, d) { return ids.concat(d.ids); }, []);
   function saveSettings() {
+    if (EASY) return;   // 簡単モードは保存しない（アプリの画面の設定を変えない）
     var data = {};
     SETTING_DEFS.forEach(function (d) { data[d.key] = d.read(); });
     data.name = { on: naming.on, order: naming.order, enabled: naming.enabled, text1: naming.text.text1, text2: naming.text.text2 };
@@ -958,7 +972,12 @@
     els.outBox.classList.toggle('is-small', !done);
   }
 
+  // 画面を出し直し、簡単モードのページ（easy.js）にも知らせる（ステップの切り替えに使う）
   function refresh() {
+    refreshUi();
+    try { document.dispatchEvent(new CustomEvent('compressor:update')); } catch (e) { /* noop */ }
+  }
+  function refreshUi() {
     updateMediaLayout();
     syncResOption();
     var s = readSettings();
@@ -2958,47 +2977,60 @@
     run();
   }
 
+  // 簡単モードの2択を選ぶ（初期値の設定に、選んだ方の設定を重ねる）。圧縮した動画があれば消す
+  function setEasyPreset(name) {
+    var p = EASY_PRESETS[name];
+    if (!p || state.running) return;
+    if (isCompressed()) clearOutput();
+    SETTING_DEFS.forEach(function (d) { d.write(d.key in p ? p[d.key] : d.def); });
+    log('簡単モード ' + name);
+    refresh();
+  }
+
   // ---------------------------------------------------------------- 配線
   els.pickBtn.addEventListener('click', function () { els.file.click(); });
   els.repickBtn.addEventListener('click', function () { els.file.click(); });
 
-  // 説明書: 開く・閉じる（外側をタップしても閉じる）
-  var helpDlg = $('helpDlg'), helpSlides = $('helpSlides'), helpHint = $('helpHint');
-  var helpDots = Array.prototype.slice.call($('helpDots').children);
-  var helpOpened = false;
-  $('helpBtn').addEventListener('click', function () {
-    if (!helpOpened) {
-      helpOpened = true;
-      // 画像は初めて開いたときに読み込む（アプリの起動を軽くするため）
-      helpSlides.querySelectorAll('img[data-src]').forEach(function (img) { img.src = img.getAttribute('data-src'); });
-      helpSlides.classList.add('is-nudge');   // 少し横に揺らして、スワイプできることを知らせる
+  // 説明書: 開く・閉じる（外側をタップしても閉じる）。説明書のないページ（簡単モード）では何もしない
+  function setupHelp() {
+    var helpDlg = $('helpDlg'), helpSlides = $('helpSlides'), helpHint = $('helpHint');
+    var helpDots = Array.prototype.slice.call($('helpDots').children);
+    var helpOpened = false;
+    $('helpBtn').addEventListener('click', function () {
+      if (!helpOpened) {
+        helpOpened = true;
+        // 画像は初めて開いたときに読み込む（アプリの起動を軽くするため）
+        helpSlides.querySelectorAll('img[data-src]').forEach(function (img) { img.src = img.getAttribute('data-src'); });
+        helpSlides.classList.add('is-nudge');   // 少し横に揺らして、スワイプできることを知らせる
+      }
+      if (helpDlg.showModal) helpDlg.showModal(); else helpDlg.setAttribute('open', '');
+    });
+    // 今見ている画像に合わせて下の点を切り替える。一度スワイプしたら案内を消す
+    function helpSlideStep() {
+      var imgs = helpSlides.children;
+      return imgs.length > 1 ? imgs[1].offsetLeft - imgs[0].offsetLeft : 1;
     }
-    if (helpDlg.showModal) helpDlg.showModal(); else helpDlg.setAttribute('open', '');
-  });
-  // 今見ている画像に合わせて下の点を切り替える。一度スワイプしたら案内を消す
-  function helpSlideStep() {
-    var imgs = helpSlides.children;
-    return imgs.length > 1 ? imgs[1].offsetLeft - imgs[0].offsetLeft : 1;
+    helpSlides.addEventListener('scroll', function () {
+      var maxLeft = helpSlides.scrollWidth - helpSlides.clientWidth;
+      // 最後の画像は左端まで寄せられないので、いちばん右まで来たら最後とみなす
+      var i = helpSlides.scrollLeft >= maxLeft - 4 ? helpDots.length - 1 : Math.round(helpSlides.scrollLeft / helpSlideStep());
+      helpDots.forEach(function (d, k) { d.setAttribute('aria-current', k === i ? 'true' : 'false'); });
+      if (helpSlides.scrollLeft > 20) {
+        helpHint.classList.add('is-done');
+        helpSlides.classList.remove('is-nudge');
+      }
+    }, { passive: true });
+    helpDots.forEach(function (d, k) {
+      d.addEventListener('click', function () { helpSlides.scrollTo({ left: k * helpSlideStep(), behavior: 'smooth' }); });
+    });
+    $('helpClose').addEventListener('click', function () {
+      if (helpDlg.close) helpDlg.close(); else helpDlg.removeAttribute('open');
+    });
+    helpDlg.addEventListener('click', function (e) {
+      if (e.target === helpDlg && helpDlg.close) helpDlg.close();   // 枠の外（背景）をタップ
+    });
   }
-  helpSlides.addEventListener('scroll', function () {
-    var maxLeft = helpSlides.scrollWidth - helpSlides.clientWidth;
-    // 最後の画像は左端まで寄せられないので、いちばん右まで来たら最後とみなす
-    var i = helpSlides.scrollLeft >= maxLeft - 4 ? helpDots.length - 1 : Math.round(helpSlides.scrollLeft / helpSlideStep());
-    helpDots.forEach(function (d, k) { d.setAttribute('aria-current', k === i ? 'true' : 'false'); });
-    if (helpSlides.scrollLeft > 20) {
-      helpHint.classList.add('is-done');
-      helpSlides.classList.remove('is-nudge');
-    }
-  }, { passive: true });
-  helpDots.forEach(function (d, k) {
-    d.addEventListener('click', function () { helpSlides.scrollTo({ left: k * helpSlideStep(), behavior: 'smooth' }); });
-  });
-  $('helpClose').addEventListener('click', function () {
-    if (helpDlg.close) helpDlg.close(); else helpDlg.removeAttribute('open');
-  });
-  helpDlg.addEventListener('click', function (e) {
-    if (e.target === helpDlg && helpDlg.close) helpDlg.close();   // 枠の外（背景）をタップ
-  });
+  if ($('helpDlg')) setupHelp();
   els.file.addEventListener('change', function (e) {
     onFileChosen(e.target.files && e.target.files[0]);
     els.file.value = '';
@@ -3177,8 +3209,10 @@
   setupIOSButtons();
   // URL に設定の項目が1つでもあれば、前回の設定は使わず、初期値に URL の設定だけを重ねて始める
   // （保存してある前回の設定は消さない。URL なしで開いたときは前回の設定で始まる）
-  if (!hasSettingParams()) loadSavedSettings();
-  applyUrlParams();
+  if (!EASY) {
+    if (!hasSettingParams()) loadSavedSettings();
+    applyUrlParams();
+  }
   renderNameList();
   var missing = checkSupport();
   if (missing.length) {
@@ -3207,6 +3241,7 @@
     estimateFps: estimateFps, snapFps: snapFps, audioStrategy: audioStrategy,
     state: state, precomp: function () { return { pre: pre }; },
     pickFile: function (file) { onFileChosen(file); },   // 自己テスト（selftest.html）から動画を渡す
+    setEasyPreset: setEasyPreset, redo: redo, isCompressed: isCompressed,   // 簡単モード（easy.js）から使う
     constants: {
       SIZE_SAFETY: SIZE_SAFETY, AUDIO_BITRATE: AUDIO_BITRATE, DEFAULT_MIN_KBPS: DEFAULT_MIN_KBPS,
       DISCORD_FREE_BYTES: DISCORD_FREE_BYTES, MAX_ATTEMPTS: MAX_ATTEMPTS, MB: MB
