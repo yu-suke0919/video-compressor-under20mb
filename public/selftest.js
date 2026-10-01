@@ -1,7 +1,7 @@
 /*
  * 自己テスト（selftest.html）
  * この端末で、テスト用の動画をその場で作り（WebCodecs で H.264 と AAC/Opus に書き出す）、
- * 本番と同じ画面（index.html）を iframe で開いて実際に圧縮し、結果の中身を Mediabunny で調べる。
+ * 本番と同じ処理の従来の画面（old.html。URL で設定を渡せる）を iframe で開いて実際に圧縮し、結果の中身を Mediabunny で調べる。
  * 画面の設定は URL で渡すので、この端末に保存してある設定は使わず、変えもしない。
  */
 'use strict';
@@ -248,7 +248,7 @@
   function openApp(query, probe) {
     return new Promise(function (resolve) {
       frameEl.onload = resolve;
-      frameEl.src = './?' + query + (probe ? '' : '&probe=off');
+      frameEl.src = './old?' + query + (probe ? '' : '&probe=off');   // 従来の画面（URL の設定をそのまま使う）
     }).then(function () {
       return waitFor(function () { return appWin().__compressor && /対応 VideoEncoder=/.test(appText('diagOut')); }, 30000, 'アプリの準備');
     }).then(function () {

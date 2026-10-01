@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-01c';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-01d';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -106,12 +106,13 @@
     diagBox: $('diagBox'), diagOut: $('diagOut'), diagCopy: $('diagCopy'), diagStatus: $('diagStatus')
   };
 
-  // ---------------------------------------------------------------- 簡単モード（easy.html）
-  // 同じ画面の部品（同じ id）を使い、設定は3択で決める。URL の設定は使わない
+  // ---------------------------------------------------------------- 3ステップの画面（index.html。body に easy）
+  // 従来の画面（old.html）と同じ部品（同じ id）を使い、設定は3択で決める
   //   なるべく圧縮・画質優先 … 決めた設定（EASY_PRESETS）。この端末に保存してある設定は読まず、保存もしない
-  //   詳しく設定する（custom） … アプリの画面と同じ設定の部品を出し、保存してある設定を読んで、変えたら保存する（アプリの画面と共通）
+  //   詳しく設定する（custom） … 従来の画面と同じ設定の部品を出し、保存してある設定を読んで、変えたら保存する（従来の画面と共通）。
+  //     URL に設定があれば（ショートカットから開いたときなど）、保存してある設定の代わりに URL の設定を使う（従来の画面と同じ）
   var EASY = document.body.classList.contains('easy');
-  var easyPreset = null;       // 簡単モードで選んだもの（quality・size・custom）
+  var easyPreset = null;       // 3ステップの画面で選んだもの（quality・size・custom）
   var EASY_MAX_SHORT = 1080;   // 「画質優先」の「元の解像度」は短い辺がここまでの動画だけ（それより大きければ 1080p にする）
   var EASY_PRESETS = {
     // なるべく圧縮：720p・30fps・指定ビットレートは初期値
@@ -553,7 +554,7 @@
   // URL パラメータで開いたときの値は保存しない（画面で変えたときだけ保存する）
   var SAVED_FIELDS = SETTING_DEFS.reduce(function (ids, d) { return ids.concat(d.ids); }, []);
   function saveSettings() {
-    if (EASY && easyPreset !== 'custom') return;   // 簡単モードの2択は保存しない（アプリの画面の設定を変えない）
+    if (EASY && easyPreset !== 'custom') return;   // 3ステップの画面の2択は保存しない（従来の画面と共通の設定を変えない）
     var data = {};
     SETTING_DEFS.forEach(function (d) { data[d.key] = d.read(); });
     data.name = { on: naming.on, order: naming.order, enabled: naming.enabled, text1: naming.text.text1, text2: naming.text.text2 };
@@ -974,7 +975,7 @@
     els.outBox.classList.toggle('is-small', !done);
   }
 
-  // 画面を出し直し、簡単モードのページ（easy.js）にも知らせる（ステップの切り替えに使う）
+  // 画面を出し直し、3ステップの画面（easy.js）にも知らせる（ステップの切り替えに使う）
   function refresh() {
     refreshUi();
     try { document.dispatchEvent(new CustomEvent('compressor:update')); } catch (e) { /* noop */ }
@@ -2979,7 +2980,7 @@
     run();
   }
 
-  // 簡単モードで選ぶ。圧縮した動画があれば消す
+  // 3ステップの画面で選ぶ。圧縮した動画があれば消す
   //   2択 … 初期値の設定に、選んだ方の設定を重ねる。custom … 初期値に保存してある設定を重ねる（アプリの画面と同じ）
   function setEasyPreset(name) {
     var p = EASY_PRESETS[name];
@@ -2988,9 +2989,11 @@
     easyPreset = name;
     SETTING_DEFS.forEach(function (d) { d.write(p && d.key in p ? p[d.key] : d.def); });
     naming = defaultNaming();
-    if (name === 'custom') loadSavedSettings();
+    if (name === 'custom') {
+      if (hasSettingParams()) applyUrlParams(); else loadSavedSettings();
+    }
     renderNameList();
-    log('簡単モード ' + name);
+    log('3ステップの画面 ' + name);
     refresh();
   }
 
@@ -2998,7 +3001,7 @@
   els.pickBtn.addEventListener('click', function () { els.file.click(); });
   els.repickBtn.addEventListener('click', function () { els.file.click(); });
 
-  // 説明書: 開く・閉じる（外側をタップしても閉じる）。説明書のないページ（簡単モード）では何もしない
+  // 説明書: 開く・閉じる（外側をタップしても閉じる）。説明書のないページ（3ステップの画面）では何もしない
   function setupHelp() {
     var helpDlg = $('helpDlg'), helpSlides = $('helpSlides'), helpHint = $('helpHint');
     var helpDots = Array.prototype.slice.call($('helpDots').children);
@@ -3183,8 +3186,7 @@
     }
     // すべて初期値でも1つは付ける（URL に設定の項目がないと、開いたときに前回の設定が使われるため）
     if (!q.length) q.push('res=' + SETTING_DEFS[0].read());
-    // 簡単モードは URL の設定を使わないので、アプリの画面の URL にする
-    return (EASY ? new URL('./', location.href).href : location.origin + location.pathname) + '?' + q.join('&');
+    return location.origin + location.pathname + '?' + q.join('&');
   }
   // 文字をコピーする（クリップボードAPIが使えなければ、隠した欄を選択してコピー）
   function copyText(text, status, failMsg) {
@@ -3249,7 +3251,8 @@
     estimateFps: estimateFps, snapFps: snapFps, audioStrategy: audioStrategy,
     state: state, precomp: function () { return { pre: pre }; },
     pickFile: function (file) { onFileChosen(file); },   // 自己テスト（selftest.html）から動画を渡す
-    setEasyPreset: setEasyPreset, redo: redo, isCompressed: isCompressed,   // 簡単モード（easy.js）から使う
+    setEasyPreset: setEasyPreset, redo: redo, isCompressed: isCompressed,   // 3ステップの画面（easy.js）から使う
+    urlSettings: hasSettingParams(),
     constants: {
       SIZE_SAFETY: SIZE_SAFETY, AUDIO_BITRATE: AUDIO_BITRATE, DEFAULT_MIN_KBPS: DEFAULT_MIN_KBPS,
       DISCORD_FREE_BYTES: DISCORD_FREE_BYTES, MAX_ATTEMPTS: MAX_ATTEMPTS, MB: MB

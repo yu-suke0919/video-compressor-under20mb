@@ -9,7 +9,7 @@
 'use strict';
 
 var CACHE_PREFIX = 'video-compressor-under20mb-';   // このアプリのキャッシュ名の頭（同じドメインの別アプリのキャッシュは消さない）
-var CACHE = CACHE_PREFIX + 'v170';
+var CACHE = CACHE_PREFIX + 'v171';
 var NETWORK_TIMEOUT_MS = 3000;   // ネット優先のとき、ネットの応答をこれだけ待ってからキャッシュを使う
 
 // Cloudflare Pages のプレビュー（<ブランチ名>.<プロジェクト名>.pages.dev）と手元の確認環境だけネット優先にする
@@ -23,8 +23,8 @@ var ASSETS = [
   './index.html',
   './style.css',
   './app.js',
-  './easy',      // 簡単モード（Cloudflare Pages は easy.html を拡張子なしの /easy で配信する）
   './easy.js',
+  './old',       // 従来の画面（Cloudflare Pages は old.html を拡張子なしの /old で配信する）
   './manifest.json',
   './vendor/mediabunny.min.js',
   './icons/icon-192.png',
@@ -78,8 +78,8 @@ function fromCache(req) {
   return caches.match(req, { ignoreSearch: true }).then(function (cached) {
     if (cached) return cached;
     if (req.mode === 'navigate') {
-      // 簡単モード（/easy・/easy.html）は簡単モードの画面、それ以外はアプリの画面
-      var page = /\/easy(\.html)?$/.test(new URL(req.url).pathname) ? './easy' : './index.html';
+      // 従来の画面（/old・/old.html）は従来の画面、それ以外はアプリの画面
+      var page = /\/old(\.html)?$/.test(new URL(req.url).pathname) ? './old' : './index.html';
       return caches.match(new URL(page, self.registration.scope).toString());
     }
     return null;
