@@ -103,7 +103,7 @@ test('720p・1080p ではない動画は、どの圧縮の仕方でも元の解�
 // 2 の解像度・fps のつまみを押す（つまみの見た目はラベル）
 const choose = (page, id) => page.click('label[for="' + id + '"]');
 
-test('2 で、その動画だけ解像度（720p/1080p）・fps（30/60）・圧縮方法（なるべく圧縮/◯MB以内）を変えられる', async ({ page }) => {
+test('2 で、その動画だけ解像度（480p/720p/1080p）・fps（30/60）・圧縮方法（なるべく圧縮/◯MB以内）を変えられる', async ({ page }) => {
   await openEasy(page);
   await page.click('.choice[data-preset="quality"]');
   expect(await page.isVisible('#adjBox')).toBe(false);   // 動画を選ぶまでは出さない
@@ -117,8 +117,11 @@ test('2 で、その動画だけ解像度（720p/1080p）・fps（30/60）・圧
   // 解像度（なるべく圧縮は、その解像度の指定ビットレート）
   await choose(page, 'adjRes1080');
   expect(await plan(page)).toEqual({ w: 1920, h: 1080, fps: 30, mode: 'quality', bps: 2700000 });
-  await choose(page, 'adjRes720');
+  await choose(page, 'adjRes480');   // 縦横比はそのまま、短い辺を480に。指定ビットレートは720pの値を画素数に比例させる
   let p = await plan(page);
+  expect([p.w, p.h, p.bps]).toEqual([854, 480, Math.round(1200000 * 4 / 9)]);
+  await choose(page, 'adjRes720');
+  p = await plan(page);
   expect([p.w, p.h, p.bps]).toEqual([1280, 720, 1200000]);
   // fps（60fps のままは、指定の1.5倍）
   await choose(page, 'adjFps60');
