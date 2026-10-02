@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-02w';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-02x';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1016,7 +1016,12 @@
     });
     updateNamePreview();
     els.repickBtn.disabled = locked;
-    els.runBtn.textContent = state.running ? 'キャンセル' : done ? 'やり直す' : '圧縮する';
+    // 文字が変わるときだけ書き直す（押している途中で中身を作り直すと、押したことにならないため）
+    var runLabel = state.running ? 'キャンセル' : done ? 'やり直す' : '圧縮する';
+    if (els.runBtn.dataset.label !== runLabel) {
+      els.runBtn.textContent = runLabel;
+      els.runBtn.dataset.label = runLabel;
+    }
 
     if (!hasFile) {
       showPrecompressHints(null);
