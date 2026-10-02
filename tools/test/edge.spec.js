@@ -10,7 +10,7 @@ test.describe('小さい・短い動画', () => {
     await pick(page, 'tiny-160x120.mp4');
     const u = await ui(page);
     expect(u.threeRes).toBe(false);
-    expect(u.planInfo).toContain('160×120');
+    expect(u.planInfo).toContain('現在の設定：120p/');
     expect(u.original).toBe(true);
     expect(u.outInfo).toContain('元の動画のまま');
     await compress(page);

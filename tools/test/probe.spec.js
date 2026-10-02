@@ -25,10 +25,10 @@ test('読み込んだら全体を先行圧縮し、実測の平均ビットレ�
   await open(page, '?probe=on&mode=quality');
   await pick(page, '1080p60-45s.mp4');   // 初期設定は 720p・30fps
   await waitPc(page, () => { const p = window.__compressor.precomp().pre; return p && p.marks.length > 2; });
-  expect((await ui(page)).planInfo).toMatch(/・予想[\d.]+ MB（先行圧縮 \d+%）\n約.+まで20MBに収まるよ$/);
+  expect((await ui(page)).planInfo).toMatch(/^現在の設定：720p\/30fps\/45秒\/.+\n→ [\d.]+MB（予想・先行圧縮 \d+%）$/);   // 20MBに収まるので3行目は出さない
   await preDone(page);
   const u = await ui(page);
-  expect(u.planInfo).toMatch(/（先行圧縮済み）\n約.+まで20MBに収まるよ$/);
+  expect(u.planInfo).toMatch(/（確定・先行圧縮済み）$/);
   const d = await diag(page);
   expect(d).toMatch(/先行圧縮を開始 720 1280x720 mode=quality 1200kbps fps=60→30/);   // なるべく圧縮は下限ビットレート
   expect(d).toMatch(/先行圧縮が完了 /);
@@ -38,7 +38,7 @@ test('読み込んだら全体を先行圧縮し、実測の平均ビットレ�
   expect(Math.abs(r.est - r.bytes) / r.bytes).toBeLessThan(0.02);
   expect(r.fit).toBe(Math.floor(20000000 * 8 / (r.bps + r.audio) * 0.95));
   const label = r.bps >= 1000000 ? (r.bps / 1000000).toFixed(1) + 'Mbps' : Math.round(r.bps / 1000) + 'kbps';
-  expect(u.planInfo).toContain('・' + label + '・予想');
+  expect(u.planInfo).toContain('/' + label + '\n→ ');
 });
 
 test('「なるべく圧縮」で、先行圧縮が済んでいれば、押したら範囲を切り出してすぐ結果にする', async ({ page }) => {
@@ -46,7 +46,7 @@ test('「なるべく圧縮」で、先行圧縮が済んでいれば、押し�
   await pick(page, '720p-60s.mp4');
   await preDone(page);
   await setTrim(page, 10.7, 30.7);   // 「なるべく圧縮」では、範囲を変えても先行圧縮はやり直さない（始まりはキーフレームの間）
-  expect((await ui(page)).planInfo).toMatch(/（先行圧縮済み）/);
+  expect((await ui(page)).planInfo).toMatch(/・先行圧縮済み）/);
   const est = await pc(page, () => window.__compressor.state.plan.estBytes);
   await compress(page);
   const d = await diag(page);
@@ -180,7 +180,7 @@ test('範囲が目標サイズに収まる長さの目安を超えていれば�
   const fit = await pc(page, () => window.__compressor.state.plan.fitSec);
   expect(fit).toBeLessThan(60);
   expect(await over()).toBe(true);
-  expect(await page.textContent('#planInfo')).toMatch(new RegExp('\n3MBに収めるなら約' + fit + '秒以内にトリミングしてね$'));
+  expect(await page.textContent('#planInfo')).toMatch(new RegExp('\n' + fit + '秒以内で3MBに収まります。$'));
   // 即出力の大きさは「なるべく圧縮」での予想（範囲全体）
   const q = await pc(page, () => {
     const m = document.getElementById('modeQuality');
@@ -196,7 +196,7 @@ test('範囲が目標サイズに収まる長さの目安を超えていれば�
   // 目安の長さより短くすれば、黄色をやめる
   await setTrim(page, 0, Math.max(1, fit - 2));
   expect(await over()).toBe(false);
-  expect(await page.textContent('#planInfo')).toMatch(new RegExp('\n約' + fit + '秒まで3MBに収まるよ$'));
+  expect(await page.textContent('#planInfo')).not.toMatch(/収まります。/);   // 収まるなら3行目は出さない
   // 圧縮中・圧縮後は出さない
   await compress(page);
   expect(await over()).toBe(false);
