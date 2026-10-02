@@ -148,14 +148,31 @@
       </div>
       <div class="trim-times"><span id="trimLabel">トリミング</span></div>
     </section>
-    <!-- この動画だけ、ビットレート・解像度・fps を上げ下げする（保存しない） -->
-    <div class="adj hidden" id="adjBox" role="group" aria-label="画質の調整">
-      <button id="adjRateUp" type="button" class="btn btn-sm" disabled>ビットレートを上げる</button>
-      <button id="adjRateDown" type="button" class="btn btn-sm" disabled>ビットレートを下げる</button>
-      <button id="adjResUp" type="button" class="btn btn-sm" disabled>解像度を上げる</button>
-      <button id="adjResDown" type="button" class="btn btn-sm" disabled>解像度を下げる</button>
-      <button id="adjFpsUp" type="button" class="btn btn-sm" disabled>fpsを上げる</button>
-      <button id="adjFpsDown" type="button" class="btn btn-sm" disabled>fpsを下げる</button>
+    <!-- この動画だけ、解像度・fps・圧縮方法を変える（保存しない） -->
+    <div class="segs adj hidden" id="adjBox">
+      <div class="seg is-three" id="adjResSeg" role="radiogroup" aria-label="解像度">
+        <input type="radio" class="seg-input" name="adjRes" id="adjRes480" value="480">
+        <label class="seg-opt" for="adjRes480">480p</label>
+        <input type="radio" class="seg-input" name="adjRes" id="adjRes720" value="720" checked>
+        <label class="seg-opt" for="adjRes720">720p</label>
+        <input type="radio" class="seg-input" name="adjRes" id="adjRes1080" value="1080">
+        <label class="seg-opt" for="adjRes1080">1080p</label>
+        <span class="seg-thumb" aria-hidden="true"></span>
+      </div>
+      <div class="seg" id="adjFpsSeg" role="radiogroup" aria-label="fps">
+        <input type="radio" class="seg-input" name="adjFps" id="adjFps30" value="30" checked>
+        <label class="seg-opt" for="adjFps30">30fps</label>
+        <input type="radio" class="seg-input" name="adjFps" id="adjFps60" value="60">
+        <label class="seg-opt" for="adjFps60">60fps</label>
+        <span class="seg-thumb" aria-hidden="true"></span>
+      </div>
+      <div class="seg" id="adjModeSeg" role="radiogroup" aria-label="圧縮方法">
+        <input type="radio" class="seg-input" name="adjMode" id="adjModeQuality" value="quality" checked>
+        <label class="seg-opt" for="adjModeQuality">なるべく圧縮</label>
+        <input type="radio" class="seg-input" name="adjMode" id="adjModeSize" value="size">
+        <label class="seg-opt" for="adjModeSize"><span><span id="adjSizeLabel">20</span>MB以内に圧縮</span></label>
+        <span class="seg-thumb" aria-hidden="true"></span>
+      </div>
     </div>
     <div id="adjNote" class="adj-note hidden"></div>
     <div id="planInfo" class="meta-line"></div>
@@ -245,7 +262,7 @@
     <div class="help-slides" id="helpSlides" tabindex="0" aria-label="手順の画像（横にスワイプで次の画像）">
       <img data-src="./help/step-1.webp" width="390" height="780" alt="①どう圧縮するか選ぶ（なるべく圧縮は軽さ重視、画質優先（20MB以内）は画質重視。細かく決めたいときは「詳しく設定する」）">
       <img data-src="./help/step-2.webp" width="390" height="780" alt="②「動画を選択」をタップして動画を選ぶ">
-      <img data-src="./help/step-3.webp" width="390" height="780" alt="③青い線で使う範囲を決める（お好みで、下のボタンでビットレート・解像度・fpsを調整）、④「圧縮する」を押す">
+      <img data-src="./help/step-3.webp" width="390" height="780" alt="③青い線で使う範囲を決める（お好みで、下で解像度・fps・圧縮方法を変える）、④「圧縮する」を押す">
       <img data-src="./help/step-4.webp" width="390" height="780" alt="小さくなった動画ができたら、⑤「Discord等に共有・動画保存」でDiscordに送るか写真に保存する">
       <!-- 別のページ（開いたときに初めて読み込む）。アプリの画面はそのまま残るよう、新しいタブで開く -->
       <a class="help-card" href="./shortcut.html" target="_blank" rel="noopener">
