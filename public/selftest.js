@@ -31,7 +31,8 @@
     vSmall: { label: '320×240・30fps・3秒', w: 320, h: 240, fps: 30, dur: 3, bitrate: 1e6 },
     vShort: { label: '1280×720・30fps・0.4秒', w: 1280, h: 720, fps: 30, dur: 0.4, bitrate: 6e6 },
     vLong: { label: '1280×720・30fps・1分', w: 1280, h: 720, fps: 30, dur: 60, bitrate: 2e6 },
-    vPre: { label: '1280×720・30fps・30秒', w: 1280, h: 720, fps: 30, dur: 30, bitrate: 6e6 }
+    vPre: { label: '1280×720・30fps・30秒', w: 1280, h: 720, fps: 30, dur: 30, bitrate: 6e6 },
+    v480: { label: '1280×720・30fps・3分30秒', w: 1280, h: 720, fps: 30, dur: 210, bitrate: 3e6 }
   };
   var made = {};   // 作った動画 { file, audio: 'AAC' | 'Opus' | null }
 
@@ -450,7 +451,7 @@
   }
 
   function setBusy(busy) {
-    ['autoBtn', 'switchBtn', 'preBtn', 'easyBtn', 'fileBtn'].forEach(function (id) { $(id).disabled = busy; });
+    ['autoBtn', 'switchBtn', 'preBtn', 'easyBtn', 'res480Btn', 'fileBtn'].forEach(function (id) { $(id).disabled = busy; });
   }
 
   async function runAll(list, getSource) {
@@ -1142,6 +1143,102 @@
         render();
       }
       setStatus('新しい画面のテストが終わりました');
+    } finally {
+      render();
+      setBusy(false);
+    }
+  });
+
+  // ---------------------------------------------------------------- 480p の効果（3分30秒が20MBに収まるか）
+  // アプリは 480p を選べないので、アプリと同じエンコーダーの設定（ハードウェアの VBR → ハードウェアの CBR → ブラウザに任せる VBR、
+  // キーフレーム2秒ごと）で、このページから直接圧縮して比べる。
+  // 480p の指定ビットレートは、720p の指定ビットレート（1200kbps）を画素数に比例させた値（1200 × 4/9 ≒ 533kbps）
+  var RES480_CASES = [
+    { title: '720p・30fps・1200kbps（今の「なるべく圧縮」）', w: 1280, h: 720, bps: 1200000 },
+    { title: '480p・30fps・533kbps', w: 854, h: 480, bps: 533000 }
+  ];
+  async function pickEncoder(c) {
+    var order = [['prefer-hardware', 'variable'], ['prefer-hardware', 'constant'], ['no-preference', 'variable']];
+    for (var i = 0; i < order.length; i++) {
+      var ok = await M.canEncodeVideo('avc', { width: c.w, height: c.h, frameRate: 30,
+        quality: new M.Quality({ bitrate: c.bps, bitrateMode: order[i][1] }), hardwareAcceleration: order[i][0] }).catch(function () { return false; });
+      if (ok) return { hw: order[i][0], mode: order[i][1] };
+    }
+    return null;
+  }
+  async function encodeDirect(source, c, onProgress) {
+    var enc = await pickEncoder(c);
+    if (!enc) throw new Error('この端末では ' + c.w + '×' + c.h + ' の H.264 で書き出せません');
+    var input = new M.Input({ source: new M.BlobSource(source.file), formats: [M.MP4, M.QTFF] });
+    var output = new M.Output({ format: new M.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new M.BufferTarget() });
+    var aacOk = await M.canEncodeAudio('aac', { numberOfChannels: 2, sampleRate: 48000, bitrate: 128000 }).catch(function () { return false; });
+    // 音声はアプリと同じく、AAC ならそのまま、そうでなければ AAC（128kbps）にする（できなければ音声なし）
+    var audio = source.audio === 'AAC' ? { codec: 'aac' } : aacOk ? { codec: 'aac', quality: new M.Quality({ bitrate: 128000 }), forceTranscode: true } : { discard: true };
+    try {
+      var conv = await M.Conversion.init({
+        input: input, output: output,
+        video: { codec: 'avc', width: c.w, height: c.h, fit: 'fill', quality: new M.Quality({ bitrate: c.bps, bitrateMode: enc.mode }),
+          hardwareAcceleration: enc.hw, keyFrameInterval: 2, forceTranscode: true, allowTransformationMetadata: false },
+        audio: audio
+      });
+      if (!conv.isValid) throw new Error('変換できません');
+      conv.onProgress = onProgress;
+      var t0 = Date.now();
+      await conv.execute();
+      return { blob: new Blob([output.target.buffer], { type: 'video/mp4' }), enc: enc, sec: (Date.now() - t0) / 1000 };
+    } finally {
+      try { input.dispose(); } catch (e) { /* noop */ }
+    }
+  }
+
+  $('res480Btn').addEventListener('click', async function () {
+    setBusy(true);
+    setNotice('');
+    var rows = RES480_CASES.map(function (c) { return addResult('480p の効果: ' + c.title); });
+    var summary = addResult('480p の効果: 3分30秒が 480p・30fps で20MBに収まり、720p より小さくなる');
+    var sizes = [];
+    try {
+      var source;
+      try {
+        source = await makeVideo('v480');
+      } catch (e) {
+        rows.concat(summary).forEach(function (r) { r.status = 'ng'; r.detail = errorDetail(e); });
+        return;
+      }
+      for (var i = 0; i < RES480_CASES.length; i++) {
+        var c = RES480_CASES[i], r = rows[i];
+        r.title += '（元: ' + source.label + (source.audio ? '・' + source.audio : '・音声なし') + '）';
+        r.status = 'run';
+        render();
+        try {
+          var res = await encodeDirect(source, c, function (p) { setStatus('480p の効果を測っています ' + (i + 1) + '/' + RES480_CASES.length + '：' + c.title + ' … ' + Math.round(p * 100) + '%'); });
+          var info = await inspect(res.blob);
+          var audioBps = info.audio ? 128000 : 0;
+          var videoBps = Math.max(0, info.size * 8 / info.duration - audioBps);
+          sizes[i] = { size: info.size, videoBps: videoBps };
+          r.detail = describe(info) + '・映像 約' + Math.round(videoBps / 1000) + 'kbps（指定 ' + c.bps / 1000 + 'kbps）・' + res.sec.toFixed(1) + '秒で完了・' +
+            (res.enc.hw === 'prefer-hardware' ? 'ハードウェア' : 'ブラウザ任せ') + '/' + (res.enc.mode === 'variable' ? 'VBR' : 'CBR');
+          r.status = 'ok';
+          if (info.w !== c.w || info.h !== c.h) { r.status = 'ng'; r.detail = '解像度が ' + info.w + '×' + info.h + '（' + r.detail + '）'; }
+          else if (videoBps > c.bps * 1.3) { r.status = 'warn'; r.detail = 'エンコーダーが指定より大きく書き出した（' + r.detail + '）'; }
+        } catch (e) {
+          r.status = 'ng';
+          r.detail = errorDetail(e);
+        }
+        render();
+      }
+      if (sizes[0] && sizes[1]) {
+        var fits = sizes[1].size < 20 * MB;
+        var ratio = sizes[1].size / sizes[0].size;
+        summary.status = fits && ratio < 0.8 ? 'ok' : fits ? 'warn' : 'ng';
+        summary.detail = '480p ' + fmtMB(sizes[1].size) + (fits ? '（20MBに収まる）' : '（20MBを超えた）') + '・720p ' + fmtMB(sizes[0].size) +
+          '・720p の ' + Math.round(ratio * 100) + '%' + (ratio < 0.8 ? '' : '（480p にしてもあまり小さくならない）') +
+          '・この端末で 480p なら約' + Math.floor(20 * MB * 0.97 * 8 / (sizes[1].videoBps + 128000)) + '秒まで20MB';
+      } else {
+        summary.status = 'ng';
+        summary.detail = '比べられなかった（上の失敗を見てください）';
+      }
+      setStatus('480p の効果を測り終わりました');
     } finally {
       render();
       setBusy(false);
