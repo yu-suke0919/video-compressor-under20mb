@@ -410,9 +410,14 @@
   function customName(ctx) {
     // 2 のファイル名の欄に入れた名前をそのまま使う（日付などは付けない）。
     // 空なら元の動画の名前（_compressed なども付けない）
-    var typed = limitBytes(cleanName(easyName));
-    if (typed) return typed;
-    if (!easyNameTouched) { var fromSettings = settingsName(ctx); if (fromSettings) return fromSettings; }
+    // （手で変えていなければ、ファイル名の設定から作り直す。トリミングのみなど、書き出し方に合った名前にするため）
+    if (easyNameTouched) {
+      var typed = limitBytes(cleanName(easyName, NAME_MAX_BYTES));
+      if (typed) return typed;
+    } else {
+      var fromSettings = settingsName(ctx);
+      if (fromSettings) return fromSettings;
+    }
     return limitBytes(cleanName(ctx.base)) || null;
   }
   // ファイル名の設定から作る名前

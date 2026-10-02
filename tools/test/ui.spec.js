@@ -56,7 +56,7 @@ async function setQualityAndCompress(page) {
 
 test('ファイル名の例は、設定を変えるたびに更新される', async ({ page }) => {
   await open(page);
-  await page.click('details.settings:not(#diagBox) > summary');
+  await page.evaluate(() => { document.querySelector('details.settings:not(#diagBox)').open = true; });   // 詳細設定（設定のステップでは開いたまま）
   await page.check('#nameOn');
   const preview = () => page.textContent('#namePreview');
   expect(await preview()).toMatch(/^\d{8}_720p-20MB\.mp4$/);   // 既定は 日付・自由入力（空）・圧縮オプション
