@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-02q';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-02r';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -127,6 +127,8 @@
   //   halfFps … 60fpsの動画を30fpsにするか（null なら設定のまま）
   //   mode    … 圧縮方法（'quality'＝指定ビットレートでなるべく圧縮 | 'size'＝目標サイズに収まるなるべく高いビットレート。null なら設定のまま）
   var adjust = { res: null, halfFps: null, mode: null };
+  // 2 の設定変更簡易メニューで入れたファイル名（拡張子なし。空ならファイル名の設定どおり）。その動画だけ（新しい動画を選ぶと消す）
+  var easyName = '';
   function resetAdjust() { adjust = { res: null, halfFps: null, mode: null }; }
 
   // ---------------------------------------------------------------- 状態
@@ -433,6 +435,8 @@
   }
   // 指定した名前（拡張子なし）。オフのとき・使う項目がないときは null（今までの名前にする）
   function customName(ctx) {
+    var typed = EASY ? limitBytes(cleanName(easyName)) : '';
+    if (typed) return typed;   // 3ステップの画面で名前を入れたら、そのまま使う（日付などは付けない）
     if (!naming.on) return null;
     var parts = naming.order.filter(function (k) { return naming.enabled.indexOf(k) >= 0; })
       .map(function (k) { return namePart(k, ctx); })
@@ -2972,6 +2976,7 @@
     state.nameRand = randDigits();   // 元の動画のまま渡すときの乱数（同じ動画のあいだは変えない）
     state.compatAudio = null;
     resetAdjust();   // 3ステップの画面の 2 で変えた値は、その動画だけ
+    easyName = '';
     clearOutput();
     setProgress(0, '');
     show(els.progressWrap, false);
@@ -3085,6 +3090,10 @@
       $('adjModeSize').checked = settings.mode === 'size';
       $('adjModeQuality').disabled = $('adjModeSize').disabled = !enabled;
       $('adjSizeLabel').textContent = String(settings.targetMB);
+      // ファイル名（入力中は書き換えない）
+      var nameEl = $('adjName');
+      if (document.activeElement !== nameEl) nameEl.value = easyName;
+      nameEl.disabled = !enabled;
       if (easyResFixed()) notes.push('720p・1080pではない動画のため、そのままの解像度（' + state.meta.width + '×' + state.meta.height + '）で圧縮します。');
     }
     $('adjNote').textContent = notes.join('\n');
@@ -3115,6 +3124,12 @@
         refresh();
       });
     });
+    // ファイル名：入れたら、その名前.mp4 で書き出す（元の動画のまま渡すときは、拡張子は元のまま）
+    $('adjName').addEventListener('input', function () {
+      easyName = $('adjName').value;
+      refresh();
+    });
+    $('adjName').addEventListener('change', function () { log('2 で変更 ファイル名（' + (cleanName(easyName) || '設定のまま') + '）'); });
     [['adjModeQuality', 'quality'], ['adjModeSize', 'size']].forEach(function (m) {
       $(m[0]).addEventListener('change', function () {
         if (!adjustable()) return;
