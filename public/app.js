@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-02v';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-02w';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -106,15 +106,14 @@
     diagBox: $('diagBox'), diagOut: $('diagOut'), diagCopy: $('diagCopy'), diagStatus: $('diagStatus')
   };
 
-  // ---------------------------------------------------------------- 3ステップの画面（index.html。body に easy）
-  // 従来の画面（old.html）と同じ部品（同じ id）を使い、設定は3択で決める
+  // ---------------------------------------------------------------- 3ステップの画面（index.html。ステップの切り替えは easy.js）
+  // 設定は3択で決める
   //   なるべく圧縮・画質優先 … 決めた設定（EASY_PRESETS）。この端末に保存してある設定は読まず、保存もしない
-  //   詳しく設定する（custom） … 従来の画面と同じ設定の部品を出し、保存してある設定を読んで、変えたら保存する（従来の画面と共通）。
-  //     URL に設定があれば（ショートカットから開いたときなど）、保存してある設定の代わりに URL の設定を使う（従来の画面と同じ）
+  //   詳しく設定する（custom） … 設定のステップで設定の部品を出し、保存してある設定を読んで、変えたら保存する。
+  //     URL に設定があれば（ショートカットから開いたときなど）、保存してある設定の代わりに URL の設定を使う
   //   720p・1080p ではない 1080p 以下の動画（スマホの画面録画・小さい動画など）は、どれを選んでも元の解像度のまま（解像度は変えられない）。
   //   1080p より大きい動画（4K など）は、ほかの動画と同じく解像度を選べる
   //   2 で、解像度・fps・圧縮方法をその動画だけ変えられる（adjust。保存しない）
-  var EASY = document.body.classList.contains('easy');
   var easyPreset = null;       // 3ステップの画面で選んだもの（quality・size・custom）
   var EASY_PRESETS = {
     // なるべく圧縮：720p・30fps・指定ビットレートは初期値
@@ -283,46 +282,17 @@
     if (!isFinite(v)) v = fallback;
     return Math.min(MIN_KBPS_LIMITS[1], Math.max(MIN_KBPS_LIMITS[0], Math.round(v)));
   }
-  // 480p は3ステップの画面だけで選べる（従来の画面では 720p として扱う）
-  function resValue(v) { return v === '1080' || v === 'source' || (v === '480' && !!els.res480) ? v : '720'; }
+  function resValue(v) { return v === '1080' || v === 'source' || v === '480' ? v : '720'; }
 
-  // 「元の解像度」は、720p・1080p 以外で720pより大きい動画（スマホの画面録画など）のときだけ出す
-  // （720p以下の動画は、どれを選んでも元の大きさのままなので出さない）。
-  // 選んだことは覚えておき、出せない動画のあいだは 720p・1080p のどちらか（選択中なら 1080p）にしておく（次に出せる動画を選んだら戻す）
-  var wantSource = false;
   function isStandardRes(meta) {
     var shortSide = Math.min(meta.width, meta.height);
     return Math.abs(shortSide - 720) <= 8 || Math.abs(shortSide - 1080) <= 8;
   }
-  // 720p以下の動画（短い辺が720付近以下）は、1080p を選んでも拡大はしないので、720p にして 1080p を選べなくする
-  // （1080p の下限ビットレートで 720p の動画を圧縮してしまうのを防ぐ）。
-  // 選んでいた 1080p は want1080 で覚えておき、大きい動画を選んだら戻す（保存する設定も 1080p のまま）
-  var want1080 = false;
+  // 720p以下の動画（短い辺が720付近以下）は、1080p を選んでも拡大はしないので、1080p を選べなくする
+  // （1080p を選んでいても 720p として計画する。1080p の下限ビットレートで 720p の動画を圧縮してしまうのを防ぐ）
   function isSmallSource(meta) { return !!meta && Math.min(meta.width, meta.height) <= 720 + 8; }
   function syncResOption() {
-    // 3ステップの画面は、4つ（480p・720p・1080p・元の解像度）をいつも出し、選んだものをそのまま使う（元より大きくはしない）
-    if (EASY) {
-      els.res1080.classList.toggle('is-locked', isSmallSource(state.meta));
-      return;
-    }
-    var show = !!(state.meta && !isStandardRes(state.meta) && Math.min(state.meta.width, state.meta.height) > 720 + 8);
-    els.resSeg.classList.toggle('is-three', show);
-    var small = isSmallSource(state.meta);
-    els.res1080.classList.toggle('is-locked', small);
-    // 「元の解像度」を選んでいるときは、前の動画での表示に関係なく、動画ごとに決め直す
-    // （出せる動画は「元の解像度」、720p以下の動画は 720p、それ以外（1080p など）は 1080p）
-    if (wantSource) {
-      (show ? els.resSource : small ? els.res720 : els.res1080).checked = true;
-      return;
-    }
-    if (!show && els.resSource.checked) els.res1080.checked = true;
-    if (small && els.res1080.checked) {
-      want1080 = true;
-      els.res720.checked = true;
-    } else if (!small && want1080) {
-      els.res1080.checked = true;
-      want1080 = false;
-    }
+    els.res1080.classList.toggle('is-locked', isSmallSource(state.meta));
   }
   // 目標サイズ（MB）。入力がおかしければ初期値、上限を超えたら上限にする
   function readTargetMB() {
@@ -349,10 +319,10 @@
     };
     // 480p（3ステップの画面の 2 だけで選べる）は、720p の下限を画素数に比例させる
     s.minBitrate['480'] = Math.round(s.minBitrate['720'] * 4 / 9);
-    if (!EASY) return s;
-    // 3ステップの画面：720p・1080p ではない 1080p 以下の動画は元の解像度のまま。2 で変えた値を重ねる
+    // 720p・1080p ではない 1080p 以下の動画は元の解像度のまま。2 で変えた値を重ねる
     if (easyResFixed()) s.res = 'source';
     else if (adjust.res) s.res = adjust.res;
+    if (s.res === '1080' && isSmallSource(state.meta)) s.res = '720';   // 拡大はしないので、720p として計画する
     if (adjust.halfFps !== null) s.halfFps = adjust.halfFps;
     if (adjust.mode) s.mode = adjust.mode;
     return s;
@@ -438,8 +408,7 @@
   }
   // 指定した名前（拡張子なし）。オフのとき・使う項目がないときは null（今までの名前にする）
   function customName(ctx) {
-    if (!EASY) return settingsName(ctx);
-    // 3ステップの画面：2 のファイル名の欄に入れた名前をそのまま使う（日付などは付けない）。
+    // 2 のファイル名の欄に入れた名前をそのまま使う（日付などは付けない）。
     // 空なら元の動画の名前（_compressed なども付けない）
     var typed = limitBytes(cleanName(easyName));
     if (typed) return typed;
@@ -544,25 +513,11 @@
     };
   }
   var SETTING_DEFS = [
-    // 解像度（「元の解像度」を選んだことは wantSource で覚える。出せない動画のあいだは画面の選択は 720p・1080p のまま）
+    // 解像度（480p・720p・1080p・元の解像度）
     {
-      key: 'res', url: 'res', def: '720', ids: ['res720', 'res1080', 'resSource'].concat($('res480') ? ['res480'] : []),
-      read: function () { return EASY ? resValue(radioValue('res', '720')) : wantSource ? 'source' : want1080 ? '1080' : resValue(radioValue('res', '720')); },
-      write: function (v) {
-        want1080 = false;
-        // 3ステップの画面は、選んだものをそのまま選ぶ
-        if (EASY) {
-          wantSource = false;
-          ({ '480': els.res480, '1080': els.res1080, source: els.resSource }[v] || els.res720).checked = true;
-          return;
-        }
-        if (v === '480') v = '720';
-        if (v === '1080') { els.res1080.checked = true; wantSource = false; }
-        else if (v === '720') { els.res720.checked = true; wantSource = false; }
-        // 元の解像度：選択肢が出ない動画（720p・1080p など）のあいだは 1080p にしておく。
-        // 選択肢が出る動画を選ぶと syncResOption で「元の解像度」に切り替わる
-        else if (v === 'source') { els.res1080.checked = true; wantSource = true; }
-      },
+      key: 'res', url: 'res', def: '720', ids: ['res480', 'res720', 'res1080', 'resSource'],
+      read: function () { return resValue(radioValue('res', '720')); },
+      write: function (v) { ({ '480': els.res480, '1080': els.res1080, source: els.resSource }[resValue(v)] || els.res720).checked = true; },
       fromUrl: function (v) { v = v.toLowerCase().replace('p', ''); return v === 'original' ? 'source' : v; },
       toUrl: String
     },
@@ -598,7 +553,7 @@
   // URL パラメータで開いたときの値は保存しない（画面で変えたときだけ保存する）
   var SAVED_FIELDS = SETTING_DEFS.reduce(function (ids, d) { return ids.concat(d.ids); }, []);
   function saveSettings() {
-    if (EASY && easyPreset !== 'custom') return;   // 3ステップの画面の2択は保存しない（従来の画面と共通の設定を変えない）
+    if (easyPreset !== 'custom') return;   // 2択は保存しない（「詳しく設定する」の設定を変えない）
     var data = {};
     SETTING_DEFS.forEach(function (d) { data[d.key] = d.read(); });
     data.name = { on: naming.on, order: naming.order, enabled: naming.enabled, text1: naming.text.text1, text2: naming.text.text2 };
@@ -3068,7 +3023,7 @@
   // 720p・1080p ではない 1080p 以下の動画は、圧縮の仕方に関係なく元の解像度のまま（解像度は選べない）。
   // 1080p より大きい動画（4K など）は、下げられるように固定しない
   function easyResFixed() {
-    return EASY && !!state.meta && !isStandardRes(state.meta) && Math.min(state.meta.width, state.meta.height) <= 1080 + 8;
+    return !!state.meta && !isStandardRes(state.meta) && Math.min(state.meta.width, state.meta.height) <= 1080 + 8;
   }
   var ADJ_RES = ['480', '720', '1080', 'source'];
   function adjResEl(r) { return $(r === 'source' ? 'adjResSource' : 'adjRes' + r); }
@@ -3226,7 +3181,7 @@
   if ($('stepSet')) ['input', 'change'].forEach(function (t) { $('stepSet').addEventListener(t, resetAdjust, true); });
   els.repickBtn.addEventListener('click', function () { els.file.click(); });
 
-  // 説明書: 開く・閉じる（外側をタップしても閉じる）。説明書のないページ（3ステップの画面）では何もしない
+  // 説明書: 開く・閉じる（外側をタップしても閉じる）
   function setupHelp() {
     var helpDlg = $('helpDlg'), helpSlides = $('helpSlides'), helpHint = $('helpHint');
     var helpDots = Array.prototype.slice.call($('helpDots').children);
@@ -3265,7 +3220,7 @@
       if (e.target === helpDlg && helpDlg.close) helpDlg.close();   // 枠の外（背景）をタップ
     });
   }
-  if ($('helpDlg')) setupHelp();
+  setupHelp();
   els.file.addEventListener('change', function (e) {
     onFileChosen(e.target.files && e.target.files[0]);
     els.file.value = '';
@@ -3297,12 +3252,8 @@
     if (els.srcVideo.currentTime >= state.trim.end) els.srcVideo.pause();
   });
 
-  // 画面で解像度を選んだら、「元の解像度」を選んだかどうかを覚えておく
-  ['res480', 'res720', 'res1080', 'resSource'].forEach(function (k) {
-    if (els[k]) els[k].addEventListener('change', function () { wantSource = k === 'resSource'; want1080 = false; });
-  });
   ['res480', 'res720', 'res1080', 'resSource', 'modeQuality', 'modeSize', 'halfFps', 'audioOn'].forEach(function (k) {
-    if (els[k]) els[k].addEventListener('change', refresh);
+    els[k].addEventListener('change', refresh);
   });
   // 設定のステップの fps：「60fpsの動画は30fpsにする」のチェックを変えたことにする（保存も同じ）
   ['30', '60'].forEach(function (f) {
@@ -3457,12 +3408,6 @@
     if (heading) heading.textContent = 'ver ' + APP_VERSION;
   }
   setupIOSButtons();
-  // URL に設定の項目が1つでもあれば、前回の設定は使わず、初期値に URL の設定だけを重ねて始める
-  // （保存してある前回の設定は消さない。URL なしで開いたときは前回の設定で始まる）
-  if (!EASY) {
-    if (!hasSettingParams()) loadSavedSettings();
-    applyUrlParams();
-  }
   renderNameList();
   var missing = checkSupport();
   if (missing.length) {

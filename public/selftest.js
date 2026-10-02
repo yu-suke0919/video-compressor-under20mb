@@ -4,7 +4,6 @@
  * アプリの画面（3ステップの index.html。URL で設定を渡すと「詳しく設定する」で開く）を iframe で開いて実際に圧縮し、結果の中身を Mediabunny で調べる。
  * 画面の設定は URL で渡すので、この端末に保存してある設定は使わず、変えもしない。
  * 「新しい画面（3ステップ）を試す」は、画面のボタンを押してステップを進め、ステップの切り替えと2択（なるべく圧縮・画質優先）の結果を確かめる。
- * selftest.html?page=old で開くと、従来の画面（old.html）で試す（「新しい画面を試す」以外）。
  */
 'use strict';
 
@@ -18,7 +17,6 @@
   var COMPRESS_TIMEOUT_MS = 5 * 60 * 1000;
   var SWITCH_TIMEOUT_MS = 10 * 60 * 1000;
   var PRE_TIMEOUT_MS = 3 * 60 * 1000;
-  var OLD_PAGE = /[?&]page=old\b/.test(location.search);   // 従来の画面で試す
 
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function fmtMB(bytes) { return (bytes / MB).toFixed(2) + 'MB'; }
@@ -249,12 +247,12 @@
   // アプリを開き直す（毎回まっさらな状態から始める）。query には設定を1つ以上入れる（保存してある設定を使わないため。
   // 3ステップの画面の 2択を試すときだけ空にする）
   //   probe … 先行圧縮をする（先行圧縮のテスト）。ほかのテストでは先行圧縮はしない（本番の圧縮だけを確かめる）
-  //   page … 開く画面（省略時は、アプリの画面。page=old なら従来の画面）。query が空なら設定なしで開く（3ステップの画面の 1 から始まる）
+  //   page … 開く画面（省略時はアプリの画面）。query が空なら設定なしで開く（3ステップの画面の 1 から始まる）
   function openApp(query, probe, page) {
     var q = [query, probe ? '' : 'probe=off'].filter(Boolean).join('&');
     return new Promise(function (resolve) {
       frameEl.onload = resolve;
-      frameEl.src = (page || (OLD_PAGE ? './old' : './')) + (q ? '?' + q : '');   // URL の設定をそのまま使う
+      frameEl.src = (page || './') + (q ? '?' + q : '');   // URL の設定をそのまま使う
     }).then(function () {
       return waitFor(function () { return appWin().__compressor && /対応 VideoEncoder=/.test(appText('diagOut')); }, 30000, 'アプリの準備');
     }).then(function () {
@@ -286,13 +284,11 @@
     var seg = appDoc().getElementById('adjResSeg');
     return !!seg && !!appWin().__compressor.state.meta && seg.classList.contains('hidden');
   }
-  // 新しい画面の 2 で解像度を選ぶ（その動画だけ）。従来の画面にはないので false を返す
+  // 2 の設定変更簡易メニューで解像度を選ぶ（その動画だけ）
   function setAdjRes(v) {
     var el = appDoc().getElementById('adjRes' + v);
-    if (!el) return false;
     el.checked = true;
     el.dispatchEvent(new (appWin().Event)('change'));
-    return true;
   }
 
   function runInApp(timeout) {
@@ -392,7 +388,7 @@
   function setNotice(text) { $('notice').textContent = text || ''; $('notice').classList.toggle('hidden', !text); }
   function showDevice() {
     $('device').textContent = (IS_IOS ? 'iPhone / iPad' : IS_ANDROID ? 'Android' : 'PC') + (appVersion ? '・ver=' + appVersion : '') +
-      (OLD_PAGE ? '・従来の画面' : '') + '・' + UA;
+      '・' + UA;
   }
 
   // ---------------------------------------------------------------- 判定の共通部分
@@ -430,11 +426,7 @@
     // テスト用の動画の音声をアプリが読めないなら、アプリではなくテスト用の動画の問題
     var badSource = source.audio && s.meta.audio && s.meta.audio.canDecode === false;
     if (c.trim) setTrim(c.trim[0], c.trim[1]);
-    if (c.adjRes && !setAdjRes(c.adjRes)) {
-      r.status = 'warn';
-      r.detail = '従来の画面では ' + c.adjRes + 'p を選べない（試せなかった）';
-      return;
-    }
+    if (c.adjRes) setAdjRes(c.adjRes);
     if (c.compat) s.engine = 'compat';   // 互換モードを試す（画面からは選べない）
     var t0 = Date.now();
     if (!c.noRun) await runInApp(COMPRESS_TIMEOUT_MS);
@@ -577,12 +569,7 @@
           r.title = c.title + '（元: ' + meta.width + '×' + meta.height + '・' + (meta.codecString || meta.videoCodec) + (meta.hdr ? '・HDR' : '') + '・' + fmtMB(file.size) + '）';
           // 新しい画面では、720p・1080p ではない動画は元の解像度のまま（解像度は選べない）
           var fixed = resFixedInApp();
-          if (c.adjRes && !fixed && !setAdjRes(c.adjRes)) {
-            r.status = 'warn';
-            r.detail = '従来の画面では ' + c.adjRes + 'p を選べない（試せなかった）';
-            render();
-            continue;
-          }
+          if (c.adjRes && !fixed) setAdjRes(c.adjRes);
           await runInApp(COMPRESS_TIMEOUT_MS);
           var problems = [], warns = [];
           if (fixed) warns.push('720p・1080pではない動画なので、元の解像度のまま圧縮した（' + c.limit + 'p は試せなかった）');
@@ -1145,7 +1132,7 @@
       }
     },
     {
-      title: '保存してある設定（従来の画面・「詳しく設定する」と共通）が変わっていない',
+      title: '保存してある設定（「詳しく設定する」の設定）が変わっていない',
       run: async function (source, r, ctx) {
         var now = storedSettings();
         r.status = now === ctx.stored ? 'ok' : 'ng';

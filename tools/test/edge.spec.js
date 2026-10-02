@@ -5,11 +5,10 @@ const { test, expect } = require('@playwright/test');
 const { open, pick, compress, ui, outputInfo, setTrim, canEncodeAac } = require('./helpers');
 
 test.describe('小さい・短い動画', () => {
-  test('160×120：拡大しない・「元の解像度」を出さない・目標以下なら元のまま渡せる', async ({ page }) => {
+  test('160×120：拡大しない・目標以下なら元のまま渡せる', async ({ page }) => {
     await open(page);
     await pick(page, 'tiny-160x120.mp4');
     const u = await ui(page);
-    expect(u.threeRes).toBe(false);
     expect(u.planInfo).toContain('現在の設定：120p/');
     expect(u.original).toBe(true);
     expect(u.outInfo).toContain('元の動画のまま');
@@ -82,7 +81,6 @@ test.describe('目標サイズに収まらない長さ', () => {
     await open(page, '?res=source');
     await pick(page, '4k-15s.mp4');
     const u = await ui(page);
-    expect(u.threeRes).toBe(true);
     expect(u.runDisabled).toBe(true);
     expect(u.planWarn).toContain('元の解像度なら14秒まで20MBに収められます。');
   });
