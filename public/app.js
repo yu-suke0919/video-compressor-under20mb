@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-02t';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-02u';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -3078,8 +3078,14 @@
       var short = Math.min(state.meta.width, state.meta.height);
       // 解像度：今の解像度を選んだ状態にし（元の解像度はそのまま。それ以外は元より大きくはしないので、その大きさの段）、
       // 元より大きい解像度は選べなくする
-      var pick = settings.res === 'source' ? 'source' : (function () {
-        var cur = Math.min(Number(settings.res) || 720, short);
+      // 元の動画が 480p・720p・1080p なら「元の解像度」は出さない（その解像度を選ぶのと同じなので）
+      var stdSrc = [480, 720, 1080].some(function (l) { return Math.abs(short - l) <= 8; });
+      $('adjResSeg').classList.toggle('is-four', !stdSrc);
+      $('adjResSeg').classList.toggle('is-three', stdSrc);
+      show($('adjResSource'), !stdSrc);
+      show(document.querySelector('label[for="adjResSource"]'), !stdSrc);
+      var pick = settings.res === 'source' && !stdSrc ? 'source' : (function () {
+        var cur = settings.res === 'source' ? short : Math.min(Number(settings.res) || 720, short);
         return ['480', '720', '1080'].reduce(function (a, r) { return Math.abs(Number(r) - cur) < Math.abs(Number(a) - cur) ? r : a; }, '720');
       })();
       ADJ_RES.forEach(function (r) {
