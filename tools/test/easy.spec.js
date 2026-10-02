@@ -132,10 +132,8 @@ test('2 で、その動画だけ解像度（480p/720p/1080p）・fps（30/60）�
   await choose(page, 'adjRes720');
   p = await plan(page);
   expect([p.w, p.h, p.bps]).toEqual([1280, 720, 1200000]);
-  await choose(page, 'adjResSource');   // 元の解像度（この動画は 1080p）
-  p = await plan(page);
-  expect([p.w, p.h]).toEqual([1920, 1080]);
-  await choose(page, 'adjRes720');
+  // 元の動画が 1080p なので「元の解像度」は出さない（1080p と同じ）
+  expect(await page.isVisible('label[for="adjResSource"]')).toBe(false);
   // fps（60fps のままは、指定の1.5倍）
   await choose(page, 'adjFps60');
   p = await plan(page);
@@ -191,6 +189,7 @@ test('圧縮ルールは設定のテンプレート：2 で変えて「なるべ
   await choose(page, 'adjFps60');
   await choose(page, 'adjRes1080');
   expect(await page.textContent('#easyModeName')).toBe('画質優先（20MB以内）');
+  expect(await page.isChecked('#adjRes1080')).toBe(true);
   // 「← 戻る」は 1 に戻る（2択のとき）
   await page.click('#easyChange');
   expect(await currentStep(page)).toEqual(['step1']);
