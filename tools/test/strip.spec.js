@@ -13,7 +13,8 @@ test.describe('位置情報', () => {
       expect(u.meta.hasLocation).toBe(true);
       expect(u.original).toBe(false);
       expect(u.planWarn).toContain('位置情報が含まれている動画です');
-      expect(u.planInfo).toContain('位置情報を除いて元のまま（再圧縮なし）');
+      expect(u.planInfo).toContain('/再圧縮なし\n→ ');
+      expect(u.planInfo).toContain('（予想・位置情報を除いて元のまま）');
       await compress(page);
       const out = await outputInfo(page);
       expect(out.rawTagKeys.filter(k => LOCATION_KEY.test(k))).toEqual([]);
@@ -63,7 +64,7 @@ test.describe('音声をオフにしたとき', () => {
     await pick(page, 'small-5mb.mp4');
     const u = await ui(page);
     expect(u.original).toBe(false);
-    expect(u.planInfo).toContain('音声を除いて元のまま（再圧縮なし）');
+    expect(u.planInfo).toContain('（予想・音声を除いて元のまま）');
     await compress(page);
     const out = await outputInfo(page);
     expect(out.audioCodec).toBe(null);
@@ -96,7 +97,7 @@ test.describe('全体かどうかの判定とトリミングのみ', () => {
     await setTrim(page, null, dur - 1);
     const u = await ui(page);
     expect(u.original).toBe(false);
-    expect(u.planInfo).toContain('トリミングのみ（再圧縮なし）');
+    expect(u.planInfo).toContain('（予想・トリミングのみ）');
   });
 
   test('再圧縮では収まらなくても、トリミングのみで収まるなら実行できる', async ({ page }) => {
@@ -104,7 +105,7 @@ test.describe('全体かどうかの判定とトリミングのみ', () => {
     await pick(page, 'lowrate-60s-noaudio.mp4');   // 1分で約2.5MB（元のビットレートが低い）
     await setTrim(page, 0, 40);
     const u = await ui(page);
-    expect(u.planInfo).toContain('トリミングのみ（再圧縮なし）');
+    expect(u.planInfo).toContain('（予想・トリミングのみ）');
     expect(u.runDisabled).toBe(false);
     await compress(page);
     const out = await outputInfo(page);

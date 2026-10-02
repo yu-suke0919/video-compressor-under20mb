@@ -661,7 +661,7 @@
         if (pre.failed) problems.push('先行圧縮に失敗した');
         else {
           if (!plan.probed) problems.push('予想に先行圧縮の結果を使っていない');
-          if (!/（先行圧縮済み）/.test(appText('planInfo'))) problems.push('「先行圧縮済み」と出ない');
+          if (!/・先行圧縮済み）/.test(appText('planInfo'))) problems.push('「先行圧縮済み」と出ない');
           if (!isShown('quickNote')) problems.push('「なるべく圧縮」の下に「◯MBで即出力するよ」が出ない');
           if (!(plan.fitSec > 0)) problems.push('20MBに収まる秒数の目安が出ない');
           if (!plan.exactEst) warns.push('区切りの表を読めず、割合で予想した');
@@ -797,7 +797,7 @@
         if (pre.failed) return fail(r, 'やり直した先行圧縮に失敗した');
         if (pre.plan.videoBitrate !== 1500000) problems.push('やり直した先行圧縮のビットレートが ' + pre.plan.videoBitrate / 1000 + 'kbps（正しくは 1500kbps）');
         if (wasRunning && !/先行圧縮を中断（設定を変えた/.test(d)) problems.push('前の先行圧縮を止めなかった');
-        if (!/（先行圧縮済み）/.test(appText('planInfo'))) problems.push('「先行圧縮済み」と出ない');
+        if (!/・先行圧縮済み）/.test(appText('planInfo'))) problems.push('「先行圧縮済み」と出ない');
         await runInApp(COMPRESS_TIMEOUT_MS);
         d = appDiag();
         if (!/先行圧縮を使う（完了済み）/.test(d)) problems.push('やり直した先行圧縮を使わなかった');

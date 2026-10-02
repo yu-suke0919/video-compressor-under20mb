@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-02l';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-02m';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1039,17 +1039,7 @@
     showPrecompressHints(plan);
     els.audioLabel.textContent = '音声を残す（' + plan.audio.label + '）';
     var trimEst = trimOnlyEstimate(plan);
-    els.planInfo.textContent = trimEst
-      ? '→ ' + copyLabel(plan) + '（再圧縮なし）・' +
-        plan.width + '×' + plan.height + '・予想' + fmtBytes(trimEst)
-      : '→ ' + plan.width + '×' + plan.height + '・' + fmtFps(plan.outFps) + '・' +
-        // 先行圧縮で測れたら、ビットレートは実測の平均。目標サイズに収まる秒数の目安も出す
-        // （範囲が目安を超えていればトリミングを促し、収まっていれば収まる長さを伝える。見やすいように次の行に出す）
-        fmtRate(plan.probed ? plan.expectedBps : plan.videoBitrate) + '・予想' + fmtBytes(plan.estBytes) + probeLabel(plan) +
-        (plan.probed && plan.fitSec ? '\n' + (plan.duration <= plan.fitSec
-          ? '約' + fmtDuration(plan.fitSec) + 'まで' + plan.targetMB + 'MBに収まるよ'
-          : plan.preFits ? plan.targetMB + 'MBに収まるよ'   // 目安より長いが、先行圧縮の大きさ（正確な値）で収まると分かっている
-          : plan.targetMB + 'MBに収めるなら約' + fmtDuration(plan.fitSec) + '以内にトリミングしてね') : '');
+    els.planInfo.textContent = planText(plan, trimEst);
 
     var warns = [];
     if (plan.mode === 'size' && plan.unreachable && !trimEst) {
@@ -1489,6 +1479,31 @@
     return p;
   }
   // 画面の予想の後ろに付ける、先行圧縮の状況
+  // 予想の行
+  //   現在の設定：720p/30fps/1分00秒/1.2Mbps
+  //   → 7.5MB（予想・先行圧縮 60%）… 先行圧縮が使えて、切り出す大きさが分かっていれば「確定・先行圧縮済み」
+  //   目標サイズに収まらなければ、次の行に「◯分◯秒以内で20MBに収まります。」（先行圧縮で測れたビットレートか、指定のビットレートから）
+  function planText(plan, trimEst) {
+    var line1 = '現在の設定：' + Math.min(plan.width, plan.height) + 'p/' + fmtFps(plan.outFps) + '/' + fmtDuration(plan.duration) + '/' +
+      (trimEst ? '再圧縮なし' : fmtRate(plan.probed ? plan.expectedBps : plan.videoBitrate));
+    var est = trimEst || plan.estBytes;
+    var tag;
+    if (trimEst) tag = '予想・' + copyLabel(plan);
+    else {
+      var sure = !!(plan.probed && pre && pre.done && plan.exactEst && !precompressWhyNot(plan));
+      var probe = plan.probed ? (pre.done ? '先行圧縮済み' : '先行圧縮 ' + Math.floor(pre.time / pre.plan.duration * 100) + '%')
+        : pre && pre.file === state.file && (pre.job || preTimer) ? '先行圧縮中' : '';
+      tag = (sure ? '確定' : '予想') + (probe ? '・' + probe : '');
+    }
+    var lines = [line1, '→ ' + fmtBytes(est).replace(' ', '') + '（' + tag + '）'];
+    // 目標サイズに収まらないとき
+    if (!trimEst && est >= plan.targetBytes && !plan.preFits) {
+      var fit = plan.probed && plan.fitSec ? plan.fitSec
+        : Math.floor(plan.targetBytes * 8 * SIZE_SAFETY / (plan.videoBitrate + plan.audioBitrate));
+      lines.push(fmtDuration(fit) + '以内で' + plan.targetMB + 'MBに収まります。');
+    }
+    return lines.join('\n');
+  }
   function probeLabel(plan) {
     if (plan.probed) return pre.done ? '（先行圧縮済み）' : '（先行圧縮 ' + Math.floor(pre.time / pre.plan.duration * 100) + '%）';
     return pre && pre.file === state.file && (pre.job || preTimer) ? '（先行圧縮中）' : '';

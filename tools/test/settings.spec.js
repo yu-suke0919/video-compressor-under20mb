@@ -212,7 +212,7 @@ test('720p以下の動画では 720p にして 1080p を選べなくし、選ん
   await pick(page, '720p-60s.mp4');
   expect(await page.isChecked('#res720')).toBe(true);
   expect(await page.isDisabled('#res1080')).toBe(true);
-  expect(await page.textContent('#planInfo')).toContain('1280×720');
+  expect(await page.textContent('#planInfo')).toContain('現在の設定：720p/');
   expect(await page.evaluate(() => window.__compressor.state.plan.floorBitrate)).toBe(1200000);   // 720p の下限で計画する
   // ほかの設定を変えて保存しても、解像度は 1080p のまま覚えている
   await page.click('label[for="modeQuality"]');
