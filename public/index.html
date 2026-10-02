@@ -149,8 +149,11 @@
       </div>
       <div class="trim-times"><span id="trimLabel">トリミング</span></div>
     </section>
-    <!-- この動画だけ、解像度・fps・圧縮方法を変える（保存しない） -->
-    <div class="segs adj hidden" id="adjBox">
+    <!-- 設定変更簡易メニュー：この動画だけ、解像度・fps・圧縮方法を変える（保存しない）。
+         変えると予圧縮をやり直すことになるので、初めは閉じておく -->
+    <details class="adj-menu hidden" id="adjMenu">
+    <summary>設定変更簡易メニュー</summary>
+    <div class="segs adj" id="adjBox">
       <div class="seg is-three" id="adjResSeg" role="radiogroup" aria-label="解像度">
         <input type="radio" class="seg-input" name="adjRes" id="adjRes480" value="480">
         <label class="seg-opt" for="adjRes480">480p</label>
@@ -175,6 +178,7 @@
         <span class="seg-thumb" aria-hidden="true"></span>
       </div>
     </div>
+    </details>
     <div id="adjNote" class="adj-note hidden"></div>
     <div id="planInfo" class="meta-line"></div>
     <div id="easyQuick" class="easy-quick hidden"></div>
@@ -263,7 +267,7 @@
     <div class="help-slides" id="helpSlides" tabindex="0" aria-label="手順の画像（横にスワイプで次の画像）">
       <img data-src="./help/step-1.webp" width="390" height="780" alt="①どう圧縮するか選ぶ（なるべく圧縮は軽さ重視、画質優先（20MB以内）は画質重視。細かく決めたいときは「詳しく設定する」）">
       <img data-src="./help/step-2.webp" width="390" height="780" alt="②「動画を選択」をタップして動画を選ぶ">
-      <img data-src="./help/step-3.webp" width="390" height="780" alt="③青い線で使う範囲を決める（お好みで、下で解像度・fps・圧縮方法を変える）、④「圧縮する」を押す">
+      <img data-src="./help/step-3.webp" width="390" height="780" alt="③青い線で使う範囲を決める（お好みで、下の「設定変更簡易メニュー」で解像度・fps・圧縮方法を変える）、④「圧縮する」を押す">
       <img data-src="./help/step-4.webp" width="390" height="780" alt="小さくなった動画ができたら、⑤「Discord等に共有・動画保存」でDiscordに送るか写真に保存する">
       <!-- 別のページ（開いたときに初めて読み込む）。アプリの画面はそのまま残るよう、新しいタブで開く -->
       <a class="help-card" href="./shortcut.html" target="_blank" rel="noopener">
