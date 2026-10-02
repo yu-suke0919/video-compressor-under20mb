@@ -27,10 +27,14 @@ function video(name) {
 
 // ページを開き、端末の対応状況（AAC で書き出せるかなど）を調べ終わるまで待つ。
 // 試し圧縮は、probe= を指定したとき以外は止める（本番の圧縮だけを確かめる。試し圧縮は probe.spec.js で確かめる）
+//   アプリの画面を開き、URL に設定がなければ「詳しく設定する」を選ぶ（保存してある設定を使う。URL に設定があれば、その設定で開く）。
+//   圧縮の処理を確かめるため、すべてのステップの部品を出しておく（ステップの切り替えは easy.spec.js で確かめる）
 async function open(page, query = '') {
   if (!/[?&]probe=/.test(query)) query += (query ? '&' : '?') + 'probe=off';
-  await page.goto('/old' + query);   // 従来の画面（3ステップの画面のテストは easy.spec.js）
+  await page.goto('/' + query);
   await page.waitForFunction(() => /対応 VideoEncoder=/.test(document.getElementById('diagOut').value));
+  if (!(await page.evaluate(() => window.__compressor.urlSettings))) await page.click('.choice[data-preset="custom"]');
+  await page.addStyleTag({ content: '.easy-step { display: block !important; }' });
 }
 
 // 動画を選び、読み込み（または読み込みの失敗）が終わるまで待つ
@@ -60,7 +64,6 @@ function ui(page) {
       outInfo: $('outInfo').textContent, outWarn: $('outWarn').textContent,
       runText: $('runBtn').textContent, runDisabled: $('runBtn').disabled,
       shareDisabled: $('shareBtn').disabled, shareText: $('shareBtn').textContent.trim(),
-      threeRes: $('resSeg').classList.contains('is-three'),
       pickVisible: visible('pickBtn'), srcVideoVisible: visible('srcVideo'),
       original: !!(s.out && s.out.original), hasOut: !!s.out,
       diag: $('diagOut').value

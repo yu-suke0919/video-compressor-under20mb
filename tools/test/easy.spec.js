@@ -315,18 +315,6 @@ test('2択は、従来の画面と共通の保存してある設定を使わず�
   expect(await page.evaluate(() => localStorage.getItem('video-compressor-under20mb:settings'))).toBe(before);
 });
 
-test('3ステップの画面（下のリンク）と従来の画面（/old）を行き来できる。従来の画面のリンクは、動画を選んだら（「別の動画」と並ばないよう）隠す', async ({ page }) => {
-  await openEasy(page);
-  expect(await page.title()).toBe('アップロード不要の動画圧縮');
-  expect(await page.textContent('footer a[href="./old"]')).toBe('従来の画面');
-  await open(page);   // 従来の画面
-  expect(await page.title()).toBe('従来の画面｜アップロード不要の動画圧縮');
-  expect(await page.getAttribute('#easyLink', 'href')).toBe('./');
-  expect(await page.isVisible('#easyLink')).toBe(true);
-  await pick(page, 'small-5mb.mp4');
-  expect(await page.isVisible('#easyLink')).toBe(false);
-});
-
 test('URL に設定があれば（ショートカットから開いたとき）、その設定の「詳しく設定する」にして、すぐ動画を選べる', async ({ page }) => {
   await open(page);
   await page.evaluate(() => localStorage.setItem('video-compressor-under20mb:settings', JSON.stringify({ res: '720', mode: 'size', target: 50 })));

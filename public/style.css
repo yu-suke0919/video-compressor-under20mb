@@ -890,12 +890,8 @@ footer .credit a {
   padding: 6px 8px;
 }
 
-/* アプリの画面の見出しの「かんたん」（簡単モードへのリンク）。動画を選んだら「別の動画」を出すので隠す（3つ並ぶとタイトルが切れるため） */
 a.btn {
   text-decoration: none;
-}
-header:has(#repickBtn:not(.hidden)) #easyLink {
-  display: none;
 }
 
 /* ---------------------------------------------------------------- 簡単モード（easy.html）

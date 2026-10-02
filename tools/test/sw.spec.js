@@ -30,7 +30,7 @@ test('一度開けば、ネットにつながっていなくても起動でき�
 });
 
 test('一度開いた説明書の画像は、ネットにつながっていなくても表示できる（キャッシュへの保存を最後まで行う）', async ({ page, context }) => {
-  await page.goto('/old');   // 説明書は従来の画面
+  await page.goto('/');
   await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 20000 });
   await page.click('#helpBtn');
   const firstImage = () => page.evaluate(() => {
@@ -39,23 +39,9 @@ test('一度開いた説明書の画像は、ネットにつながっていな�
   });
   await expect.poll(firstImage, { timeout: 10000 }).toBeGreaterThan(0);
   // 説明書の画像は最初のインストールではキャッシュしない。開いたときに裏で保存したものが残っているか
-  await expect.poll(() => page.evaluate(async () => !!(await caches.match(new URL('./help/help-1.webp', location.href).toString()))), { timeout: 10000 }).toBe(true);
+  await expect.poll(() => page.evaluate(async () => !!(await caches.match(new URL('./help/step-1.webp', location.href).toString()))), { timeout: 10000 }).toBe(true);
   await context.setOffline(true);
   await page.reload();
   await page.click('#helpBtn');
   await expect.poll(firstImage, { timeout: 10000 }).toBeGreaterThan(0);
-});
-
-test('従来の画面（/old・/old.html）も、一度開いたあとはオフラインで開ける', async ({ page, context }) => {
-  await page.goto('/');   // 3ステップの画面を開くと、従来の画面もキャッシュに入る
-  await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 20000 });
-  await context.setOffline(true);
-  for (const url of ['/old', '/old.html']) {
-    await page.goto(url);
-    expect(await page.title()).toBe('従来の画面｜アップロード不要の動画圧縮');
-    await page.waitForFunction(() => !!window.__compressor);
-  }
-  await page.goto('/');
-  expect(await page.title()).toBe('アップロード不要の動画圧縮');
-  await page.waitForFunction(() => !!window.__compressor && document.getElementById('step1').classList.contains('is-current'));
 });

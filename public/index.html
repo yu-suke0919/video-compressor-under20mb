@@ -15,8 +15,7 @@
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <link rel="stylesheet" href="./style.css">
 </head>
-<!-- アプリの画面（3ステップ）。従来の画面（old.html）と同じ app.js を使い、同じ id の部品を置く。
-     ステップの切り替えと3択は easy.js。設定の部品（解像度・圧縮方法・詳細設定）は「詳しく設定する」のときだけ、
+<!-- アプリの画面（3ステップ）。圧縮の処理は app.js、ステップの切り替えと3択は easy.js。設定の部品（解像度・圧縮方法・詳細設定）は「詳しく設定する」のときだけ、
      1 と 2 の間の「設定」のステップに出す -->
 <body class="easy">
 <main class="app easy-app">
@@ -48,14 +47,14 @@
     </button>
     <button type="button" class="choice choice-sub" data-preset="custom" aria-pressed="false">
       <span class="choice-title">詳しく設定する</span>
-      <span class="choice-text">解像度・圧縮方法・目標サイズなどを自分で決めます（アプリの画面と同じ設定。次に開いたときも同じ設定になります）。</span>
+      <span class="choice-text">解像度・圧縮方法・目標サイズなどを自分で決めます（次に開いたときも同じ設定になります）。</span>
     </button>
   </section>
 
-  <!-- 1.5 「詳しく設定する」を選んだときだけ：アプリの画面と同じ設定（解像度・圧縮方法・詳細設定を広げたもの） -->
+  <!-- 1.5 「詳しく設定する」を選んだときだけ：設定（解像度・fps・圧縮方法・詳細設定を広げたもの） -->
   <section id="stepSet" class="easy-step" aria-labelledby="stepSetTitle">
     <h2 class="step-title" id="stepSetTitle">設定を決めてください</h2>
-    <p class="step-lead">アプリの画面と同じ設定です。変えた設定は保存され、次に開いたときも同じになります。</p>
+    <p class="step-lead">変えた設定は保存され、次に開いたときも同じになります。</p>
     <div class="segs">
       <!-- 解像度・fps・圧縮方法は、2 の設定変更簡易メニューと同じ部品（こちらは保存する設定） -->
       <div class="seg is-four" id="resSeg" role="radiogroup" aria-label="解像度">
@@ -237,7 +236,6 @@
     本サイトは現状のまま無保証で提供しており、動作や圧縮結果を保証するものではありません。
     <p class="credit">動画の処理に <a href="https://mediabunny.dev/" target="_blank" rel="noopener noreferrer">Mediabunny</a>（<a href="./vendor/mediabunny.LICENSE.txt" target="_blank" rel="noopener">MPL-2.0</a>）を使っています。</p>
     <p class="credit"><span>Discord は Discord Inc. の商標です。</span><span>本サイトは Discord 公式とは関係ありません。</span></p>
-    <p class="credit"><a href="./old">従来の画面</a>（すべての設定を1つの画面に並べたもの）</p>
   </footer>
 
   <!-- 診断情報（うまく動かないときの報告用。圧縮を始めるかエラーが出ると表示） -->
