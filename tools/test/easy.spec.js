@@ -79,12 +79,11 @@ test('720p・1080p ではない動画は、どの圧縮の仕方でも元の解�
     const p = await plan(page);
     expect([p.w, p.h]).toEqual([886, 1920]);
     expect(await page.textContent('#adjNote')).toContain('そのままの解像度（886×1920）で圧縮します。');
-    expect(await page.isDisabled('#adjResUp')).toBe(true);
-    expect(await page.isDisabled('#adjResDown')).toBe(true);
+    expect(await page.isVisible('#adjResSeg')).toBe(false);   // 解像度は選べない
     // 720p・1080p の動画では出さない
     await pick(page, '720p-60s.mp4');
     expect(await page.textContent('#adjNote')).not.toContain('そのままの解像度');
-    expect(await page.isDisabled('#adjResDown')).toBe(false);
+    expect(await page.isVisible('#adjResSeg')).toBe(true);
   }
   // 「詳しく設定する」で 720p を選んでいても元の解像度のまま。設定のステップの解像度は押せず、同じことを出す
   await openEasy(page, '?res=720&mode=quality&probe=off');
@@ -101,36 +100,39 @@ test('720p・1080p ではない動画は、どの圧縮の仕方でも元の解�
   expect([info.width, info.height]).toEqual([886, 1920]);
 });
 
-test('2 のボタンで、その動画だけビットレート（×1.2・÷1.2）・解像度（1080/720/480）・fps（元/30）を上げ下げできる', async ({ page }) => {
+// 2 の解像度・fps のつまみを押す（つまみの見た目はラベル）
+const choose = (page, id) => page.click('label[for="' + id + '"]');
+
+test('2 で、その動画だけ解像度（480p/720p/1080p）・fps（30/60）・圧縮方法（なるべく圧縮/◯MB以内）を変えられる', async ({ page }) => {
   await openEasy(page);
   await page.click('.choice[data-preset="quality"]');
   expect(await page.isVisible('#adjBox')).toBe(false);   // 動画を選ぶまでは出さない
   await pick(page, '1080p60-45s.mp4');
   expect(await page.isVisible('#adjBox')).toBe(true);
   expect(await plan(page)).toEqual({ w: 1280, h: 720, fps: 30, mode: 'quality', bps: 1200000 });
-  expect(await page.isDisabled('#adjFpsDown')).toBe(true);   // もう 30fps
-  // ビットレート
-  await page.click('#adjRateUp');
-  expect((await plan(page)).bps).toBe(1440000);
-  await page.click('#adjRateDown');
-  await page.click('#adjRateDown');
-  expect((await plan(page)).bps).toBe(1000000);
-  // 解像度（ビットレートの段はそのまま、解像度ごとの指定ビットレートに掛ける）
-  await page.click('#adjResUp');
-  expect(await plan(page)).toEqual({ w: 1920, h: 1080, fps: 30, mode: 'quality', bps: 2250000 });
-  expect(await page.isDisabled('#adjResUp')).toBe(true);   // 元が 1080p なので、それより上はない
-  await page.click('#adjResDown');
-  await page.click('#adjResDown');
+  expect(await page.isChecked('#adjRes720')).toBe(true);
+  expect(await page.isChecked('#adjFps30')).toBe(true);
+  expect(await page.isChecked('#adjModeQuality')).toBe(true);
+  expect(await page.textContent('label[for="adjModeSize"]')).toBe('20MB以内に圧縮');
+  // 解像度（なるべく圧縮は、その解像度の指定ビットレート）
+  await choose(page, 'adjRes1080');
+  expect(await plan(page)).toEqual({ w: 1920, h: 1080, fps: 30, mode: 'quality', bps: 2700000 });
+  await choose(page, 'adjRes480');
   let p = await plan(page);
-  expect([p.w, p.h]).toEqual([854, 480]);
-  expect(p.bps).toBe(Math.round(Math.round(1200000 * 4 / 9) / 1.2));
-  expect(await page.isDisabled('#adjResDown')).toBe(true);
-  // fps
-  await page.click('#adjFpsUp');
-  expect((await plan(page)).fps).toBe(60);
-  expect(await page.isDisabled('#adjFpsUp')).toBe(true);
-  // 圧縮すると、変えたとおりになる
+  expect([p.w, p.h, p.bps]).toEqual([854, 480, Math.round(1200000 * 4 / 9)]);
+  // fps（60fps のままは、指定の1.5倍）
+  await choose(page, 'adjFps60');
+  p = await plan(page);
+  expect([p.fps, p.bps]).toEqual([60, Math.round(Math.round(1200000 * 4 / 9) * 1.5)]);
+  // 圧縮方法：20MB以内なら、目標サイズに収まるなるべく高いビットレート（元の動画より高くはしない）
   await setTrim(page, 0, 3);
+  await choose(page, 'adjModeSize');
+  p = await plan(page);
+  expect(p.mode).toBe('size');
+  expect(p.bps).toBeGreaterThan(Math.round(Math.round(1200000 * 4 / 9) * 1.5));
+  await choose(page, 'adjModeQuality');
+  expect((await plan(page)).mode).toBe('quality');
+  // 圧縮すると、変えたとおりになる
   await compressEasy(page);
   const info = await outputInfo(page);
   expect([info.width, info.height]).toEqual([854, 480]);
@@ -138,24 +140,21 @@ test('2 のボタンで、その動画だけビットレート（×1.2・÷1.2�
   await page.click('#easyBack');
   await pick(page, '720p-60s.mp4');
   expect(await plan(page)).toEqual({ w: 1280, h: 720, fps: 30, mode: 'quality', bps: 1200000 });
-  expect(await page.isDisabled('#adjResUp')).toBe(true);   // 元が 720p
-  expect(await page.isDisabled('#adjFpsUp')).toBe(true);   // 元が 30fps
-  expect(await page.isDisabled('#adjFpsDown')).toBe(true);
+  expect(await page.isDisabled('#adjRes1080')).toBe(true);   // 元が 720p
+  expect(await page.isDisabled('#adjFps60')).toBe(true);     // 元が 30fps
   expect(await page.evaluate(() => localStorage.getItem('video-compressor-under20mb:settings'))).toBe(null);
 });
 
-test('画質優先（◯MB以内）では、ビットレートのボタンは押せない（目標サイズから決まる）。解像度は下げられる', async ({ page }) => {
+test('画質優先から「なるべく圧縮」に変えると、20MB以下の動画も圧縮する（元のまま渡すのをやめる）', async ({ page }) => {
   await openEasy(page);
   await page.click('.choice[data-preset="size"]');
-  await pick(page, '1080p60-45s.mp4');
-  expect(await page.isDisabled('#adjRateUp')).toBe(true);
-  expect(await page.isDisabled('#adjRateDown')).toBe(true);
-  expect(await page.textContent('#adjNote')).toContain('目標サイズに収まるように自動で決まります');
-  await page.click('#adjResDown');
-  const p = await plan(page);
-  expect([p.w, p.h, p.fps]).toEqual([1280, 720, 60]);
-  await page.click('#adjFpsDown');
-  expect((await plan(page)).fps).toBe(30);
+  await pick(page, 'small-5mb.mp4');
+  expect(await page.isChecked('#adjModeSize')).toBe(true);
+  expect(await page.isVisible('#easyPass')).toBe(true);
+  await choose(page, 'adjModeQuality');
+  expect((await plan(page)).mode).toBe('quality');
+  expect(await page.isVisible('#easyPass')).toBe(false);
+  expect(await page.evaluate(() => window.__compressor.state.out)).toBe(null);
 });
 
 test('目標以下の動画は、圧縮せずにそのまま共有・保存へ進める', async ({ page }) => {

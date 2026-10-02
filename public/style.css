@@ -1033,16 +1033,7 @@ header:has(#repickBtn:not(.hidden)) #easyLink {
 details.settings.easy-settings > summary {
   display: none;
 }
-/* 2. 画質の調整（縦3×横2：ビットレート・解像度・fps を上げる・下げる） */
-.adj {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-.adj .btn {
-  width: 100%;
-  padding: 8px 6px;
-}
+/* 2. その動画だけの解像度・fps・圧縮方法（設定のステップと同じ見た目） */
 .adj-note {
   font-size: 12px;
   color: var(--muted);
