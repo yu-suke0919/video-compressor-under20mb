@@ -66,18 +66,24 @@
 
     // 2. 押せばすぐ出せるとき（先行圧縮が使えるとき）は、その大きさを出す。目標以下の動画は、圧縮せずに進める
     var note = C.readSettings().mode === 'size' ? $('quickNoteSize') : $('quickNote');
-    // 「圧縮する」の2行目に出す（ボタンの文字は app.js が画面を出し直すたびに書き直すので、そのたびに足す）
+    // 「圧縮する」の2行目に出す。中身は変わるときだけ作り直す（押している途中で作り直すと、押したことにならないため）
     var quick = !note.classList.contains('hidden') && note.textContent;
-    var run = $('runBtn');
-    if (quick && !s.running && run.textContent === '圧縮する') {
-      var main = document.createElement('span'), sub = document.createElement('span');
-      main.textContent = '圧縮する';
-      sub.id = 'easyQuick';
-      sub.className = 'run-sub';
-      sub.textContent = '（' + quick.replace(/するよ$/, 'します') + '）';
-      run.textContent = '';
-      run.appendChild(main);
-      run.appendChild(sub);
+    var run = $('runBtn'), sub = $('easyQuick');
+    var want = quick && !s.running && run.dataset.label === '圧縮する' ? '（' + quick.replace(/するよ$/, 'します') + '）' : '';
+    if (want) {
+      if (!sub) {
+        var main = document.createElement('span');
+        main.textContent = '圧縮する';
+        sub = document.createElement('span');
+        sub.id = 'easyQuick';
+        sub.className = 'run-sub';
+        run.textContent = '';
+        run.appendChild(main);
+        run.appendChild(sub);
+      }
+      if (sub.textContent !== want) sub.textContent = want;
+    } else if (sub) {
+      run.textContent = run.dataset.label || '圧縮する';
     }
     show($('easyPass'), !!(s.out && s.out.original && !s.running));
 

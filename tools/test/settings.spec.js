@@ -64,7 +64,7 @@ test('画面で変えた設定を保存し、次に開いたときに戻す。�
   await page.fill('#targetSize', '50'); await page.dispatchEvent('#targetSize', 'change');
   await page.fill('#minRate720', '1500'); await page.dispatchEvent('#minRate720', 'change');
   await page.fill('#minRate1080', '3000'); await page.dispatchEvent('#minRate1080', 'change');
-  await page.uncheck('#halfFps');
+  await page.click('label[for="setFps60"]');   // 「60fpsの動画は30fpsにする」をオフ（設定のステップの fps）
   await page.check('#autoRun');
   await page.uncheck('#audioOn');
   await page.check('#nameOn');
@@ -106,13 +106,12 @@ const planSize = page => page.evaluate(() => {
   return p.width + 'x' + p.height;
 });
 
-test('URL の「元の解像度」は、1080p の動画を縮小せず、選択肢が出る動画では「元の解像度」に戻る', async ({ page }) => {
+test('URL の「元の解像度」は、1080p の動画を縮小しない。720p・1080p ではない 1080p 以下の動画は元の解像度のまま', async ({ page }) => {
   await open(page, '?res=source');
   await pick(page, '1080p60-45s.mp4');
-  expect(await page.isChecked('#res1080')).toBe(true);
-  expect(await planSize(page)).toBe('1920x1080');
-  await pick(page, 'screenrec-886x1920.mp4');   // 720p・1080p 以外の大きい動画
   expect(await page.isChecked('#resSource')).toBe(true);
+  expect(await planSize(page)).toBe('1920x1080');
+  await pick(page, 'screenrec-886x1920.mp4');   // 720p・1080p 以外の 1080p 以下の動画
   expect(await planSize(page)).toBe('886x1920');
 });
 
@@ -206,11 +205,10 @@ test('60fpsのまま書き出すときは、下限ビットレートを1.5倍に
   expect(r.source60).toBe(Math.round(Math.round(1200000 * 1920 * 1080 / (1280 * 720)) * 1.5));
 });
 
-test('720p以下の動画では 720p にして 1080p を選べなくし、選んでいた 1080p は大きい動画を選んだら戻す（保存した設定も 1080p のまま）', async ({ page }) => {
+test('720p以下の動画では 1080p を選べなくし、1080p を選んでいても 720p として計画する（保存した設定は 1080p のまま）', async ({ page }) => {
   await open(page);
   await page.click('label[for="res1080"]');   // 画面で 1080p を選ぶ（保存される）
   await pick(page, '720p-60s.mp4');
-  expect(await page.isChecked('#res720')).toBe(true);
   expect(await page.isDisabled('#res1080')).toBe(true);
   expect(await page.textContent('#planInfo')).toContain('現在の設定：720p/');
   expect(await page.evaluate(() => window.__compressor.state.plan.floorBitrate)).toBe(1200000);   // 720p の下限で計画する
@@ -222,21 +220,16 @@ test('720p以下の動画では 720p にして 1080p を選べなくし、選ん
   await pick(page, '1080p60-45s.mp4');
   expect(await page.isChecked('#res1080')).toBe(true);
   expect(await page.isDisabled('#res1080')).toBe(false);
-  // もっと小さい動画（160×120）でも同じ
-  await pick(page, 'tiny-160x120.mp4');
-  expect(await page.isChecked('#res720')).toBe(true);
-  expect(await page.isDisabled('#res1080')).toBe(true);
+  expect(await planSize(page)).toBe('1920x1080');
 });
 
 test('「元の解像度」は、720p の動画を経由しても、次の 1080p の動画を縮小しない', async ({ page }) => {
   await open(page, '?res=source');
   await pick(page, '720p-60s.mp4');
-  expect(await page.isChecked('#res720')).toBe(true);
-  expect(await page.isDisabled('#res1080')).toBe(true);
+  expect(await planSize(page)).toBe('1280x720');
   await pick(page, '1080p60-45s.mp4');
-  expect(await page.isChecked('#res1080')).toBe(true);
-  expect(await planSize(page)).toBe('1920x1080');
-  await pick(page, 'screenrec-886x1920.mp4');   // 「元の解像度」を出せる動画では、元の解像度に戻る
   expect(await page.isChecked('#resSource')).toBe(true);
+  expect(await planSize(page)).toBe('1920x1080');
+  await pick(page, 'screenrec-886x1920.mp4');
   expect(await planSize(page)).toBe('886x1920');
 });

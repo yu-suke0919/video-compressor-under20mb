@@ -87,7 +87,7 @@ test('設定はこの端末に保存され、URL に設定があるときは使�
   expect(await page.isChecked('#modeQuality')).toBe(true);
 });
 
-test('使い方：全16枚で、最後までスワイプすると最後の点が選ばれる', async ({ page }) => {
+test('使い方：全17枚で、最後までスワイプすると最後の点が選ばれる', async ({ page }) => {
   await open(page);
   await page.click('#helpBtn');
   const info = await page.evaluate(() => ({
@@ -96,12 +96,12 @@ test('使い方：全16枚で、最後までスワイプすると最後の点が
     hint: document.getElementById('helpHint').textContent,
     last: document.querySelector('#helpSlides > :last-child .card-title').textContent
   }));
-  expect(info.slides).toBe(16);
-  expect(info.dots).toBe(16);
-  expect(info.hint).toContain('全16枚');
+  expect(info.slides).toBe(17);
+  expect(info.dots).toBe(17);
+  expect(info.hint).toContain('全17枚');
   expect(info.last).toBe('更新情報');
   await page.evaluate(() => { const s = document.getElementById('helpSlides'); s.scrollLeft = s.scrollWidth; });
-  await expect(page.locator('#helpDots button').nth(15)).toHaveAttribute('aria-current', 'true');
+  await expect(page.locator('#helpDots button').nth(16)).toHaveAttribute('aria-current', 'true');
 });
 
 test('「◯MB以内に圧縮」で目標の8割以下に仕上がったら、小さく済んだわけを出す', async ({ page }) => {
