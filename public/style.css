@@ -981,6 +981,13 @@ header:has(#repickBtn:not(.hidden)) #easyLink {
 .easy-mode b {
   color: var(--text);
 }
+.easy-mode-name {
+  flex: 1;
+  min-width: 0;
+}
+.easy-mode > .btn {
+  flex: none;
+}
 .app.easy-app .media-box.is-large,
 .app.easy-app .media-box.is-small,
 .app.easy-app.is-running .media-box.is-small {

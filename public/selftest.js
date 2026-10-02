@@ -922,7 +922,7 @@
         if (visible('step2') || visible('step3')) problems.push('1 のときに 2・3 が見えている');
         clickApp('.choice[data-preset="quality"]');
         await waitStep('2');
-        if (appText('easyModeName') !== 'なるべく圧縮') problems.push('2 の「圧縮の仕方」が「' + appText('easyModeName') + '」');
+        if (appText('easyModeName') !== 'なるべく圧縮') problems.push('2 の「圧縮ルール」が「' + appText('easyModeName') + '」');
         if (!visible('pickBtn')) problems.push('2 に「動画を選ぶ」が出ない');
         if (!(await pickByInput(source.file))) warns.push('入力欄に動画を入れられず、アプリに直接渡した');
         var s = appState();
@@ -985,7 +985,7 @@
         s = appState();
         if (!s.meta || s.meta.width !== 1280) problems.push('新しい動画になっていない');
         if (s.out) problems.push('前の動画の圧縮結果が残っている');
-        if (appText('easyModeName') !== 'なるべく圧縮') problems.push('「圧縮の仕方」が変わった（' + appText('easyModeName') + '）');
+        if (appText('easyModeName') !== 'なるべく圧縮') problems.push('「圧縮ルール」が変わった（' + appText('easyModeName') + '）');
         r.detail = s.meta ? '元: ' + s.meta.width + '×' + s.meta.height : '';
         judge(r, problems, []);
       }
@@ -998,7 +998,7 @@
         var problems = [];
         clickApp('.choice[data-preset="size"]');
         await waitStep('2');
-        if (appText('easyModeName') !== '画質優先（20MB以内）') problems.push('2 の「圧縮の仕方」が「' + appText('easyModeName') + '」');
+        if (appText('easyModeName') !== '画質優先（20MB以内）') problems.push('2 の「圧縮ルール」が「' + appText('easyModeName') + '」');
         await pickByInput(source.file);
         var s = appState();
         if (!s.meta) return fail(r, '読み込めない: ' + (s.loadError || appText('planWarn')));
@@ -1030,7 +1030,7 @@
       }
     },
     {
-      title: '「詳しく設定する」は、1 と 2 の間に設定のステップが入り、「変更」で設定に戻れる',
+      title: '「詳しく設定する」は、1 と 2 の間に設定のステップが入り、「← 戻る」で設定に戻れる',
       run: async function (source, r) {
         await openEasy(r);
         var problems = [];
@@ -1042,9 +1042,10 @@
         });
         clickApp('#easySetNext');
         await waitStep('2');
-        if (appText('easyModeName') !== '詳しく設定する') problems.push('2 の「圧縮の仕方」が「' + appText('easyModeName') + '」');
+        // 圧縮ルールは、保存してある設定がテンプレートと同じならその名前、違えば「カスタム」
+        if (['なるべく圧縮', '画質優先（20MB以内）', 'カスタム'].indexOf(appText('easyModeName')) < 0) problems.push('2 の「圧縮ルール」が「' + appText('easyModeName') + '」');
         clickApp('#easyChange');
-        await waitStep('set').catch(function () { problems.push('「変更」で設定のステップに戻らない（今は「' + curStep() + '」）'); });
+        await waitStep('set').catch(function () { problems.push('「← 戻る」で設定のステップに戻らない（今は「' + curStep() + '」）'); });
         clickApp('.steps li[data-step="1"] button');   // 手順の帯で 1 に戻る
         await waitStep('1').catch(function () { problems.push('手順の帯で 1 に戻れない'); });
         r.detail = '設定は変えずに、行き来だけを確かめた';
@@ -1060,7 +1061,7 @@
         await openApp('res=720&mode=size&target=2', false, './');
         var problems = [];
         await waitStep('2').catch(function () { problems.push('2 から始まらない（今は「' + curStep() + '」）'); });
-        if (appText('easyModeName') !== '詳しく設定する') problems.push('「圧縮の仕方」が「' + appText('easyModeName') + '」');
+        if (appText('easyModeName') !== 'カスタム') problems.push('「圧縮ルール」が「' + appText('easyModeName') + '」（正しくは「カスタム」）');
         if (stepNames() !== '選ぶ・設定・動画・保存') problems.push('手順の帯が「' + stepNames() + '」');
         await pickByInput(source.file);
         var s = appState();

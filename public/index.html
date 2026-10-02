@@ -127,7 +127,8 @@
   <!-- 2. 動画を選んでトリミング -->
   <section id="step2" class="easy-step" aria-labelledby="step2Title">
     <h2 class="step-title" id="step2Title">動画を選んで、範囲を決めてください</h2>
-    <div class="easy-mode"><span>圧縮の仕方：<b id="easyModeName"></b></span><span class="easy-mode-btns"><button id="repickBtn" type="button" class="btn btn-sm hidden">別の動画</button><button id="easyChange" type="button" class="btn btn-sm">変更</button></span></div>
+    <!-- 圧縮ルール：設定のテンプレート（なるべく圧縮・画質優先）と同じならその名前、違えば「カスタム」 -->
+    <div class="easy-mode"><button id="easyChange" type="button" class="btn btn-sm">← 戻る</button><span class="easy-mode-name">圧縮ルール：<b id="easyModeName"></b></span><span class="easy-mode-btns"><button id="repickBtn" type="button" class="btn btn-sm hidden">別の動画</button></span></div>
     <input id="file" type="file" accept="video/*" class="visually-hidden">
     <div class="media-box is-large" id="srcBox">
       <video id="srcVideo" class="hidden" playsinline webkit-playsinline controls preload="metadata"></video>

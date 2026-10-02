@@ -161,6 +161,31 @@ test('画質優先から「なるべく圧縮」に変えると、20MB以下の�
   expect(await page.evaluate(() => window.__compressor.state.out)).toBe(null);
 });
 
+test('圧縮ルールは設定のテンプレート：2 で変えて「なるべく圧縮」「画質優先」と違えば「カスタム」、同じになればその名前', async ({ page }) => {
+  await openEasy(page);
+  await page.click('.choice[data-preset="quality"]');
+  expect(await page.textContent('#easyModeName')).toBe('なるべく圧縮');
+  expect(await page.textContent('.easy-mode')).toContain('圧縮ルール：');
+  await pick(page, '1080p60-45s.mp4');
+  expect(await page.textContent('#easyModeName')).toBe('なるべく圧縮');
+  await choose(page, 'adjRes1080');
+  expect(await page.textContent('#easyModeName')).toBe('カスタム');
+  await choose(page, 'adjRes720');
+  expect(await page.textContent('#easyModeName')).toBe('なるべく圧縮');
+  // 画質優先と同じ設定（1080p の動画の 1080p は「元の解像度」と同じ・60fps・20MB以内）にすると、その名前
+  await choose(page, 'adjModeSize');
+  expect(await page.textContent('#easyModeName')).toBe('カスタム');
+  await choose(page, 'adjFps60');
+  await choose(page, 'adjRes1080');
+  expect(await page.textContent('#easyModeName')).toBe('画質優先（20MB以内）');
+  // 「← 戻る」は 1 に戻る（2択のとき）
+  await page.click('#easyChange');
+  expect(await currentStep(page)).toEqual(['step1']);
+  // ショートカットの「なるべく圧縮」の URL（mode=quality）は、なるべく圧縮と同じ設定
+  await openEasy(page, '?mode=quality&probe=off');
+  expect(await page.textContent('#easyModeName')).toBe('なるべく圧縮');
+});
+
 test('目標以下の動画は、圧縮せずにそのまま共有・保存へ進める', async ({ page }) => {
   await openEasy(page);
   await page.click('.choice[data-preset="size"]');
@@ -233,7 +258,7 @@ test('URL に設定があれば（ショートカットから開いたとき）�
   await page.evaluate(() => localStorage.setItem('video-compressor-under20mb:settings', JSON.stringify({ res: '720', mode: 'size', target: 50 })));
   await openEasy(page, '?res=1080&mode=quality&auto=on&probe=off');
   expect(await currentStep(page)).toEqual(['step2']);
-  expect(await page.textContent('#easyModeName')).toBe('詳しく設定する');
+  expect(await page.textContent('#easyModeName')).toBe('カスタム');   // なるべく圧縮（720p）・画質優先のどちらとも違う
   const s = await settings(page);
   expect([s.res, s.mode, s.targetMB, s.autoRun]).toEqual(['1080', 'quality', 20, true]);   // 保存してある設定ではなく URL の設定
   // 「動画を選んだらすぐ圧縮」なら、選んだらそのまま圧縮して 3 へ
@@ -263,14 +288,14 @@ test('詳しく設定する：1 と 2 の間の設定のステップで、アプ
   // 次へ：2 は2択と同じく動画とトリミングだけ（設定の部品は出さない）
   await page.click('#easySetNext');
   expect(await currentStep(page)).toEqual(['step2']);
-  expect(await page.textContent('#easyModeName')).toBe('詳しく設定する');
+  expect(await page.textContent('#easyModeName')).toBe('カスタム');
   expect(await page.isVisible('#resSeg')).toBe(false);
   await pick(page, '1080p60-45s.mp4');
   const p = await plan(page);
   expect([p.w, p.h, p.fps, p.mode]).toEqual([1920, 1080, 60, 'size']);
   expect(await page.isVisible('#repickBtn')).toBe(true);   // 2 で別の動画を選び直せる
 
-  // 「変更」で設定のステップに戻る。2択に切り替えると、その設定になり、保存はしない。「詳しく設定する」に戻すと保存した設定に戻る
+  // 「← 戻る」で設定のステップに戻る。2択に切り替えると、その設定になり、保存はしない。「詳しく設定する」に戻すと保存した設定に戻る
   await page.click('#easyChange');
   expect(await currentStep(page)).toEqual(['stepSet']);
   await page.click('.steps li[data-step="1"] button');
