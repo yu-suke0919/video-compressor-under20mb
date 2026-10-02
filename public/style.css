@@ -473,7 +473,7 @@ header .btn-sm {
 .seg-input:checked + .seg-opt {
   color: var(--on-accent);
 }
-/* 選択肢の下の小さな補足（予圧縮が済んだとき「なるべく圧縮」の下に出す） */
+/* 選択肢の下の小さな補足（先行圧縮が済んだとき「なるべく圧縮」の下に出す） */
 .seg-sub {
   font-size: 11px;
   font-weight: 500;
@@ -601,7 +601,7 @@ button.media-empty small {
   background: var(--accent);
   opacity: .4;
 }
-/* 予圧縮の結果、範囲が目標サイズに収まる長さの目安を超えているとき（範囲を縮める必要がある） */
+/* 先行圧縮の結果、範囲が目標サイズに収まる長さの目安を超えているとき（範囲を縮める必要がある） */
 .trim.is-over .trim-fill {
   background: var(--trim-over);
   opacity: .9;
@@ -996,11 +996,13 @@ header:has(#repickBtn:not(.hidden)) #easyLink {
   height: 32svh;
   min-height: 180px;
 }
-.easy-quick {
-  text-align: center;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--accent);
+.app.easy-app #runBtn > span {
+  display: block;
+}
+.app.easy-app #runBtn .run-sub {
+  font-size: 13px;
+  font-weight: 600;
+  opacity: .9;
 }
 .app.easy-app #runBtn {
   padding: 15px 12px;

@@ -26,7 +26,7 @@ test('手元の動画でも試せる', async ({ page }) => {
   expect(results[0].title).toContain('1280×720');
 });
 
-test('予圧縮のテストが最後まで動き、失敗がない', async ({ page }) => {
+test('先行圧縮のテストが最後まで動き、失敗がない', async ({ page }) => {
   test.setTimeout(10 * 60 * 1000);
   await page.goto('/selftest.html');
   await page.click('#preBtn');

@@ -150,7 +150,7 @@
       <div class="trim-times"><span id="trimLabel">トリミング</span></div>
     </section>
     <!-- 設定変更簡易メニュー：この動画だけ、解像度・fps・圧縮方法を変える（保存しない）。
-         変えると予圧縮をやり直すことになるので、初めは閉じておく -->
+         変えると先行圧縮をやり直すことになるので、初めは閉じておく -->
     <details class="adj-menu hidden" id="adjMenu">
     <summary>設定変更簡易メニュー</summary>
     <div class="segs adj" id="adjBox">
@@ -181,8 +181,8 @@
     </details>
     <div id="adjNote" class="adj-note hidden"></div>
     <div id="planInfo" class="meta-line"></div>
-    <div id="easyQuick" class="easy-quick hidden"></div>
     <div id="planWarn" class="alert hidden" role="status"></div>
+    <!-- 先行圧縮が使えるときは、2行目に押すとすぐ出せる大きさ（#easyQuick）を出す（easy.js） -->
     <button id="runBtn" type="button" class="btn btn-primary" disabled>圧縮する</button>
     <!-- 目標サイズ以下の動画は圧縮しなくてよい（元の動画のまま渡せる） -->
     <button id="easyPass" type="button" class="btn hidden">圧縮せずに、このまま共有・保存へ</button>

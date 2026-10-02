@@ -5,7 +5,7 @@
 const { test, expect } = require('@playwright/test');
 const { open, pick, setTrim, outputInfo } = require('./helpers');
 
-// 3ステップの画面を開き、端末の対応状況を調べ終わるまで待つ（予圧縮は probe= を指定したとき以外は止める）
+// 3ステップの画面を開き、端末の対応状況を調べ終わるまで待つ（先行圧縮は probe= を指定したとき以外は止める）
 async function openEasy(page, query = '?probe=off') {
   await page.goto('/' + query);
   await page.waitForFunction(() => /対応 VideoEncoder=/.test(document.getElementById('diagOut').value));
@@ -112,7 +112,7 @@ test('2 で、その動画だけ解像度（480p/720p/1080p）・fps（30/60）�
   await page.click('.choice[data-preset="quality"]');
   expect(await page.isVisible('#adjMenu')).toBe(false);   // 動画を選ぶまでは出さない
   await pick(page, '1080p60-45s.mp4');
-  // 設定変更簡易メニューは、初めは閉じている（変えると予圧縮をやり直すことになるため）。見出しを押すと開く
+  // 設定変更簡易メニューは、初めは閉じている（変えると先行圧縮をやり直すことになるため）。見出しを押すと開く
   expect(await page.textContent('#adjMenu summary')).toBe('設定変更簡易メニュー');
   expect(await page.isVisible('#adjMenu')).toBe(true);
   expect(await page.isVisible('#adjBox')).toBe(false);
@@ -209,15 +209,15 @@ test('目標以下の動画は、圧縮せずにそのまま共有・保存へ�
   expect(await page.isEnabled('#shareBtn')).toBe(true);
 });
 
-test('予圧縮が済んでいれば、押したらすぐ出す（なるべく圧縮）', async ({ page }) => {
+test('先行圧縮が済んでいれば、押したらすぐ出す（なるべく圧縮）', async ({ page }) => {
   await openEasy(page, '');
   await page.click('.choice[data-preset="quality"]');
   await pick(page, '720p-60s.mp4');
   await page.waitForFunction(() => { const p = window.__compressor.precomp().pre; return p && p.done; }, null, { timeout: 120000 });
   expect(await page.isVisible('#easyQuick')).toBe(true);
-  expect(await page.textContent('#easyQuick')).toMatch(/^[\d.]+MBで即出力するよ$/);
+  expect(await page.textContent('#easyQuick')).toMatch(/^（[\d.]+MBで即出力します）$/);   // 「圧縮する」ボタンの2行目に出す
   await compressEasy(page);
-  expect(await page.inputValue('#diagOut')).toMatch(/予圧縮を使う（完了済み）/);
+  expect(await page.inputValue('#diagOut')).toMatch(/先行圧縮を使う（完了済み）/);
   expect(await currentStep(page)).toEqual(['step3']);
 });
 
