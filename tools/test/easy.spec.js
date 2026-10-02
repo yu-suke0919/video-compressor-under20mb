@@ -230,10 +230,10 @@ test('詳しく設定するで、ファイル名の設定がオンなら、フ�
   await page.click('.choice[data-preset="custom"]');
   await page.click('#easySetNext');
   await pick(page, '720p-60s.mp4');
-  expect(await page.inputValue('#adjName')).toBe('clip_720p-なるべく');
+  expect(await page.inputValue('#adjName')).toBe('clip_720p_narubeku');
   // 設定（解像度）を変えると作り直す
   await choose(page, 'adjRes480');
-  expect(await page.inputValue('#adjName')).toBe('clip_480p-なるべく');
+  expect(await page.inputValue('#adjName')).toBe('clip_480p_narubeku');
   // 手で変えたら、その名前を使う
   await page.fill('#adjName', 'mine');
   await choose(page, 'adjRes720');

@@ -129,7 +129,10 @@ test('「◯MB以内」で収まらない見込みなら、押す前に知らせ
   await pick(page, '1080p60-45s.mp4');
   await preDone(page);
   const u = await ui(page);
-  expect(u.planWarn).toMatch(/^この設定では3MBに収まらない可能性があります（目安は約.+まで）。720pにするか、トリミングするか、「なるべく圧縮」を選択してください。/);
+  expect(u.planWarn).toMatch(/^3MBに収まらない可能性があります（目安は約(.+)まで）。トリミングして短くするか、設定変更から低い解像度・fpsを選択してください。/);
+  // 予想の行の目安と同じ秒数（先行圧縮で測ったビットレートから）
+  const fit = u.planWarn.match(/目安は約(.+?)まで/)[1];
+  expect(u.planInfo).toContain(fit + '以内で3MBに収まります。');
   expect(u.runDisabled).toBe(false);
 });
 

@@ -39,12 +39,13 @@
   // 映像ビットレートの上限（元の動画のビットレートに対する倍率）。元より高いビットレートで焼き直しても、画質は上がらず容量が増えるだけ。
   // 元が HEVC のときは、書き出す H.264 で同じ画質にするのに約1.5倍のビットレートが要るので、1.5倍まで許す
   var SRC_CAP_RATIO = 1, SRC_CAP_RATIO_HEVC = 1.5;
-  var MSG_UNREACHABLE = '目標サイズに圧縮できません。解像度を下げるか、詳細設定にて指定ビットレートを引き下げてください。';
+  var MSG_UNREACHABLE = '目標サイズに圧縮できません。トリミングして短くするか、設定変更から低い解像度・fpsを選択してください。';
+  // 2 で、目標サイズに収まらない見込みのときの案内（2行目）
+  var MSG_OVER_HINT = 'トリミングして短くするか、設定変更から低い解像度・fpsを選択してください。';
   // 指定ビットレートを下げても大きさが変わらない端末（エンコーダーがそれ以上下げない）。下げる案内の代わりに出す
   var MSG_DEVICE_FLOOR = 'この端末ではこれ以上ビットレートを下げられないみたいです。';
   var MSG_UNREACHABLE_FLOOR = '目標サイズに圧縮できません。' + MSG_DEVICE_FLOOR;
   var MSG_OVER_DISCORD = '20MBを超えるため、Discordの無料アカウントでは送信できません。';
-  var MSG_HALF_FPS_HINT = '詳細設定の「60fpsの動画は30fpsにする」をオンにすると収まりやすくなります。';
   var MSG_LOCATION = '位置情報が含まれている動画です。この情報はアップロードされず、圧縮後の動画には位置情報を含めません。';
   var SETTINGS_KEY = 'video-compressor-under20mb:settings';   // 画面で変えた設定を覚えておく場所（この端末のブラウザ内だけ）
   var DEFAULT_FPS = 30;
@@ -57,7 +58,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-02y';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-02z';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -401,7 +402,7 @@
       if (ctx.kind === 'original' || ctx.kind === 'copy') return '元のまま';
       if (ctx.kind === 'trimmed') return 'トリミング';
       var s = ctx.settings;
-      return (s.res === 'source' ? '元解像度' : s.res + 'p') + '-' + (s.mode === 'quality' ? 'なるべく' : s.targetMB + 'MB');
+      return (s.res === 'source' ? '元解像度' : s.res + 'p') + '_' + (s.mode === 'quality' ? 'narubeku' : s.targetMB + 'MB');
     }
     if (key === 'orig') return cleanName(ctx.base);
     return '';
@@ -1048,22 +1049,17 @@
     showPlanText(planParts(plan, trimEst));
 
     var warns = [];
-    if (plan.mode === 'size' && plan.unreachable && !trimEst) {
-      warns.push(plan.deviceFloor ? MSG_UNREACHABLE_FLOOR : MSG_UNREACHABLE);
-      // 今の解像度と下限ビットレートで、目標サイズに収まる長さの目安
-      var fitSec = Math.floor(plan.targetBytes * 8 * SIZE_SAFETY / (plan.floorBitrate + plan.audioBitrate));
-      warns.push(resLabel(plan) + 'なら' + fmtDuration(fitSec) + 'まで' + plan.targetMB + 'MBに収められます。');
-    } else if (plan.deviceFloor && !trimEst) {
-      warns.push(MSG_DEVICE_FLOOR);   // 指定ビットレートを下げても、先行圧縮の大きさが変わらなかった
+    // 目標サイズに収まらない見込みなら、1つの案内にまとめる（目安の秒数は予想の行・トリミングの帯と同じ計算）
+    var over = isOverTarget(plan, trimEst);
+    if (over) {
+      warns.push(plan.targetMB + 'MBに収まらない可能性があります（目安は約' + fmtDuration(fitSecOf(plan)) + 'まで）。');
+      warns.push(MSG_OVER_HINT);
     }
-    var probeOver = plan.probeOver && !trimEst;
-    if (probeOver) warns.push(probeOverMessage(plan));
+    if (plan.deviceFloor && !trimEst) warns.push(MSG_DEVICE_FLOOR);   // 指定ビットレートを下げても、先行圧縮の大きさが変わらなかった
     if (plan.audio.note) warns.push(plan.audio.note);   // 音声を残せないとき（圧縮する前に知らせる）
     if (state.meta.hasLocation === true) warns.push(MSG_LOCATION);
-    // 目標サイズに収まらないと出しているときは、同じ内容になる20MB超えの注意は重ねない
-    if (!(plan.mode === 'size' && plan.unreachable && !trimEst) && !probeOver && (trimEst ? trimEst > DISCORD_FREE_BYTES : plan.overDiscord)) {
-      warns.push(MSG_OVER_DISCORD);
-    }
+    // 目標サイズ（20MBより大きくしたとき）には収まるが、Discord の無料アカウントの上限を超えるとき
+    if (!over && (trimEst ? trimEst > DISCORD_FREE_BYTES : plan.overDiscord)) warns.push(MSG_OVER_DISCORD);
     setAlert(els.planWarn, warns);
 
     // 目標サイズを超えるのが分かっているときは実行させない（処理中はキャンセル、圧縮後はやり直すボタンなので有効のまま）
@@ -1093,7 +1089,7 @@
       }
       state.out.name = passthroughName();   // ファイル名の設定を変えたら、渡す名前も合わせる
       els.outInfo.textContent = '元の動画のまま・' + fmtBytes(state.file.size) + '（' + settings.targetMB + 'MB以下なので圧縮不要）';
-      setAlert(els.outWarn, state.file.size > DISCORD_FREE_BYTES ? [MSG_OVER_DISCORD] : []);
+      setAlert(els.outWarn, []);
     } else if (!canPass && state.out && state.out.original) {
       clearOutput();
     }
@@ -1460,12 +1456,11 @@
     p.fitSec = floorTotal > 0 ? Math.floor(p.targetBytes * 8 / floorTotal * FIT_MARGIN) : 0;
     if (plan.mode === 'size') {
       // 「◯MB以内」：収まるかどうかは、画面に出す目安（「約◯秒まで」）で決める（トリミングの帯の黄色と同じ）。
-      // 予想は、区切りごとの「指定」と「下限での実測」の大きい方を、狙うサイズ（目標の97%）で頭打ちにし、
-      // 下限での実測より小さくはしない（大きい方をとる見込みは多めに出る。エンコーダーは平均を指定に寄せるため。
-      // iPhone：29.8秒・指定 5.0Mbps で、見込み 21.1MB に対し実際 18.8MB。超えても圧縮し直しで下限まで下げられる）
+      // 予想は、区切りごとの「指定」と「下限での実測」の大きい方（下限での実測より小さくはしない）。
+      // 狙うサイズ（目標の97%）で頭打ちにはしない（超える見込みなら、そのまま出す。押せば、圧縮し直しで目標に寄せる）
       p.probeOver = !p.unreachable && p.duration > p.fitSec;
       var setBytes = Math.round((preEstimate(plan, pre, plan.videoBitrate).videoBps + p.audioBitrate) * p.duration / 8);
-      p.estBytes = Math.max(floorBytes, Math.min(setBytes, Math.floor(p.targetBytes * SIZE_SAFETY)));
+      p.estBytes = Math.max(floorBytes, setBytes);
       // 押したら先行圧縮をそのまま使う大きさ（目標の95%以上・目標未満）なら、切り出したときの大きさを予想にする
       var cut = null;
       try { cut = exactCutBytes(plan, pre); } catch (e) { cut = null; }
@@ -1492,9 +1487,21 @@
   //   現在の設定：720p/30fps/1分00秒/1.2Mbps
   //   → 7.5MB（予想・先行圧縮 60%）… 先行圧縮が使えて、切り出す大きさが分かっていれば「確定・先行圧縮済み」
   //   目標サイズに収まらなければ、次の行に「◯分◯秒以内で20MBに収まります。」（先行圧縮で測れたビットレートか、指定のビットレートから）
+  // 目標サイズに収まる長さの目安（秒）。先行圧縮で測れていれば、その実際のビットレートから（plan.fitSec）、
+  // なければ、この計画の下限ビットレートから。予想の行・2 の注意・トリミングの帯で同じ値を使う
+  function fitSecOf(plan) {
+    if (plan.probed && plan.fitSec) return plan.fitSec;
+    return Math.floor(plan.targetBytes * 8 * SIZE_SAFETY / (plan.floorBitrate + plan.audioBitrate));
+  }
+  // 目標サイズに収まらない見込みか（「◯MB以内」で下限でも収まらない・先行圧縮の目安を超える・予想が目標以上）
+  function isOverTarget(plan, trimEst) {
+    if (trimEst || plan.preFits) return false;
+    return (plan.mode === 'size' && plan.unreachable) || !!plan.probeOver || plan.estBytes >= plan.targetBytes;
+  }
   function planParts(plan, trimEst) {
+    // ビットレートは、指定するビットレート（エンコーダーが実際に使う量は、予想の大きさに入っている）
     var line1 = '現在の設定：' + Math.min(plan.width, plan.height) + 'p/' + fmtFps(plan.outFps) + '/' + fmtDuration(plan.duration) + '/' +
-      (trimEst ? '再圧縮なし' : fmtRate(plan.probed ? plan.expectedBps : plan.videoBitrate));
+      (trimEst ? '再圧縮なし' : fmtRate(plan.videoBitrate));
     var est = trimEst || plan.estBytes;
     var tag;
     if (trimEst) tag = '予想・' + copyLabel(plan);
@@ -1505,12 +1512,10 @@
       tag = (sure ? '確定' : '予想') + (probe ? '・' + probe : '');
     }
     var parts = { line1: line1, size: fmtBytes(est).replace(' ', ''), tag: '（' + tag + '）', over: false, line3: '' };
-    // 目標サイズに収まらないとき
-    if (!trimEst && est >= plan.targetBytes && !plan.preFits) {
-      var fit = plan.probed && plan.fitSec ? plan.fitSec
-        : Math.floor(plan.targetBytes * 8 * SIZE_SAFETY / (plan.videoBitrate + plan.audioBitrate));
+    // 目標サイズに収まらない見込みのとき（目安は 2 の注意と同じ計算）
+    if (isOverTarget(plan, trimEst)) {
       parts.over = true;
-      parts.line3 = fmtDuration(fit) + '以内で' + plan.targetMB + 'MBに収まります。';
+      parts.line3 = fmtDuration(fitSecOf(plan)) + '以内で' + plan.targetMB + 'MBに収まります。';
     }
     return parts;
   }
@@ -1532,7 +1537,8 @@
   // 先行圧縮が済んでいれば、押せばすぐ出せる選択肢（なるべく圧縮・条件を満たせば◯MB以内）の下に、その大きさを出す
   function showPrecompressHints(plan) {
     var idle = !!plan && !state.running && !isCompressed();
-    els.trimBox.classList.toggle('is-over', idle && !!plan.probed && plan.fitSec > 0 && plan.duration > plan.fitSec && !plan.preFits);
+    // トリミングの帯の黄色は、2 の注意・予想の行と同じ判断（目標サイズに収まらない見込み）
+    els.trimBox.classList.toggle('is-over', idle && isOverTarget(plan, trimOnlyEstimate(plan)));
     // 「なるべく圧縮」「◯MB以内」それぞれ、押せば先行圧縮をそのまま使えるなら、その大きさを選択肢の下に出す
     var note = '', noteSize = '';
     if (idle && pre && pre.done) {
@@ -1546,11 +1552,6 @@
     show(els.quickNote, !!note);
     els.quickNoteSize.textContent = noteSize;
     show(els.quickNoteSize, !!noteSize);
-  }
-  function probeOverMessage(plan) {
-    // すでに 720p のときは、720p にする案は出さない
-    return 'この設定では' + plan.targetMB + 'MBに収まらない可能性があります（目安は約' + fmtDuration(plan.fitSec) + 'まで）。' +
-      (plan.res !== '720' ? '720pにするか、' : '') + 'トリミングするか、「なるべく圧縮」を選択してください。';
   }
   function logEstimate(plan) {
     if (!plan || !plan.probed) return;
@@ -2811,32 +2812,42 @@
 
     var size = res.blob.size;
     var ratio = state.file.size > 0 ? Math.round((1 - size / state.file.size) * 100) : 0;
-    if (res.trimOnly) {
-      els.outInfo.textContent = fmtBytes(state.file.size) + ' → ' + fmtBytes(size) + '（-' + Math.max(0, ratio) + '%）・' +
-        plan.width + '×' + plan.height + '・' + copyLabel(plan) +
-        '（再圧縮なし）・' + fmtDuration(elapsed) +
-        (res.audioDropped ? '・音声なし' : '');
-      setAlert(els.outWarn, size > DISCORD_FREE_BYTES ? [MSG_OVER_DISCORD] : []);
-      return;
-    }
-    // ビットレートは、書き出した大きさと長さから求めた実際の値（音声の分を引く）。指定と1割以上違えば、指定も出す
-    // （エンコーダーは映像によって、指定より多く使ったり、少なく済ませたりする）
+    // 圧縮結果は2行：1行目は書き出した動画（解像度/fps/長さ/ビットレート/VBR・CBR/圧縮時間）、2行目は大きさの変化（大きく出す）
+    //   ビットレートは、書き出した大きさと長さから求めた実際の値（音声の分を引く）
     function info(duration) {
-      var actual = Math.max(0, size * 8 / duration - plan.audioBitrate);
-      var rate = fmtRate(actual) + (Math.abs(actual - plan.videoBitrate) > plan.videoBitrate * 0.1 ? '（指定' + fmtRate(plan.videoBitrate) + '）' : '');
-      return fmtBytes(state.file.size) + ' → ' + fmtBytes(size) + '（' + (ratio >= 0 ? '-' : '+') +
-        Math.abs(ratio) + '%）・' + plan.width + '×' + plan.height + '・' + rate + '・' +
-        fmtDuration(elapsed) + (res.attempts > 1 ? '・' + res.attempts + '回で調整' : '') +
+      var parts = [plan.width + '×' + plan.height, fmtFps(plan.outFps), fmtDuration(duration)];
+      if (res.trimOnly) {
+        parts.push(copyLabel(plan) + '（再圧縮なし）');
+        if (res.audioDropped) parts.push('音声なし');
+      } else {
+        parts.push(fmtRate(Math.max(0, size * 8 / duration - plan.audioBitrate)));
         // Safari（WebKit）は CBR/VBR の指定をエンコーダに渡さないので、表示しない
-        (res.rateMode && !isWebKit() ? (res.rateMode === 'variable' ? '・VBR' : '・CBR') : '') +
-        (plan.audio.mode === 'none' && plan.wantAudio ? '・音声なし' : '') + (engine === 'compat' ? '・互換モード' : '');
+        if (res.rateMode && !isWebKit()) parts.push(res.rateMode === 'variable' ? 'VBR' : 'CBR');
+        if (res.attempts > 1) parts.push(res.attempts + '回で調整');
+        if (plan.audio.mode === 'none' && plan.wantAudio) parts.push('音声なし');
+        if (engine === 'compat') parts.push('互換モード');
+      }
+      parts.push('圧縮時間' + fmtDuration(elapsed));
+      return parts.join('/');
+    }
+    function showInfo(duration) {
+      els.outInfo.textContent = info(duration) + '\n';
+      var big = document.createElement('span');
+      // 目標サイズに収まれば緑、超えればオレンジ（2 の予想の大きさと同じ）
+      big.className = 'out-size ' + (size < plan.targetBytes ? 'is-fit' : 'is-over');
+      big.textContent = fmtBytes(state.file.size) + ' → ' + fmtBytes(size) + '（' + (ratio >= 0 ? '-' : '+') + Math.abs(ratio) + '%）';
+      els.outInfo.appendChild(big);
     }
     // まず範囲の長さで出し、書き出した動画の長さが分かったら出し直す（コマの区切りの分、範囲の長さとわずかに違うことがある）
-    els.outInfo.textContent = info(plan.duration);
+    showInfo(plan.duration);
     var out = state.out;
     blobDuration(res.blob).then(function (d) {
-      if (state.out === out && d > 0) els.outInfo.textContent = info(d);
+      if (state.out === out && d > 0) showInfo(d);
     }, function () { /* 範囲の長さのまま */ });
+    if (res.trimOnly) {
+      setAlert(els.outWarn, []);
+      return;
+    }
 
     // 目標よりかなり小さく仕上がったときは、そのわけを出す（悪いことではないので、注意ではなく補足として）
     var small = plan.mode === 'size' && size <= plan.targetBytes * SMALL_RESULT_RATIO;
@@ -2847,11 +2858,8 @@
     if (plan.mode === 'size' && size >= plan.targetBytes) {
       // 圧縮し直しても小さくならなかった・先行圧縮で下げても小さくならなかったなら、下げる案内はしない
       warns.push(res.deviceFloor || deviceFloorKnown(plan) ? MSG_UNREACHABLE_FLOOR : MSG_UNREACHABLE);
-      // 60fpsのままだと、エンコーダが下限ビットレートまで下げきれず目標を超えることがある
-      if (plan.outFps > 40 && !plan.halfFps) warns.push(MSG_HALF_FPS_HINT);
     }
     if (plan.audio.afterFailure && plan.audio.note) warns.push(plan.audio.note);
-    if (size > DISCORD_FREE_BYTES) warns.push(MSG_OVER_DISCORD);
     setAlert(els.outWarn, warns);
   }
 

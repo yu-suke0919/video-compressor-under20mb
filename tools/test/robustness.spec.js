@@ -285,7 +285,7 @@ test.describe('エンコーダーが可変ビットレートの指定を守ら�
     const u = await ui(page);
     expect(u.diag).not.toContain('CBR');
     expect(u.diag.match(/変換を開始/g)).toHaveLength(1);
-    expect(u.outInfo).toContain('・VBR');
+    expect(u.outInfo).toContain('/VBR');
     expect(await page.evaluate(() => window.__modes.includes('constant'))).toBe(false);
   });
 
@@ -361,7 +361,7 @@ test.describe('エンコーダーが可変ビットレートの指定を守ら�
     expect(u.diag).toContain('エンコード設定 avc/prefer-hardware/variable → 使えない');
     expect(u.diag).toContain('エンコード設定 avc/prefer-hardware/constant → 使える');
     expect(u.diag).not.toContain('no-preference');
-    expect(u.outInfo).toContain('・CBR');
+    expect(u.outInfo).toContain('/CBR');
   });
 
   test('ハードウェアが使えなければソフトウェアの VBR を使い、ソフトウェアの CBR は試さない', async ({ page }) => {
@@ -374,7 +374,7 @@ test.describe('エンコーダーが可変ビットレートの指定を守ら�
     expect(u.diag).toContain('エンコード設定 avc/prefer-hardware/constant → 使えない');
     expect(u.diag).toContain('エンコード設定 avc/no-preference/variable → 使える');
     expect(u.diag).not.toContain('no-preference/constant');
-    expect(u.outInfo).toContain('・VBR');
+    expect(u.outInfo).toContain('/VBR');
   });
 
   test('◯MB以内に圧縮で圧縮し直しに失敗したら、前の結果を使い、目標を超えたことを知らせる', async ({ page }) => {

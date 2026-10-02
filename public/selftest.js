@@ -935,7 +935,7 @@
       }
     },
     {
-      title: '3 の「範囲を変えてやり直す」で 2 に戻り、範囲（1〜4秒）を変えて圧縮し直せる',
+      title: '3 の「← 戻る」で 2 に戻り、範囲（1〜4秒）を変えて圧縮し直せる',
       video: 'v1080p60',
       run: async function (source, r, ctx) {
         var s = ctx.done;
@@ -959,7 +959,7 @@
       }
     },
     {
-      title: '3 で「別の動画を圧縮する」から動画を選ぶと、2 に戻って新しい動画になる',
+      title: '3 で「同じ設定で別の動画を圧縮」から動画を選ぶと、2 に戻って新しい動画になる',
       video: 'v720',
       run: async function (source, r, ctx) {
         var s = ctx.done;
@@ -967,7 +967,7 @@
         r.status = 'run';
         render();
         var problems = [];
-        await pickByInput(source.file);   // 「別の動画を圧縮する」は入力欄を開くだけなので、選んだあとの流れを確かめる
+        await pickByInput(source.file);   // 「同じ設定で別の動画を圧縮」は入力欄を開くだけなので、選んだあとの流れを確かめる
         await waitStep('2').catch(function () { problems.push('2 に戻らない（今は「' + curStep() + '」）'); });
         s = appState();
         if (!s.meta || s.meta.width !== 1280) problems.push('新しい動画になっていない');

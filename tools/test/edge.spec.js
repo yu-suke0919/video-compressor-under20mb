@@ -50,20 +50,24 @@ test.describe('目標サイズに収まらない長さ', () => {
     await pick(page, '720p-60s.mp4');
     const u = await ui(page);
     expect(u.runDisabled).toBe(true);
-    expect(u.planWarn).toContain('目標サイズに圧縮できません');
-    expect(u.planWarn).toMatch(/720pなら\d+秒まで5MBに収められます。/);
+    expect(u.planWarn).toMatch(/5MBに収まらない可能性があります（目安は約\d+秒まで）。/);
+    expect(u.planWarn).toContain('トリミングして短くするか、設定変更から低い解像度・fpsを選択してください。');
+    expect(u.planWarn).not.toContain('目標サイズに圧縮できません');   // 古い案内は出さない
     expect(u.planWarn).not.toContain('Discordの無料アカウント');   // 同じ内容の注意は重ねない
   });
 
   test('なるべく圧縮なら長くても最後まで圧縮し、20MB超えを知らせる', async ({ page }) => {
     await open(page, '?mode=quality&min720=3500');   // 1分で20MBを超えるビットレート
     await pick(page, '720p-60s.mp4');
+    expect((await ui(page)).planWarn).toContain('20MBに収まらない可能性があります');   // 押す前に知らせる
     await compress(page);
     const u = await ui(page);
     const out = await outputInfo(page);
     expect(out.duration).toBeGreaterThan(59);
     expect(out.size).toBeGreaterThan(20 * 1000 * 1000);
-    expect(u.outWarn).toContain('Discordの無料アカウントでは送信できません');
+    // 圧縮後は、大きさをオレンジで出す（20MB超えの文は出さない）
+    expect(u.outWarn).toBe('');
+    expect(await page.getAttribute('#outInfo .out-size', 'class')).toContain('is-over');
   });
 
   test('目安の長さに切り出せば目標サイズに収まる', async ({ page }) => {
@@ -82,7 +86,8 @@ test.describe('目標サイズに収まらない長さ', () => {
     await pick(page, '4k-15s.mp4');
     const u = await ui(page);
     expect(u.runDisabled).toBe(true);
-    expect(u.planWarn).toContain('元の解像度なら14秒まで20MBに収められます。');
+    expect(u.planWarn).toContain('20MBに収まらない可能性があります（目安は約14秒まで）。');
+    expect(u.planInfo).toContain('14秒以内で20MBに収まります。');   // 予想の行も同じ目安
   });
 
   test('4K を 720p に縮小して圧縮できる', async ({ page }) => {
@@ -199,7 +204,7 @@ test('URL でファイル名の付け方を指定できる', async ({ page }) =>
   await pick(page, 'small-5mb.mp4');
   await setTrim(page, 0, 8);   // 元のまま渡さないように、少し切る
   await compress(page);
-  expect((await outputInfo(page)).name).toMatch(/^\d{14}_テスト_[a-z0-9]{4}_(720p-20MB|トリミング)\.mp4$/);
+  expect((await outputInfo(page)).name).toMatch(/^\d{14}_テスト_[a-z0-9]{4}_(720p_20MB|トリミング)\.mp4$/);
 });
 
 test('音声が2本ある動画は、メインの音声1本だけを書き出す（大きさの見積もりと合う）', async ({ page }) => {
