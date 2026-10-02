@@ -36,7 +36,7 @@
 
   <!-- 1. 圧縮の仕方を選ぶ -->
   <section id="step1" class="easy-step is-current" aria-labelledby="step1Title">
-    <h2 class="step-title" id="step1Title">どう圧縮しますか？</h2>
+    <h2 class="step-title" id="step1Title">圧縮方法の選択</h2>
     <button type="button" class="choice" data-preset="quality" aria-pressed="false">
       <span class="choice-title">なるべく圧縮</span>
       <span class="choice-text">720p・30fpsにして、なるべく小さくします。長い動画や、軽く送りたいときに。</span>
@@ -100,7 +100,7 @@
         <label for="minRate1080">指定ビットレート（1080p）</label>
         <span><input id="minRate1080" type="number" inputmode="numeric" min="100" max="50000" step="100" value="2700"> kbps</span>
       </div>
-      <p class="hint">「なるべく圧縮」ではこの指定の値を利用します。けれども、スマホによっては画質を優先して指定を守らず、かなり高いビットレートで作ることがあります。<br>さらに圧縮したい時は、指定ビットレート値をもっと下げるか、別の圧縮ソフトを検討してね。60fpsのままなら指定の1.5倍、「元の解像度」では720pの値を画素数に比例させて使います。</p>
+      <p class="hint">「なるべく圧縮」ではこの指定の値を利用します。けれども、スマホによっては画質を優先して指定を守らず、かなり高いビットレートで作ることがあります。<br>さらに圧縮したい時は、指定ビットレート値をもっと下げるか、別の圧縮ソフトを検討してください。<br>60fpsの時は設定値から1.5倍のビットレートに、「元の解像度」では720pの値を画素数に比例させて使います。</p>
       <div class="check hidden">
         <input type="checkbox" id="halfFps" checked>
         <label for="halfFps">60fpsの動画は30fpsにする（容量を抑えられます）</label>
@@ -123,10 +123,8 @@
         <ol id="nameList" class="name-list"></ol>
         <p class="hint">例：<span id="namePreview" class="name-preview"></span></p>
       </div>
-      <p class="hint">Discordの無料アカウントは20MB、Nitro Basicは50MBが目安です（上限は変更されることがあります）。</p>
       <p class="hint">設定は、画面で変えるとこの端末のブラウザに保存され、次に開いたときも同じになります。</p>
-      <p class="hint">下のボタンで作ったURLで開くと、同じ設定から始まります（ショートカットやブックマーク用。初期値と同じ項目はURLから省きます）。</p>
-      <button id="urlCopy" type="button" class="btn btn-sm" style="width: 100%; margin-top: 6px">現在の設定を記憶したURLを生成してコピー</button>
+      <button id="urlCopy" type="button" class="btn btn-sm" style="width: 100%; margin-top: 6px">現在の設定を記憶したURLを生成してコピー(ブックマーク用)</button>
       <p id="urlStatus" class="hint" role="status"></p>
       <button id="resetSettings" type="button" class="btn btn-sm" style="width: 100%; margin-top: 6px">設定を初期値に戻す</button>
     </details>
@@ -208,6 +206,8 @@
   <!-- 3. 共有・保存 -->
   <section id="step3" class="easy-step" aria-labelledby="step3Title">
     <h2 class="step-title" id="step3Title">圧縮しています…</h2>
+    <!-- 2 の「← 戻る」「別の動画」と同じ位置：範囲や設定を変えてやり直す・同じ設定で別の動画を圧縮する（圧縮中は出さない） -->
+    <div id="easyMore" class="easy-mode hidden"><button id="easyBack" type="button" class="btn btn-sm">← 戻る</button><span class="easy-mode-name"></span><span class="easy-mode-btns"><button id="easyAnother" type="button" class="btn btn-sm">同じ設定で別の動画を圧縮</button></span></div>
     <div id="progressWrap" class="hidden">
       <div class="progress" role="progressbar" aria-label="進捗"><i id="progressBar"></i></div>
       <div class="row meta-line" style="margin-top: 4px"><span id="phase"></span><span id="pct"></span></div>
@@ -224,10 +224,6 @@
     <div class="grid2">
       <button id="shareBtn" type="button" class="btn btn-discord" disabled><span>Discord等に</span><span>共有</span></button>
       <button id="saveBtn" type="button" class="btn" disabled>保存</button>
-    </div>
-    <div id="easyMore" class="easy-more hidden">
-      <button id="easyBack" type="button" class="btn">範囲を変えて<br>やり直す</button>
-      <button id="easyAnother" type="button" class="btn">別の動画を<br>圧縮する</button>
     </div>
   </section>
 

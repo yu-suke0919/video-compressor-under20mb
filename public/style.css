@@ -596,7 +596,7 @@ button.media-empty small {
   min-height: 1.2em;
   line-height: 1.35;
 }
-#planInfo { white-space: pre-line; }   /* 目標サイズに収まる長さの目安は次の行に出す */
+#planInfo, #outInfo { white-space: pre-line; }   /* 予想の行・圧縮結果は複数行で出す */
 
 /* トリミング（2本のレンジを重ね、つまみの部分だけ触れるようにする） */
 /* つまみを画面の端から離す（iPhoneの「端からスワイプで戻る」と重ならないように）。
@@ -1051,6 +1051,18 @@ a.btn {
 #planInfo .plan-size.is-fit {
   color: var(--fit-ok);
 }
+/* 圧縮結果の2行目（元の大きさ → 書き出した大きさ）も、予想の大きさと同じく大きく */
+#outInfo .out-size {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+}
+#outInfo .out-size.is-fit {
+  color: var(--fit-ok);
+}
+#outInfo .out-size.is-over {
+  color: var(--fit-over);
+}
 #planInfo .plan-size.is-over {
   color: var(--fit-over);
 }
@@ -1079,15 +1091,6 @@ a.btn {
 }
 .app.easy-app.is-ios #shareBtn {
   padding: 18px 12px;
-}
-.easy-more {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-.easy-more .btn {
-  font-size: 14px;
-  font-weight: 500;
 }
 .easy-mode-btns {
   display: flex;

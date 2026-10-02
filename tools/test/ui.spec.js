@@ -59,18 +59,18 @@ test('ファイル名の例は、設定を変えるたびに更新される', as
   await page.evaluate(() => { document.querySelector('details.settings:not(#diagBox)').open = true; });   // 詳細設定（設定のステップでは開いたまま）
   await page.check('#nameOn');
   const preview = () => page.textContent('#namePreview');
-  expect(await preview()).toMatch(/^\d{8}_720p-20MB\.mp4$/);   // 既定は 日付・自由入力（空）・圧縮オプション
+  expect(await preview()).toMatch(/^\d{8}_720p_20MB\.mp4$/);   // 既定は 日付・自由入力（空）・圧縮オプション
 
   await page.fill('#nameList li[data-key="text1"] input.name-text', 'クリップ');
-  expect(await preview()).toMatch(/^\d{8}_クリップ_720p-20MB\.mp4$/);
+  expect(await preview()).toMatch(/^\d{8}_クリップ_720p_20MB\.mp4$/);
 
   await page.click('label[for="res1080"]');   // 設定を変えると圧縮オプションの部分も変わる
-  expect(await preview()).toMatch(/^\d{8}_クリップ_1080p-20MB\.mp4$/);
+  expect(await preview()).toMatch(/^\d{8}_クリップ_1080p_20MB\.mp4$/);
 
   // 並べ替え（項目の並びは 日付・日付+時間・自由入力… なので、2回上げると日付より前になる）
   await page.click('#nameList li[data-key="text1"] button[data-move="up"]');
   await page.click('#nameList li[data-key="text1"] button[data-move="up"]');
-  expect(await preview()).toMatch(/^クリップ_\d{8}_1080p-20MB\.mp4$/);
+  expect(await preview()).toMatch(/^クリップ_\d{8}_1080p_20MB\.mp4$/);
 
   await page.uncheck('#nameOn');
   expect(await page.isHidden('#nameBox')).toBe(true);

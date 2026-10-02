@@ -147,7 +147,7 @@ async function shoot(page, name, marks, keepScroll) {
     const share = await box('#shareBtn');
     await shoot(page, 'step-4', [
       { type: 'frame', sel: '#shareBtn' },
-      { type: 'note', n: '⑤', text: 'Discordに送る・写真に保存', x: 40, y: share.t - 62, to: [{ x: 195, y: share.t - 6 }] }
+      { type: 'note', n: '⑤', text: 'Discordに送る・写真に保存', x: 40, y: share.b + 22, to: [{ x: 195, y: share.b + 6 }] }   // 結果の行を隠さないよう、ボタンの下に
     ]);
 
     // ショートカットのページ：「詳しく設定する」の設定の画面で「現在の設定を記憶したURLを生成してコピー」を押す
