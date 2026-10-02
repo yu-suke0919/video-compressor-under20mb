@@ -1040,7 +1040,15 @@ header:has(#repickBtn:not(.hidden)) #easyLink {
 details.settings.easy-settings > summary {
   display: none;
 }
-/* 2. その動画だけの解像度・fps・圧縮方法（設定のステップと同じ見た目） */
+/* 2. 設定変更簡易メニュー：その動画だけの解像度・fps・圧縮方法（設定のステップと同じ見た目）。初めは閉じておく */
+.adj-menu summary {
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.adj-menu[open] summary {
+  margin-bottom: 8px;
+}
 .adj-note {
   font-size: 12px;
   color: var(--muted);

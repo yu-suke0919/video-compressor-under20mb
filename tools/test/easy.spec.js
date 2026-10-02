@@ -79,11 +79,11 @@ test('720p・1080p ではない動画は、どの圧縮の仕方でも元の解�
     const p = await plan(page);
     expect([p.w, p.h]).toEqual([886, 1920]);
     expect(await page.textContent('#adjNote')).toContain('そのままの解像度（886×1920）で圧縮します。');
-    expect(await page.isVisible('#adjResSeg')).toBe(false);   // 解像度は選べない
+    expect(await page.evaluate(() => document.getElementById('adjResSeg').classList.contains('hidden'))).toBe(true);   // 解像度は選べない
     // 720p・1080p の動画では出さない
     await pick(page, '720p-60s.mp4');
     expect(await page.textContent('#adjNote')).not.toContain('そのままの解像度');
-    expect(await page.isVisible('#adjResSeg')).toBe(true);
+    expect(await page.evaluate(() => document.getElementById('adjResSeg').classList.contains('hidden'))).toBe(false);
   }
   // 「詳しく設定する」で 720p を選んでいても元の解像度のまま。設定のステップの解像度は押せず、同じことを出す
   await openEasy(page, '?res=720&mode=quality&probe=off');
@@ -101,13 +101,22 @@ test('720p・1080p ではない動画は、どの圧縮の仕方でも元の解�
 });
 
 // 2 の解像度・fps のつまみを押す（つまみの見た目はラベル）
-const choose = (page, id) => page.click('label[for="' + id + '"]');
+// （設定変更簡易メニューは初めは閉じているので、開いてから押す）
+const choose = async (page, id) => {
+  await page.evaluate(() => { document.getElementById('adjMenu').open = true; });
+  await page.click('label[for="' + id + '"]');
+};
 
 test('2 で、その動画だけ解像度（480p/720p/1080p）・fps（30/60）・圧縮方法（なるべく圧縮/◯MB以内）を変えられる', async ({ page }) => {
   await openEasy(page);
   await page.click('.choice[data-preset="quality"]');
-  expect(await page.isVisible('#adjBox')).toBe(false);   // 動画を選ぶまでは出さない
+  expect(await page.isVisible('#adjMenu')).toBe(false);   // 動画を選ぶまでは出さない
   await pick(page, '1080p60-45s.mp4');
+  // 設定変更簡易メニューは、初めは閉じている（変えると予圧縮をやり直すことになるため）。見出しを押すと開く
+  expect(await page.textContent('#adjMenu summary')).toBe('設定変更簡易メニュー');
+  expect(await page.isVisible('#adjMenu')).toBe(true);
+  expect(await page.isVisible('#adjBox')).toBe(false);
+  await page.click('#adjMenu summary');
   expect(await page.isVisible('#adjBox')).toBe(true);
   expect(await plan(page)).toEqual({ w: 1280, h: 720, fps: 30, mode: 'quality', bps: 1200000 });
   expect(await page.isChecked('#adjRes720')).toBe(true);

@@ -134,7 +134,7 @@ async function shoot(page, name, marks, keepScroll) {
       { type: 'circle', x: fill.l, y: cy },
       { type: 'circle', x: fill.r, y: cy },
       { type: 'note', n: '③', text: '青い線で使う範囲を決める', x: 40, y: video.b - 92, to: [{ x: fill.l, y: cy - 24 }, { x: fill.r, y: cy - 24 }] },
-      { type: 'frame', sel: '#adjBox', color: '#1f6feb', tag: 'お好みで画質を調整', pad: 6 },
+      { type: 'frame', sel: '#adjMenu', color: '#1f6feb', tag: 'お好みで画質を調整', pad: 6 },
       { type: 'frame', sel: '#runBtn' },
       { type: 'note', n: '④', text: '押して圧縮！', x: 120, y: run.b + 22, to: [{ x: 195, y: run.b + 6 }] }
     ], true);

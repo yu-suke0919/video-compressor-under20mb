@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-02h';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-02i';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -3007,7 +3007,7 @@
   function updateAdjust(enabled) {
     if (!$('adjBox')) return;
     var hasFile = !!(state.file && state.meta);
-    show($('adjBox'), hasFile);   // 動画を選ぶまでは出さない
+    show($('adjMenu'), hasFile);   // 動画を選ぶまでは出さない（出しても、初めは閉じておく）
     var notes = [];
     if (hasFile) {
       var settings = readSettings();
