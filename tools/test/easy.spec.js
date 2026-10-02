@@ -202,6 +202,22 @@ test('圧縮ルールは設定のテンプレート：2 で変えて「なるべ
   expect(await page.textContent('#easyModeName')).toBe('なるべく圧縮');
 });
 
+test('設定変更簡易メニューのファイル名：入れた名前.mp4 で書き出す（その動画だけ）', async ({ page }) => {
+  await openEasy(page);
+  await page.click('.choice[data-preset="quality"]');
+  await pick(page, '720p-60s.mp4');
+  await page.evaluate(() => { document.getElementById('adjMenu').open = true; });
+  expect(await page.inputValue('#adjName')).toBe('');
+  await page.fill('#adjName', 'スプラ/練習 1');   // 使えない文字（/）は外す
+  await setTrim(page, 0, 3);
+  await compressEasy(page);
+  expect((await outputInfo(page)).name).toBe('スプラ練習 1.mp4');
+  // 新しい動画を選ぶと消す
+  await page.click('#easyBack');
+  await pick(page, 'small-5mb.mp4');
+  expect(await page.inputValue('#adjName')).toBe('');
+});
+
 test('目標以下の動画は、圧縮せずにそのまま共有・保存へ進める', async ({ page }) => {
   await openEasy(page);
   await page.click('.choice[data-preset="size"]');

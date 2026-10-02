@@ -1023,6 +1023,28 @@ header:has(#repickBtn:not(.hidden)) #easyLink {
 .app.easy-app #planInfo {
   font-size: 14px;
 }
+/* 設定変更簡易メニューのファイル名 */
+.adj-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+}
+.adj-name label {
+  flex: none;
+  font-weight: 600;
+}
+.adj-name input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 16px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
 /* 予想の大きさ：大きな太字にし、目標サイズに収まるなら緑、超えるならオレンジ（超えるときは、次の行と下の注意でも知らせる） */
 #planInfo .plan-size {
   font-weight: 700;
