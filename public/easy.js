@@ -10,7 +10,6 @@
   var C = window.__compressor;
   if (!C) return;
   var $ = function (id) { return document.getElementById(id); };
-  var LABELS = { quality: 'なるべく圧縮', size: '画質優先（20MB以内）', custom: '詳しく設定する' };
   // ステップの順番（set … 「詳しく設定する」のときだけ通る設定のステップ）と、その画面の id
   var ORDER = ['1', 'set', '2', '3'];
   var SECTION = { '1': 'step1', set: 'stepSet', '2': 'step2', '3': 'step3' };
@@ -32,7 +31,6 @@
   function choose(name, skipSet) {
     preset = name;
     C.setEasyPreset(name);
-    $('easyModeName').textContent = LABELS[name];
     document.querySelectorAll('.choice').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.preset === name)); });
     setStep(name === 'custom' && !skipSet ? 'set' : '2');
   }
@@ -63,6 +61,9 @@
       li.querySelector('button').disabled = s.running || pos(k) > pos(step) || (k !== '1' && !preset);
     });
 
+    // 2. 圧縮ルールの名前（今の設定がテンプレートと同じならその名前、違えば「カスタム」）
+    $('easyModeName').textContent = preset ? C.ruleName() : '';
+
     // 2. 押せばすぐ出せるとき（予圧縮が使えるとき）は、その大きさを出す。目標以下の動画は、圧縮せずに進める
     var note = C.readSettings().mode === 'size' ? $('quickNoteSize') : $('quickNote');
     var quick = !note.classList.contains('hidden') && note.textContent;
@@ -91,7 +92,7 @@
     });
   });
   $('easySetNext').addEventListener('click', function () { setStep('2'); });
-  // 2 の「変更」：「詳しく設定する」なら設定のステップへ、2択なら 1 へ
+  // 2 の「← 戻る」：「詳しく設定する」なら設定のステップへ、2択なら 1 へ
   $('easyChange').addEventListener('click', function () { setStep(preset === 'custom' ? 'set' : '1'); });
   $('easyPass').addEventListener('click', function () { setStep('3'); });
   $('easyCancel').addEventListener('click', function () {

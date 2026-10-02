@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-02f';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-02g';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -122,7 +122,7 @@
     size: { res: 'source', mode: 'size', halfFps: false }
   };
 
-  // 3ステップの画面の 2 で変えた値（その動画だけ。新しい動画を選ぶ・圧縮の仕方を選び直す・設定のステップで設定を変えると戻す）
+  // 3ステップの画面の 2 で変えた値（その動画だけ。新しい動画を選ぶ・1 で選び直す・設定のステップで設定を変えると戻す）
   //   res     … 解像度（'1080' | '720' | '480'。null なら設定のまま）
   //   halfFps … 60fpsの動画を30fpsにするか（null なら設定のまま）
   //   mode    … 圧縮方法（'quality'＝指定ビットレートでなるべく圧縮 | 'size'＝目標サイズに収まるなるべく高いビットレート。null なら設定のまま）
@@ -3075,6 +3075,39 @@
     });
   }
 
+  // 圧縮ルールの名前（2 に出す）。圧縮ルールは設定のテンプレート（なるべく圧縮・画質優先）として扱い、
+  // 今の設定（2 で変えた値を含む）がテンプレートと同じならその名前、違えば「カスタム」にする（「詳しく設定する」で選んだときも同じ）。
+  // 動画を選んでいれば、書き出す動画が同じになるか（解像度・fps・圧縮方法・ビットレート・目標サイズ・音声）で比べる
+  // （1080p の動画の「元の解像度」と「1080p」、30fps の動画の「60fpsを30fpsにする」のあり・なしなどは同じとみる）
+  var RULE_NAMES = { quality: 'なるべく圧縮', size: '画質優先（20MB以内）' };
+  var RULE_CUSTOM = 'カスタム';
+  function templateSettings(name) {
+    var p = EASY_PRESETS[name];
+    var s = {
+      res: easyResFixed() ? 'source' : p.res, mode: p.mode, halfFps: p.halfFps, audio: true, autoRun: false,
+      targetMB: DEFAULT_TARGET_MB, targetBytes: Math.floor(DEFAULT_TARGET_MB * MB),
+      minBitrate: { '720': DEFAULT_MIN_KBPS['720'] * 1000, '1080': DEFAULT_MIN_KBPS['1080'] * 1000 }
+    };
+    s.minBitrate['480'] = Math.round(s.minBitrate['720'] * 4 / 9);
+    return s;
+  }
+  function sameRule(a, b) {
+    if (a.mode !== b.mode || a.audio !== b.audio || (a.mode === 'size' && a.targetBytes !== b.targetBytes)) return false;
+    if (!state.meta || !state.file) {
+      return a.res === b.res && a.halfFps === b.halfFps &&
+        a.minBitrate['720'] === b.minBitrate['720'] && a.minBitrate['1080'] === b.minBitrate['1080'];
+    }
+    var plan = function (s) { return makePlan(state.meta, state.trim, s, audioStrategy(state.meta, s.audio, state.engine), state.file.size); };
+    var pa = plan(a), pb = plan(b);
+    return pa.width === pb.width && pa.height === pb.height && Math.round(pa.outFps) === Math.round(pb.outFps) &&
+      pa.videoBitrate === pb.videoBitrate && pa.floorBitrate === pb.floorBitrate && pa.audio.mode === pb.audio.mode;
+  }
+  function ruleName() {
+    var cur = readSettings();
+    for (var k in RULE_NAMES) if (sameRule(cur, templateSettings(k))) return RULE_NAMES[k];
+    return RULE_CUSTOM;
+  }
+
   // 3ステップの画面で選ぶ。圧縮した動画があれば消す
   //   2択 … 初期値の設定に、選んだ方の設定を重ねる。custom … 初期値に保存してある設定を重ねる（アプリの画面と同じ）
   function setEasyPreset(name) {
@@ -3357,7 +3390,7 @@
     estimateFps: estimateFps, snapFps: snapFps, audioStrategy: audioStrategy,
     state: state, precomp: function () { return { pre: pre }; },
     pickFile: function (file) { onFileChosen(file); },   // 自己テスト（selftest.html）から動画を渡す
-    setEasyPreset: setEasyPreset, redo: redo, isCompressed: isCompressed,   // 3ステップの画面（easy.js）から使う
+    setEasyPreset: setEasyPreset, redo: redo, isCompressed: isCompressed, ruleName: ruleName,   // 3ステップの画面（easy.js）から使う
     urlSettings: hasSettingParams(), isPreviewHost: isPreviewHost,
     constants: {
       SIZE_SAFETY: SIZE_SAFETY, AUDIO_BITRATE: AUDIO_BITRATE, DEFAULT_MIN_KBPS: DEFAULT_MIN_KBPS,
