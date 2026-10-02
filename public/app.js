@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-02g';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-02h';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -3104,6 +3104,8 @@
   }
   function ruleName() {
     var cur = readSettings();
+    // 動画を選ぶ前は、選んでいる解像度で比べる（「元の解像度」は、出せない動画のあいだ画面では 1080p を選んだ状態にしてあるため）
+    if (!state.meta && !adjust.res) cur.res = SETTING_DEFS.filter(function (d) { return d.key === 'res'; })[0].read();
     for (var k in RULE_NAMES) if (sameRule(cur, templateSettings(k))) return RULE_NAMES[k];
     return RULE_CUSTOM;
   }
