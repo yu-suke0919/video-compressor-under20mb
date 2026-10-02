@@ -996,6 +996,10 @@ header:has(#repickBtn:not(.hidden)) #easyLink {
   height: 32svh;
   min-height: 180px;
 }
+/* 2. 予想の行（現在の設定・予想の大きさ・収まる秒数）は、ほかの補足より1段大きくする */
+.app.easy-app #planInfo {
+  font-size: 14px;
+}
 /* 「圧縮する」は高さを固定する。2行目（◯MBで即出力します）が出ても大きくせず、「圧縮する」が少し上に寄る */
 .app.easy-app #runBtn {
   display: flex;
