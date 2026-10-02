@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-02u';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-02v';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -111,7 +111,8 @@
   //   なるべく圧縮・画質優先 … 決めた設定（EASY_PRESETS）。この端末に保存してある設定は読まず、保存もしない
   //   詳しく設定する（custom） … 従来の画面と同じ設定の部品を出し、保存してある設定を読んで、変えたら保存する（従来の画面と共通）。
   //     URL に設定があれば（ショートカットから開いたときなど）、保存してある設定の代わりに URL の設定を使う（従来の画面と同じ）
-  //   720p・1080p ではない動画（スマホの画面録画など）は、どれを選んでも元の解像度のまま（解像度は変えられない）
+  //   720p・1080p ではない 1080p 以下の動画（スマホの画面録画・小さい動画など）は、どれを選んでも元の解像度のまま（解像度は変えられない）。
+  //   1080p より大きい動画（4K など）は、ほかの動画と同じく解像度を選べる
   //   2 で、解像度・fps・圧縮方法をその動画だけ変えられる（adjust。保存しない）
   var EASY = document.body.classList.contains('easy');
   var easyPreset = null;       // 3ステップの画面で選んだもの（quality・size・custom）
@@ -349,7 +350,7 @@
     // 480p（3ステップの画面の 2 だけで選べる）は、720p の下限を画素数に比例させる
     s.minBitrate['480'] = Math.round(s.minBitrate['720'] * 4 / 9);
     if (!EASY) return s;
-    // 3ステップの画面：720p・1080p ではない動画は元の解像度のまま。2 で変えた値を重ねる
+    // 3ステップの画面：720p・1080p ではない 1080p 以下の動画は元の解像度のまま。2 で変えた値を重ねる
     if (easyResFixed()) s.res = 'source';
     else if (adjust.res) s.res = adjust.res;
     if (adjust.halfFps !== null) s.halfFps = adjust.halfFps;
@@ -3064,8 +3065,11 @@
   }
 
   // ---------------------------------------------------------------- 3ステップの画面：2 の解像度・fps・圧縮方法（その動画だけ）
-  // 720p・1080p ではない動画は、圧縮の仕方に関係なく元の解像度のまま（解像度は選べない）
-  function easyResFixed() { return EASY && !!state.meta && !isStandardRes(state.meta); }
+  // 720p・1080p ではない 1080p 以下の動画は、圧縮の仕方に関係なく元の解像度のまま（解像度は選べない）。
+  // 1080p より大きい動画（4K など）は、下げられるように固定しない
+  function easyResFixed() {
+    return EASY && !!state.meta && !isStandardRes(state.meta) && Math.min(state.meta.width, state.meta.height) <= 1080 + 8;
+  }
   var ADJ_RES = ['480', '720', '1080', 'source'];
   function adjResEl(r) { return $(r === 'source' ? 'adjResSource' : 'adjRes' + r); }
   function updateAdjust(enabled) {

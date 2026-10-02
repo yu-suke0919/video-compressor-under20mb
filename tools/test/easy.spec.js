@@ -243,6 +243,23 @@ test('詳しく設定するで、ファイル名の設定がオンなら、フ�
   expect((await outputInfo(page)).name).toBe('mine.mp4');
 });
 
+test('1080p より大きい動画（4K）は固定せず、解像度（480p・720p・1080p・元の解像度）を選べる', async ({ page }) => {
+  await openEasy(page);
+  await page.click('.choice[data-preset="quality"]');
+  await pick(page, '4k-15s.mp4');
+  let p = await plan(page);
+  expect([p.w, p.h]).toEqual([1280, 720]);   // なるべく圧縮は 720p
+  expect(await page.textContent('#adjNote')).not.toContain('そのままの解像度');
+  await page.evaluate(() => { document.getElementById('adjMenu').open = true; });
+  expect(await page.isVisible('label[for="adjResSource"]')).toBe(true);
+  await choose(page, 'adjRes1080');
+  p = await plan(page);
+  expect([p.w, p.h]).toEqual([1920, 1080]);
+  await choose(page, 'adjResSource');
+  p = await plan(page);
+  expect([p.w, p.h]).toEqual([3840, 2160]);
+});
+
 test('目標以下の動画は、圧縮せずにそのまま共有・保存へ進める', async ({ page }) => {
   await openEasy(page);
   await page.click('.choice[data-preset="size"]');
