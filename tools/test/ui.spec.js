@@ -120,3 +120,19 @@ test('「◯MB以内に圧縮」で目標の8割以下に仕上がったら、�
   await compress(page);
   expect(await page.isVisible('#outNote')).toBe(false);
 });
+
+test('診断情報に、ファイル名の欄に入れた名前や、選んだ動画の名前を書かない（拡張子のない名前でも）', async ({ page }) => {
+  const SECRET = 'ひみつの名前_旅行';
+  await open(page);
+  // 拡張子のない名前の動画（中身は MP4）
+  const fs = require('fs');
+  await page.setInputFiles('#file', { name: SECRET, mimeType: 'video/mp4', buffer: fs.readFileSync(require('./helpers').video('small-5mb.mp4')) });
+  await page.waitForFunction(() => { const s = window.__compressor.state; return !s.busy && !!(s.meta || s.loadError); });
+  await page.evaluate(() => { document.getElementById('adjMenu').open = true; });
+  await page.fill('#adjName', SECRET);
+  await page.dispatchEvent('#adjName', 'change');
+  const d = (await ui(page)).diag;
+  expect(d).not.toContain(SECRET);
+  expect(d).toContain('動画を選択 拡張子不明 video/mp4');
+  expect(d).toContain('2 で変更 ファイル名（入力あり）');
+});

@@ -649,3 +649,19 @@ test.describe('画面を暗くしない設定（Wake Lock）', () => {
     expect(await page.evaluate(() => window.__locks.filter(l => !l.released).length)).toBe(0);
   });
 });
+
+test('圧縮に失敗したら、3 の見出しを「うまく圧縮できませんでした」にする（「圧縮しています…」のままにしない）', async ({ page }) => {
+  await open(page, '?mode=quality');
+  await pick(page, 'small-5mb.mp4');
+  await page.evaluate(() => {
+    window.__compressor.state.caps.compat = false;   // 互換モードでのやり直しもしない
+    window.Mediabunny.Conversion.init = () => Promise.reject(new Error('テスト用の変換エラー'));
+  });
+  await setTrim(page, 0, 3);
+  await compress(page);
+  const u = await ui(page);
+  expect(u.running).toBe(false);
+  expect(u.outWarn).toContain('テスト用の変換エラー');
+  expect(await page.textContent('#step3Title')).toBe('うまく圧縮できませんでした');
+});
+

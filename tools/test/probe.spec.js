@@ -312,3 +312,19 @@ test('指定ビットレートを下げても先行圧縮の大きさが変わ�
   expect(w).toContain('目標サイズに圧縮できません。この端末ではこれ以上ビットレートを下げられないみたいです。');
   expect(w).not.toContain('指定ビットレートを引き下げてください');
 });
+
+test('前の動画の先行圧縮は、比べるための数字だけを残し、新しい動画を選んだら消す（動画や書き出したデータを持ち続けない）', async ({ page }) => {
+  await open(page, '?probe=on&mode=quality');
+  await pick(page, 'small-5mb.mp4');
+  await preDone(page);
+  const last = await page.evaluate(() => {
+    const l = window.__compressor.precomp().last;
+    return l && { keys: Object.keys(l).sort(), hasBlob: Object.values(l).some(v => v instanceof Blob || Array.isArray(v)) };
+  });
+  expect(last.hasBlob).toBe(false);
+  expect(last.keys).toEqual(['audioBitrate', 'audioMode', 'bytes', 'fileId', 'height', 'outFps', 'videoBitrate', 'width']);
+  // 読み込めない動画を選んでも、前の動画の記録は消す
+  await pick(page, 'text.mp4');
+  expect(await page.evaluate(() => window.__compressor.precomp().last)).toBe(null);
+});
+
