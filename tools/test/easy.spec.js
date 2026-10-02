@@ -132,6 +132,10 @@ test('2 で、その動画だけ解像度（480p/720p/1080p）・fps（30/60）�
   await choose(page, 'adjRes720');
   p = await plan(page);
   expect([p.w, p.h, p.bps]).toEqual([1280, 720, 1200000]);
+  await choose(page, 'adjResSource');   // 元の解像度（この動画は 1080p）
+  p = await plan(page);
+  expect([p.w, p.h]).toEqual([1920, 1080]);
+  await choose(page, 'adjRes720');
   // fps（60fps のままは、指定の1.5倍）
   await choose(page, 'adjFps60');
   p = await plan(page);
@@ -293,6 +297,19 @@ test('詳しく設定する：1 と 2 の間の設定のステップで、アプ
   expect(await page.textContent('.steps li[data-step="3"] b')).toBe('4');
   let s = await settings(page);
   expect([s.res, s.mode, s.targetMB, s.minBitrate['1080'], s.halfFps]).toEqual(['1080', 'quality', 50, 2000000, false]);
+  // 解像度（480p・720p・1080p・元の解像度）・fps・圧縮方法は、2 の設定変更簡易メニューと同じ部品
+  expect(await page.isChecked('#res1080')).toBe(true);
+  expect(await page.isChecked('#setFps60')).toBe(true);   // 保存した「60fpsの動画は30fpsにする」がオフ
+  expect(await page.isVisible('#halfFps')).toBe(false);
+  await page.click('label[for="res480"]');
+  await page.waitForFunction(k => JSON.parse(localStorage.getItem(k)).res === '480', KEY);
+  await page.click('label[for="resSource"]');
+  await page.waitForFunction(k => JSON.parse(localStorage.getItem(k)).res === 'source', KEY);
+  await page.click('label[for="setFps30"]');
+  await page.waitForFunction(k => JSON.parse(localStorage.getItem(k)).halfFps === true, KEY);
+  await page.click('label[for="setFps60"]');
+  await page.click('label[for="res1080"]');
+  await page.waitForFunction(k => { const d = JSON.parse(localStorage.getItem(k)); return d.res === '1080' && d.halfFps === false; }, KEY);
 
   // 変えたら保存する（アプリの画面と共通）
   await page.click('label[for="modeSize"]');
