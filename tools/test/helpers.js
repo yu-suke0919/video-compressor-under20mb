@@ -34,7 +34,7 @@ async function open(page, query = '') {
   await page.goto('/' + query);
   await page.waitForFunction(() => /対応 VideoEncoder=/.test(document.getElementById('diagOut').value));
   if (!(await page.evaluate(() => window.__compressor.urlSettings))) await page.click('.choice[data-preset="custom"]');
-  await page.addStyleTag({ content: '.easy-step { display: block !important; }' });
+  await page.addStyleTag({ content: '.easy-step:not(.is-current) { display: block !important; }' });
 }
 
 // 動画を選び、読み込み（または読み込みの失敗）が終わるまで待つ

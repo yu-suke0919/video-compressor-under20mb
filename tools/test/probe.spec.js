@@ -239,7 +239,7 @@ test('「◯MB以内」でも、先行圧縮を切り出した大きさが目標
   const cut = await pc(page, () => window.__compressor.exactCutBytes(window.__compressor.state.plan, window.__compressor.precomp().pre));
   // 目標を、切り出した大きさがその 97% になるようにする
   const target = Math.ceil(cut / 0.97 / 100000) / 10;   // MB（小数1桁）
-  await page.click('details.settings:not(#diagBox) > summary');
+  await page.evaluate(() => { document.querySelector('details.settings:not(#diagBox)').open = true; });   // 詳細設定（設定のステップでは開いたまま）
   await page.fill('#targetSize', String(target));
   await page.dispatchEvent('#targetSize', 'change');
   const label = (cut / 1000000).toFixed(1) + 'MBで即出力するよ';
@@ -299,7 +299,7 @@ test('指定ビットレートを下げても先行圧縮の大きさが変わ�
   await pick(page, '720p-60s.mp4');
   await preDone(page);
   expect((await ui(page)).planWarn).not.toContain('下げられない');
-  await page.click('details.settings:not(#diagBox) > summary');
+  await page.evaluate(() => { document.querySelector('details.settings:not(#diagBox)').open = true; });   // 詳細設定（設定のステップでは開いたまま）
   await page.fill('#minRate720', '800');   // 1200kbps → 800kbps
   await page.waitForFunction(() => (document.getElementById('diagOut').value.match(/先行圧縮が完了/g) || []).length >= 2, null, { timeout: 120000 });
   expect(await diag(page)).toMatch(/指定ビットレートを下げても小さくならない（1\.2Mbps .+ → 800kbps .+）/);

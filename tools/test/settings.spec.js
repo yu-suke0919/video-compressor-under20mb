@@ -20,7 +20,7 @@ const DEFAULTS = { res: '720', mode: 'size', target: '20', min720: '1200', min10
 // 「現在の設定を記憶したURLを生成してコピー」で作られる URL
 async function copiedUrl(page, context) {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
-  await page.click('details.settings:not(#diagBox) > summary');
+  await page.evaluate(() => { document.querySelector('details.settings:not(#diagBox)').open = true; });   // 詳細設定（設定のステップでは開いたまま）
   await page.click('#urlCopy');
   await expect(page.locator('#urlStatus')).toHaveText('コピーしました');
   return page.evaluate(() => navigator.clipboard.readText());
@@ -58,7 +58,7 @@ test('URL の範囲外・おかしな値は無視して初期値のまま', asyn
 
 test('画面で変えた設定を保存し、次に開いたときに戻す。「設定を初期値に戻す」で消える', async ({ page }) => {
   await open(page);
-  await page.click('details.settings:not(#diagBox) > summary');
+  await page.evaluate(() => { document.querySelector('details.settings:not(#diagBox)').open = true; });   // 詳細設定（設定のステップでは開いたまま）
   await page.click('label[for="res1080"]');
   await page.click('label[for="modeQuality"]');
   await page.fill('#targetSize', '50'); await page.dispatchEvent('#targetSize', 'change');
@@ -78,7 +78,7 @@ test('画面で変えた設定を保存し、次に開いたときに戻す。�
   expect(saved).toMatchObject({ res: '1080', mode: 'quality', target: 50, min720: 1500, min1080: 3000, halfFps: false, auto: true, audio: false });
   expect(saved.name.on).toBe(true);
 
-  await page.click('details.settings:not(#diagBox) > summary');
+  await page.evaluate(() => { document.querySelector('details.settings:not(#diagBox)').open = true; });   // 詳細設定（設定のステップでは開いたまま）
   await page.click('#resetSettings');
   expect(await readUi(page)).toEqual(DEFAULTS);
   expect(await page.evaluate(() => localStorage.getItem('video-compressor-under20mb:settings'))).toBe(null);
@@ -94,7 +94,7 @@ test('以前の形式で保存した設定も読み込める。おかしな値�
   })));
   await open(page);
   expect(await readUi(page)).toEqual({ res: '1080', mode: 'quality', target: '30', min720: '900', min1080: '2700', halfFps: true, auto: true, audio: false, nameOn: true });
-  await page.click('details.settings:not(#diagBox) > summary');
+  await page.evaluate(() => { document.querySelector('details.settings:not(#diagBox)').open = true; });   // 詳細設定（設定のステップでは開いたまま）
   expect(await page.textContent('#namePreview')).toBe('あいう.mp4');   // 自由入力は文字と数字だけ
 });
 
