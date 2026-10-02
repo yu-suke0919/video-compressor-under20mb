@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-02p';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-02q';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -93,7 +93,7 @@
     srcVideo: $('srcVideo'), srcInfo: $('srcInfo'), srcBox: $('srcBox'), outBox: $('outBox'),
     trimStart: $('trimStart'), trimEnd: $('trimEnd'), trimFill: $('trimFill'), trimBox: $('trimBox'), quickNote: $('quickNote'), quickNoteSize: $('quickNoteSize'), trimLabel: $('trimLabel'),
     trimTicks: $('trimTicks'), trimSeek: $('trimSeek'),
-    res720: $('res720'), res1080: $('res1080'), resSource: $('resSource'), resSeg: $('resSeg'), modeQuality: $('modeQuality'), modeSize: $('modeSize'),
+    res480: $('res480'), res720: $('res720'), res1080: $('res1080'), resSource: $('resSource'), resSeg: $('resSeg'), modeQuality: $('modeQuality'), modeSize: $('modeSize'),
     sizeLabel: $('sizeLabel'), planInfo: $('planInfo'), planWarn: $('planWarn'),
     targetSize: $('targetSize'), halfFps: $('halfFps'), audioOn: $('audioOn'), audioLabel: $('audioLabel'),
     minRate720: $('minRate720'), minRate1080: $('minRate1080'), autoRun: $('autoRun'), capLabel: $('capLabel'),
@@ -278,7 +278,8 @@
     if (!isFinite(v)) v = fallback;
     return Math.min(MIN_KBPS_LIMITS[1], Math.max(MIN_KBPS_LIMITS[0], Math.round(v)));
   }
-  function resValue(v) { return v === '1080' || v === 'source' ? v : '720'; }
+  // 480p は3ステップの画面だけで選べる（従来の画面では 720p として扱う）
+  function resValue(v) { return v === '1080' || v === 'source' || (v === '480' && !!els.res480) ? v : '720'; }
 
   // 「元の解像度」は、720p・1080p 以外で720pより大きい動画（スマホの画面録画など）のときだけ出す
   // （720p以下の動画は、どれを選んでも元の大きさのままなので出さない）。
@@ -294,6 +295,11 @@
   var want1080 = false;
   function isSmallSource(meta) { return !!meta && Math.min(meta.width, meta.height) <= 720 + 8; }
   function syncResOption() {
+    // 3ステップの画面は、4つ（480p・720p・1080p・元の解像度）をいつも出し、選んだものをそのまま使う（元より大きくはしない）
+    if (EASY) {
+      els.res1080.classList.toggle('is-locked', isSmallSource(state.meta));
+      return;
+    }
     var show = !!(state.meta && !isStandardRes(state.meta) && Math.min(state.meta.width, state.meta.height) > 720 + 8);
     els.resSeg.classList.toggle('is-three', show);
     var small = isSmallSource(state.meta);
@@ -525,10 +531,17 @@
   var SETTING_DEFS = [
     // 解像度（「元の解像度」を選んだことは wantSource で覚える。出せない動画のあいだは画面の選択は 720p・1080p のまま）
     {
-      key: 'res', url: 'res', def: '720', ids: ['res720', 'res1080', 'resSource'],
-      read: function () { return wantSource ? 'source' : want1080 ? '1080' : resValue(radioValue('res', '720')); },
+      key: 'res', url: 'res', def: '720', ids: ['res720', 'res1080', 'resSource'].concat($('res480') ? ['res480'] : []),
+      read: function () { return EASY ? resValue(radioValue('res', '720')) : wantSource ? 'source' : want1080 ? '1080' : resValue(radioValue('res', '720')); },
       write: function (v) {
         want1080 = false;
+        // 3ステップの画面は、選んだものをそのまま選ぶ
+        if (EASY) {
+          wantSource = false;
+          ({ '480': els.res480, '1080': els.res1080, source: els.resSource }[v] || els.res720).checked = true;
+          return;
+        }
+        if (v === '480') v = '720';
         if (v === '1080') { els.res1080.checked = true; wantSource = false; }
         else if (v === '720') { els.res720.checked = true; wantSource = false; }
         // 元の解像度：選択肢が出ない動画（720p・1080p など）のあいだは 1080p にしておく。
@@ -1014,7 +1027,14 @@
     [els.res720, els.res1080, els.resSource, els.modeQuality, els.modeSize, els.targetSize, els.halfFps, els.audioOn,
       els.minRate720, els.minRate1080, els.autoRun, els.nameOn, els.resetSettings].forEach(function (el) { el.disabled = state.running || done; });
     if (isSmallSource(state.meta)) els.res1080.disabled = true;   // 720p以下の動画は 1080p を選べない
-    if (easyResFixed()) [els.res720, els.res1080, els.resSource].forEach(function (el) { el.disabled = true; });
+    if (els.res480) els.res480.disabled = state.running || done;
+    if (easyResFixed()) [els.res480, els.res720, els.res1080, els.resSource].forEach(function (el) { el.disabled = true; });
+    // 設定のステップの fps（「60fpsの動画は30fpsにする」のチェックと同じ）
+    if ($('fpsSeg')) {
+      $('setFps30').checked = els.halfFps.checked;
+      $('setFps60').checked = !els.halfFps.checked;
+      $('setFps30').disabled = $('setFps60').disabled = state.running || done;
+    }
     Array.prototype.forEach.call(els.nameList.querySelectorAll('input, button'), function (el) {
       el.disabled = state.running || done || (el.dataset.move === 'up' && !el.parentNode.previousSibling) ||
         (el.dataset.move === 'down' && !el.parentNode.nextSibling);
@@ -3029,7 +3049,8 @@
   // ---------------------------------------------------------------- 3ステップの画面：2 の解像度・fps・圧縮方法（その動画だけ）
   // 720p・1080p ではない動画は、圧縮の仕方に関係なく元の解像度のまま（解像度は選べない）
   function easyResFixed() { return EASY && !!state.meta && !isStandardRes(state.meta); }
-  var ADJ_RES = ['480', '720', '1080'];
+  var ADJ_RES = ['480', '720', '1080', 'source'];
+  function adjResEl(r) { return $(r === 'source' ? 'adjResSource' : 'adjRes' + r); }
   function updateAdjust(enabled) {
     if (!$('adjBox')) return;
     var hasFile = !!(state.file && state.meta);
@@ -3038,11 +3059,14 @@
     if (hasFile) {
       var settings = readSettings();
       var short = Math.min(state.meta.width, state.meta.height);
-      // 解像度：今の解像度（元より大きくはしない）を選んだ状態にし、元より大きい解像度は選べなくする
-      var cur = settings.res === 'source' ? short : Math.min(Number(settings.res) || 720, short);
-      var pick = ADJ_RES.reduce(function (a, r) { return Math.abs(Number(r) - cur) < Math.abs(Number(a) - cur) ? r : a; }, '720');
+      // 解像度：今の解像度を選んだ状態にし（元の解像度はそのまま。それ以外は元より大きくはしないので、その大きさの段）、
+      // 元より大きい解像度は選べなくする
+      var pick = settings.res === 'source' ? 'source' : (function () {
+        var cur = Math.min(Number(settings.res) || 720, short);
+        return ['480', '720', '1080'].reduce(function (a, r) { return Math.abs(Number(r) - cur) < Math.abs(Number(a) - cur) ? r : a; }, '720');
+      })();
       ADJ_RES.forEach(function (r) {
-        var el = $('adjRes' + r), over = Number(r) > short + 8;
+        var el = adjResEl(r), over = r !== 'source' && Number(r) > short + 8;
         el.checked = r === pick;
         el.classList.toggle('is-locked', over && enabled);
         el.disabled = !enabled || over;
@@ -3076,7 +3100,7 @@
   function setupAdjust() {
     if (!$('adjBox')) return;
     ADJ_RES.forEach(function (r) {
-      $('adjRes' + r).addEventListener('change', function () {
+      adjResEl(r).addEventListener('change', function () {
         if (!adjustable()) return;
         adjust.res = r;
         logAdjust('解像度');
@@ -3233,11 +3257,19 @@
   });
 
   // 画面で解像度を選んだら、「元の解像度」を選んだかどうかを覚えておく
-  ['res720', 'res1080', 'resSource'].forEach(function (k) {
-    els[k].addEventListener('change', function () { wantSource = k === 'resSource'; want1080 = false; });
+  ['res480', 'res720', 'res1080', 'resSource'].forEach(function (k) {
+    if (els[k]) els[k].addEventListener('change', function () { wantSource = k === 'resSource'; want1080 = false; });
   });
-  ['res720', 'res1080', 'resSource', 'modeQuality', 'modeSize', 'halfFps', 'audioOn'].forEach(function (k) {
-    els[k].addEventListener('change', refresh);
+  ['res480', 'res720', 'res1080', 'resSource', 'modeQuality', 'modeSize', 'halfFps', 'audioOn'].forEach(function (k) {
+    if (els[k]) els[k].addEventListener('change', refresh);
+  });
+  // 設定のステップの fps：「60fpsの動画は30fpsにする」のチェックを変えたことにする（保存も同じ）
+  ['30', '60'].forEach(function (f) {
+    var el = $('setFps' + f);
+    if (el) el.addEventListener('change', function () {
+      els.halfFps.checked = f === '30';
+      els.halfFps.dispatchEvent(new Event('change', { bubbles: true }));
+    });
   });
   [els.minRate720, els.minRate1080].forEach(function (el) {
     el.addEventListener('input', refresh);

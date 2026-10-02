@@ -57,17 +57,27 @@
     <h2 class="step-title" id="stepSetTitle">設定を決めてください</h2>
     <p class="step-lead">アプリの画面と同じ設定です。変えた設定は保存され、次に開いたときも同じになります。</p>
     <div class="segs">
-      <div class="seg" id="resSeg" role="radiogroup" aria-label="解像度">
+      <!-- 解像度・fps・圧縮方法は、2 の設定変更簡易メニューと同じ部品（こちらは保存する設定） -->
+      <div class="seg is-four" id="resSeg" role="radiogroup" aria-label="解像度">
+        <input type="radio" class="seg-input" name="res" id="res480" value="480">
+        <label class="seg-opt" for="res480">480p</label>
         <input type="radio" class="seg-input" name="res" id="res720" value="720" checked>
         <label class="seg-opt" for="res720">720p</label>
         <input type="radio" class="seg-input" name="res" id="res1080" value="1080">
         <label class="seg-opt" for="res1080">1080p</label>
-        <!-- 720p・1080p 以外の動画（スマホの画面録画など）のときだけ出す -->
         <input type="radio" class="seg-input" name="res" id="resSource" value="source">
         <label class="seg-opt seg-opt-source" for="resSource">元の解像度</label>
         <span class="seg-thumb" aria-hidden="true"></span>
       </div>
       <div id="resFixedNote" class="adj-note hidden"></div>
+      <!-- 「60fpsの動画は30fpsにする」（詳細設定のチェックは隠して、こちらで選ぶ） -->
+      <div class="seg" id="fpsSeg" role="radiogroup" aria-label="fps">
+        <input type="radio" class="seg-input" name="setFps" id="setFps30" value="30" checked>
+        <label class="seg-opt" for="setFps30">30fps</label>
+        <input type="radio" class="seg-input" name="setFps" id="setFps60" value="60">
+        <label class="seg-opt" for="setFps60">60fps</label>
+        <span class="seg-thumb" aria-hidden="true"></span>
+      </div>
       <div class="seg" role="radiogroup" aria-label="圧縮方法">
         <input type="radio" class="seg-input" name="mode" id="modeQuality" value="quality">
         <label class="seg-opt" for="modeQuality"><span>なるべく圧縮</span><span id="quickNote" class="seg-sub hidden"></span></label>
@@ -92,7 +102,7 @@
         <span><input id="minRate1080" type="number" inputmode="numeric" min="100" max="50000" step="100" value="2700"> kbps</span>
       </div>
       <p class="hint">「なるべく圧縮」ではこの指定の値を利用します。けれども、スマホによっては画質を優先して指定を守らず、かなり高いビットレートで作ることがあります。<br>さらに圧縮したい時は、指定ビットレート値をもっと下げるか、別の圧縮ソフトを検討してね。60fpsのままなら指定の1.5倍、「元の解像度」では720pの値を画素数に比例させて使います。</p>
-      <div class="check">
+      <div class="check hidden">
         <input type="checkbox" id="halfFps" checked>
         <label for="halfFps">60fpsの動画は30fpsにする（容量を抑えられます）</label>
       </div>
@@ -154,13 +164,15 @@
     <details class="adj-menu hidden" id="adjMenu">
     <summary>設定変更簡易メニュー</summary>
     <div class="segs adj" id="adjBox">
-      <div class="seg is-three" id="adjResSeg" role="radiogroup" aria-label="解像度">
+      <div class="seg is-four" id="adjResSeg" role="radiogroup" aria-label="解像度">
         <input type="radio" class="seg-input" name="adjRes" id="adjRes480" value="480">
         <label class="seg-opt" for="adjRes480">480p</label>
         <input type="radio" class="seg-input" name="adjRes" id="adjRes720" value="720" checked>
         <label class="seg-opt" for="adjRes720">720p</label>
         <input type="radio" class="seg-input" name="adjRes" id="adjRes1080" value="1080">
         <label class="seg-opt" for="adjRes1080">1080p</label>
+        <input type="radio" class="seg-input" name="adjRes" id="adjResSource" value="source">
+        <label class="seg-opt" for="adjResSource">元の解像度</label>
         <span class="seg-thumb" aria-hidden="true"></span>
       </div>
       <div class="seg" id="adjFpsSeg" role="radiogroup" aria-label="fps">

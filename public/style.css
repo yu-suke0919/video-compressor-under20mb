@@ -474,6 +474,25 @@ header .btn-sm {
 .seg-input:nth-of-type(3):checked ~ .seg-thumb {
   transform: translateX(200%);
 }
+/* 4つの選択肢（3ステップの画面の解像度：480p・720p・1080p・元の解像度。元の解像度はいつも出す） */
+.seg.is-four {
+  grid-template-columns: repeat(4, 1fr);
+}
+.seg.is-four .seg-thumb {
+  width: calc(25% - 1.5px);
+}
+.seg.is-four .seg-opt-source {
+  display: flex;
+}
+.seg.is-four .seg-opt {
+  padding-left: 2px;
+  padding-right: 2px;
+  font-size: 15px;
+  white-space: nowrap;
+}
+.seg-input:nth-of-type(4):checked ~ .seg-thumb {
+  transform: translateX(300%);
+}
 .seg-input:checked + .seg-opt {
   color: var(--on-accent);
 }
