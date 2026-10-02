@@ -218,6 +218,29 @@ test('設定変更簡易メニューのファイル名：入れた名前.mp4 で
   expect(await page.inputValue('#adjName')).toBe('');
 });
 
+test('詳しく設定するで、ファイル名の設定がオンなら、ファイル名の欄に設定から作った名前を入れておく', async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => localStorage.setItem('video-compressor-under20mb:settings', JSON.stringify({
+    res: '720', mode: 'quality',
+    name: { on: true, order: ['text1', 'opt', 'date', 'datetime', 'text2', 'rand', 'orig'], enabled: ['text1', 'opt'], text1: 'clip', text2: '' }
+  })));
+  await openEasy(page);
+  await page.click('.choice[data-preset="custom"]');
+  await page.click('#easySetNext');
+  await pick(page, '720p-60s.mp4');
+  expect(await page.inputValue('#adjName')).toBe('clip_720p-なるべく');
+  // 設定（解像度）を変えると作り直す
+  await choose(page, 'adjRes480');
+  expect(await page.inputValue('#adjName')).toBe('clip_480p-なるべく');
+  // 手で変えたら、その名前を使う
+  await page.fill('#adjName', 'mine');
+  await choose(page, 'adjRes720');
+  expect(await page.inputValue('#adjName')).toBe('mine');
+  await setTrim(page, 0, 2);
+  await compressEasy(page);
+  expect((await outputInfo(page)).name).toBe('mine.mp4');
+});
+
 test('目標以下の動画は、圧縮せずにそのまま共有・保存へ進める', async ({ page }) => {
   await openEasy(page);
   await page.click('.choice[data-preset="size"]');
