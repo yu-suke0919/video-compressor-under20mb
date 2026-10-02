@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-02s';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-02t';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -437,9 +437,13 @@
   }
   // 指定した名前（拡張子なし）。オフのとき・使う項目がないときは null（今までの名前にする）
   function customName(ctx) {
-    var typed = EASY ? limitBytes(cleanName(easyName)) : '';
-    if (typed) return typed;   // 3ステップの画面で名前を入れたら、そのまま使う（日付などは付けない）
-    return settingsName(ctx);
+    if (!EASY) return settingsName(ctx);
+    // 3ステップの画面：2 のファイル名の欄に入れた名前をそのまま使う（日付などは付けない）。
+    // 空なら元の動画の名前（_compressed なども付けない）
+    var typed = limitBytes(cleanName(easyName));
+    if (typed) return typed;
+    if (!easyNameTouched) { var fromSettings = settingsName(ctx); if (fromSettings) return fromSettings; }
+    return limitBytes(cleanName(ctx.base)) || null;
   }
   // ファイル名の設定から作る名前
   function settingsName(ctx) {

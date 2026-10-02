@@ -212,10 +212,13 @@ test('設定変更簡易メニューのファイル名：入れた名前.mp4 で
   await setTrim(page, 0, 3);
   await compressEasy(page);
   expect((await outputInfo(page)).name).toBe('スプラ練習 1.mp4');
-  // 新しい動画を選ぶと消す
+  // 新しい動画を選ぶと消す。空なら元の動画の名前（_compressed なども付けない）
   await page.click('#easyBack');
   await pick(page, 'small-5mb.mp4');
   expect(await page.inputValue('#adjName')).toBe('');
+  await setTrim(page, 0, 3);
+  await compressEasy(page);
+  expect((await outputInfo(page)).name).toBe('small-5mb.mp4');
 });
 
 test('詳しく設定するで、ファイル名の設定がオンなら、ファイル名の欄に設定から作った名前を入れておく', async ({ page }) => {
