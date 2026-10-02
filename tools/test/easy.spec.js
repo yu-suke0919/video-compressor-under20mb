@@ -181,6 +181,9 @@ test('圧縮ルールは設定のテンプレート：2 で変えて「なるべ
   // 「← 戻る」は 1 に戻る（2択のとき）
   await page.click('#easyChange');
   expect(await currentStep(page)).toEqual(['step1']);
+  // 画質優先は、動画を選ぶ前も「画質優先」
+  await page.click('.choice[data-preset="size"]');
+  expect(await page.textContent('#easyModeName')).toBe('画質優先（20MB以内）');
   // ショートカットの「なるべく圧縮」の URL（mode=quality）は、なるべく圧縮と同じ設定
   await openEasy(page, '?mode=quality&probe=off');
   expect(await page.textContent('#easyModeName')).toBe('なるべく圧縮');
