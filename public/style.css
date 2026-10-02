@@ -996,17 +996,22 @@ header:has(#repickBtn:not(.hidden)) #easyLink {
   height: 32svh;
   min-height: 180px;
 }
-.app.easy-app #runBtn > span {
-  display: block;
+/* 「圧縮する」は高さを固定する。2行目（◯MBで即出力します）が出ても大きくせず、「圧縮する」が少し上に寄る */
+.app.easy-app #runBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 60px;
+  padding: 0 12px;
+  font-size: 19px;
+  line-height: 1.25;
 }
 .app.easy-app #runBtn .run-sub {
   font-size: 13px;
   font-weight: 600;
+  line-height: 1.2;
   opacity: .9;
-}
-.app.easy-app #runBtn {
-  padding: 15px 12px;
-  font-size: 19px;
 }
 /* 3. 共有・保存：ボタンを大きく目立たせる */
 .app.easy-app #shareBtn,
