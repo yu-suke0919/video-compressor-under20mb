@@ -19,6 +19,8 @@
   --err-bg: #ffeceb;
   --err-text: #8b1a1a;
   --err-line: #f5c2c0;
+  --fit-ok: #1b7f3b;
+  --fit-over: #c25e00;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -40,6 +42,8 @@
     --err-bg: #3a1a1a;
     --err-text: #ffb4b4;
     --err-line: #5c2525;
+    --fit-ok: #4cc26e;
+    --fit-over: #ffa94d;
   }
 }
 * {
@@ -999,6 +1003,19 @@ header:has(#repickBtn:not(.hidden)) #easyLink {
 /* 2. 予想の行（現在の設定・予想の大きさ・収まる秒数）は、ほかの補足より1段大きくする */
 .app.easy-app #planInfo {
   font-size: 14px;
+}
+/* 予想の大きさ：大きな太字にし、目標サイズに収まるなら緑、超えるならオレンジ（超えるときは、次の行と下の注意でも知らせる） */
+#planInfo .plan-size {
+  font-weight: 700;
+}
+.app.easy-app #planInfo .plan-size {
+  font-size: 20px;
+}
+#planInfo .plan-size.is-fit {
+  color: var(--fit-ok);
+}
+#planInfo .plan-size.is-over {
+  color: var(--fit-over);
 }
 /* 「圧縮する」は高さを固定する。2行目（◯MBで即出力します）が出ても大きくせず、「圧縮する」が少し上に寄る */
 .app.easy-app #runBtn {
