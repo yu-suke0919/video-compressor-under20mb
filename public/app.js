@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-02o';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-02p';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1039,7 +1039,7 @@
     showPrecompressHints(plan);
     els.audioLabel.textContent = '音声を残す（' + plan.audio.label + '）';
     var trimEst = trimOnlyEstimate(plan);
-    els.planInfo.textContent = planText(plan, trimEst);
+    showPlanText(planParts(plan, trimEst));
 
     var warns = [];
     if (plan.mode === 'size' && plan.unreachable && !trimEst) {
@@ -1483,7 +1483,7 @@
   //   現在の設定：720p/30fps/1分00秒/1.2Mbps
   //   → 7.5MB（予想・先行圧縮 60%）… 先行圧縮が使えて、切り出す大きさが分かっていれば「確定・先行圧縮済み」
   //   目標サイズに収まらなければ、次の行に「◯分◯秒以内で20MBに収まります。」（先行圧縮で測れたビットレートか、指定のビットレートから）
-  function planText(plan, trimEst) {
+  function planParts(plan, trimEst) {
     var line1 = '現在の設定：' + Math.min(plan.width, plan.height) + 'p/' + fmtFps(plan.outFps) + '/' + fmtDuration(plan.duration) + '/' +
       (trimEst ? '再圧縮なし' : fmtRate(plan.probed ? plan.expectedBps : plan.videoBitrate));
     var est = trimEst || plan.estBytes;
@@ -1495,14 +1495,25 @@
         : pre && pre.file === state.file && (pre.job || preTimer) ? '先行圧縮中' : '';
       tag = (sure ? '確定' : '予想') + (probe ? '・' + probe : '');
     }
-    var lines = [line1, '→ ' + fmtBytes(est).replace(' ', '') + '（' + tag + '）'];
+    var parts = { line1: line1, size: fmtBytes(est).replace(' ', ''), tag: '（' + tag + '）', over: false, line3: '' };
     // 目標サイズに収まらないとき
     if (!trimEst && est >= plan.targetBytes && !plan.preFits) {
       var fit = plan.probed && plan.fitSec ? plan.fitSec
         : Math.floor(plan.targetBytes * 8 * SIZE_SAFETY / (plan.videoBitrate + plan.audioBitrate));
-      lines.push(fmtDuration(fit) + '以内で' + plan.targetMB + 'MBに収まります。');
+      parts.over = true;
+      parts.line3 = fmtDuration(fit) + '以内で' + plan.targetMB + 'MBに収まります。';
     }
-    return lines.join('\n');
+    return parts;
+  }
+  // 予想の行を出す。予想の大きさは、目標サイズに収まるなら緑、超えるならオレンジにする
+  function showPlanText(parts) {
+    var el = els.planInfo;
+    el.textContent = parts.line1 + '\n→ ';
+    var size = document.createElement('span');
+    size.className = 'plan-size ' + (parts.over ? 'is-over' : 'is-fit');
+    size.textContent = parts.size;
+    el.appendChild(size);
+    el.appendChild(document.createTextNode(parts.tag + (parts.line3 ? '\n' + parts.line3 : '')));
   }
   function probeLabel(plan) {
     if (plan.probed) return pre.done ? '（先行圧縮済み）' : '（先行圧縮 ' + Math.floor(pre.time / pre.plan.duration * 100) + '%）';
