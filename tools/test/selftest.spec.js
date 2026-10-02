@@ -12,7 +12,7 @@ test('自動テストが最後まで動き、失敗がない', async ({ page }) 
   const failed = results.filter(r => r.status === 'ng');
   if (failed.length) console.log(await page.evaluate(() => window.__selftest.resultText()));
   expect(failed).toEqual([]);
-  expect(results.length).toBe(13);
+  expect(results.length).toBe(14);
   expect(await page.isDisabled('#copyBtn')).toBe(false);
 });
 
@@ -20,7 +20,7 @@ test('手元の動画でも試せる', async ({ page }) => {
   test.setTimeout(5 * 60 * 1000);
   await page.goto('/selftest.html');
   await page.setInputFiles('#file', require('./helpers').video('720p-60s.mp4'));
-  await page.waitForFunction(() => /^2\/2 件完了/.test(document.getElementById('summary').textContent), null, { timeout: 4 * 60 * 1000 });
+  await page.waitForFunction(() => /^3\/3 件完了/.test(document.getElementById('summary').textContent), null, { timeout: 4 * 60 * 1000 });
   const results = await page.evaluate(() => window.__selftest.results.map(r => ({ title: r.title, status: r.status, detail: r.detail })));
   expect(results.filter(r => r.status === 'ng')).toEqual([]);
   expect(results[0].title).toContain('1280×720');
