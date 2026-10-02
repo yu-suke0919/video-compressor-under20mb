@@ -50,6 +50,11 @@ const VIDEOS = {
   // 読めない音声（AC-3）が AAC と一緒に入った動画（iPhone の空間オーディオと同じ状況）
   'two-audio.mov': [...noisy('1280x720', 30), ...tone(), '-f', 'lavfi', '-i', 'sine=frequency=880:sample_rate=48000',
     '-map', '0:v', '-map', '1:a', '-map', '2:a', '-t', '10', ...x264('8M'), '-c:a:0', 'aac', '-b:a:0', '160k', '-c:a:1', 'ac3', '-b:a:1', '192k'],
+  // AAC の音声が2本入った動画（副音声など。書き出すのはメインの1本だけ）
+  'two-aac.mp4': [...noisy('1280x720', 30), ...tone(), '-f', 'lavfi', '-i', 'sine=frequency=880:sample_rate=48000',
+    '-map', '0:v', '-map', '1:a', '-map', '2:a', '-t', '4', ...x264('4M'), '-c:a', 'aac', '-b:a', '128k', '-ac', '2'],
+  // 120fps の動画（ゲームの画面録画など）
+  'hfr-120fps.mp4': [...noisy('1280x720', 120), ...tone(), '-t', '2', ...x264('8M'), ...aac()],
 };
 
 function run(args) { execFileSync(FFMPEG, ['-loglevel', 'error', '-y', ...args], { stdio: 'inherit' }); }

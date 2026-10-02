@@ -201,3 +201,50 @@ test('URL でファイル名の付け方を指定できる', async ({ page }) =>
   await compress(page);
   expect((await outputInfo(page)).name).toMatch(/^\d{14}_テスト_[a-z0-9]{4}_(720p-20MB|トリミング)\.mp4$/);
 });
+
+test('音声が2本ある動画は、メインの音声1本だけを書き出す（大きさの見積もりと合う）', async ({ page }) => {
+  await open(page, '?mode=quality');
+  await pick(page, 'two-aac.mp4');
+  const countTracks = () => page.evaluate(async () => {
+    const M = window.Mediabunny, o = window.__compressor.state.out;
+    const input = new M.Input({ source: new M.BlobSource(o.blob), formats: [M.MP4, M.QTFF] });
+    try { return { video: (await input.getVideoTracks()).length, audio: (await input.getAudioTracks()).length, size: o.blob.size }; }
+    finally { input.dispose(); }
+  });
+  const est = await page.evaluate(() => window.__compressor.state.plan.estBytes);
+  await compress(page);
+  const r = await countTracks();
+  expect([r.video, r.audio]).toEqual([1, 1]);
+  expect(Math.abs(r.size / est - 1)).toBeLessThan(0.1);   // 音声1本ぶんの見積もりと合う
+  // トリミングのみ（再圧縮なし）でも、メインの音声1本だけ
+  await open(page, '?mode=size');
+  await pick(page, 'two-aac.mp4');
+  await setTrim(page, 0, 2);
+  await compress(page);
+  expect((await outputInfo(page)).name).toBe('two-aac.mp4');
+  const c = await countTracks();
+  expect([c.video, c.audio]).toEqual([1, 1]);
+});
+
+test('「30fps」は、30fps 以下になるまで元の fps を割る（120fps → 30fps）', async ({ page }) => {
+  await open(page);
+  // 計画：元の fps ごとの出力の fps
+  const fps = await page.evaluate(() => [24, 30, 50, 59.94, 60, 90, 120, 144].map(f => {
+    const meta = { width: 1280, height: 720, fps: f, duration: 10, videoCodec: 'avc' };
+    const st = Object.assign(window.__compressor.readSettings(), { halfFps: true, res: '720', mode: 'quality' });
+    return Math.round(window.__compressor.makePlan(meta, { start: 0, end: 10 }, st, { mode: 'none', bps: 0 }, 10000000).outFps * 100) / 100;
+  }));
+  expect(fps).toEqual([24, 30, 25, 29.97, 30, 30, 30, 28.8]);
+  // 実際に書き出した動画（120fps → 30fps）
+  await open(page, '?mode=quality&fps=30');
+  await pick(page, 'hfr-120fps.mp4');
+  expect(await page.evaluate(() => Math.round(window.__compressor.state.plan.outFps))).toBe(30);
+  await compress(page);
+  const rate = await page.evaluate(async () => {
+    const M = window.Mediabunny;
+    const input = new M.Input({ source: new M.BlobSource(window.__compressor.state.out.blob), formats: [M.MP4] });
+    try { return (await (await input.getPrimaryVideoTrack()).computePacketStats(200)).averagePacketRate; } finally { input.dispose(); }
+  });
+  expect(Math.abs(rate - 30)).toBeLessThan(2);
+});
+

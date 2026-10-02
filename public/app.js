@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-02x';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-02y';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -881,7 +881,9 @@
   function makePlan(meta, trim, settings, audio, fileSize, forcedVideoBitrate, videoCapBps) {
     var duration = Math.max(0.1, trim.end - trim.start);
     var srcFps = meta.fps || DEFAULT_FPS;
-    var outFps = (settings.halfFps && srcFps > 40) ? srcFps / 2 : srcFps;
+    // 「30fps」（halfFps）：40fps を超える動画は、30fps 以下になるまで元の fps を 2・3・4…で割る
+    // （コマを等間隔に間引く。60→30、59.94→29.97、90→30、120→30、50→25）
+    var outFps = (settings.halfFps && srcFps > 40) ? srcFps / Math.ceil(srcFps / 30.5) : srcFps;
     outFps = Math.min(Math.max(outFps, 1), MAX_FPS);
     // 音声をそのまま使うときは実測値（小数）なので、整数にしてから使う
     var audioBps = Math.round(audio.bps || 0);
@@ -982,6 +984,10 @@
   // 画面を出し直し、3ステップの画面（easy.js）にも知らせる（ステップの切り替えに使う）
   function refresh() {
     refreshUi();
+    notifyUpdate();
+  }
+  // 3ステップの画面（easy.js）に、表示が変わったことを知らせる（エラーを出したあとなど、画面を出し直さないときも）
+  function notifyUpdate() {
     try { document.dispatchEvent(new CustomEvent('compressor:update')); } catch (e) { /* noop */ }
   }
   function refreshUi() {
@@ -1274,6 +1280,9 @@
     return Promise.resolve().then(function () {
       return spec.options(input, output);
     }).then(function (options) {
+      // 書き出すのは、メインの映像と音声の1本ずつだけ（大きさの計画も1本ずつで立てている。
+      // 指定しないと、副音声などもすべて同じ設定で書き出してしまう）
+      options.tracks = 'primary';
       return M.Conversion.init(options);
     }).then(function (conv) {
       var discarded = conv.discardedTracks || [];
@@ -1751,19 +1760,27 @@
   }
   // 同じ動画・同じ解像度とfpsと音声で、指定ビットレートを下げて先行圧縮をやり直したのに、前回より MIN_SHRINK 以上
   // 小さくならなければ、この端末ではそれ以上下げられないとみる（rec.floorHit。予想の注意に出す）
+  //   lastDonePre … 前回の先行圧縮で比べるのに要る数字だけ（動画や書き出したデータは持たない。新しい動画を選んだら消す）
   var lastDonePre = null;
+  function preSummary(rec) {
+    var p = rec.plan;
+    return {
+      fileId: state.fileId, bytes: rec.bytes, width: p.width, height: p.height, outFps: Math.round(p.outFps),
+      audioMode: p.audio.mode, audioBitrate: p.audioBitrate, videoBitrate: p.videoBitrate
+    };
+  }
   function checkDeviceFloor(rec) {
-    var prev = lastDonePre;
-    lastDonePre = rec;
-    if (!prev || prev.file !== rec.file) return;
-    var a = prev.plan, b = rec.plan;
-    var same = a.width === b.width && a.height === b.height && Math.round(a.outFps) === Math.round(b.outFps) &&
-      a.audio.mode === b.audio.mode && a.audioBitrate === b.audioBitrate;
-    if (!same || !(b.videoBitrate < a.videoBitrate)) return;
-    if (rec.bytes > prev.bytes * (1 - MIN_SHRINK)) {
+    if (rec.file !== state.file) return;
+    var prev = lastDonePre, b = preSummary(rec);
+    lastDonePre = b;
+    if (!prev || prev.fileId !== b.fileId) return;
+    var same = prev.width === b.width && prev.height === b.height && prev.outFps === b.outFps &&
+      prev.audioMode === b.audioMode && prev.audioBitrate === b.audioBitrate;
+    if (!same || !(b.videoBitrate < prev.videoBitrate)) return;
+    if (b.bytes > prev.bytes * (1 - MIN_SHRINK)) {
       rec.floorHit = true;
-      log('指定ビットレートを下げても小さくならない（' + fmtRate(a.videoBitrate) + ' ' + fmtBytes(prev.bytes) + ' → ' +
-        fmtRate(b.videoBitrate) + ' ' + fmtBytes(rec.bytes) + '）');
+      log('指定ビットレートを下げても小さくならない（' + fmtRate(prev.videoBitrate) + ' ' + fmtBytes(prev.bytes) + ' → ' +
+        fmtRate(b.videoBitrate) + ' ' + fmtBytes(b.bytes) + '）');
     }
   }
   function stopPre(why) {
@@ -2674,10 +2691,12 @@
       if (isCancel(job, err)) { log('キャンセル'); return; }
       console.error(err);
       log('エラーで終了 ' + errText(err));
-      if (err && err.stuck) { setAlert(els.outWarn, errorLines(err.message), true); return; }   // 直し方は決まっているので、診断情報は開かない
+      // エラーを出したら、3ステップの画面にも知らせる（見出しを「うまく圧縮できませんでした」にする）
+      if (err && err.stuck) { setAlert(els.outWarn, errorLines(err.message), true); notifyUpdate(); return; }   // 直し方は決まっているので、診断情報は開かない
       setAlert(els.outWarn, ['エラー: ' + ((err && err.message) || String(err)),
         MSG_REPORT], true);
       showDiag(true);
+      notifyUpdate();
     });
   }
 
@@ -2951,6 +2970,8 @@
     state.meta = null;
     state.nameRand = randDigits();   // 元の動画のまま渡すときの乱数（同じ動画のあいだは変えない）
     state.compatAudio = null;
+    state.fileId = (state.fileId || 0) + 1;   // 動画ごとの番号（前回の先行圧縮と同じ動画かを見分ける）
+    lastDonePre = null;
     resetAdjust();   // 3ステップの画面の 2 で変えた値は、その動画だけ
     easyName = '';
     easyNameTouched = false;
@@ -2967,7 +2988,9 @@
     els.srcInfo.textContent = '読み込み中…';
     refresh();
 
-    log('動画を選択 ' + ((file.name || '').split('.').pop() || '?') + ' ' + (file.type || '種類不明') + ' ' + fmtBytes(file.size));
+    // ファイル名は記録しない（診断情報をそのまま送ってもらうため）。拡張子は決まった形だけ書く
+    var ext = /\.(mp4|m4v|mov|qt|webm|mkv|3gp|3g2|avi|ts|mts|m2ts)$/i.exec(file.name || '');
+    log('動画を選択 ' + (ext ? ext[1].toLowerCase() : '拡張子不明') + ' ' + (file.type || '種類不明') + ' ' + fmtBytes(file.size));
     loadMetaFast(file).then(function (meta) {
       log('解析（高速） ' + meta.width + 'x' + meta.height + ' ' + meta.fps + 'fps ' + (meta.duration || 0).toFixed(1) + 's codec=' +
         (meta.codecString || meta.videoCodec) + ' hdr=' + meta.hdr + ' decode=' + meta.canDecode +
@@ -3120,7 +3143,8 @@
       easyNameTouched = true;
       refresh();
     });
-    $('adjName').addEventListener('change', function () { log('2 で変更 ファイル名（' + (cleanName(easyName) || '設定のまま') + '）'); });
+    // 入れた名前は記録しない（診断情報に名前を入れないため）
+    $('adjName').addEventListener('change', function () { log('2 で変更 ファイル名（' + (cleanName(easyName) ? '入力あり' : '空欄') + '）'); });
     [['adjModeQuality', 'quality'], ['adjModeSize', 'size']].forEach(function (m) {
       $(m[0]).addEventListener('change', function () {
         if (!adjustable()) return;
@@ -3444,7 +3468,7 @@
   window.__compressor = {
     makePlan: makePlan, nextBitrate: nextBitrate, preEstimate: preEstimate, exactCutBytes: exactCutBytes, readSettings: readSettings,
     estimateFps: estimateFps, snapFps: snapFps, audioStrategy: audioStrategy,
-    state: state, precomp: function () { return { pre: pre }; },
+    state: state, precomp: function () { return { pre: pre, last: lastDonePre }; },
     pickFile: function (file) { onFileChosen(file); },   // 自己テスト（selftest.html）から動画を渡す
     setEasyPreset: setEasyPreset, redo: redo, isCompressed: isCompressed, ruleName: ruleName,   // 3ステップの画面（easy.js）から使う
     urlSettings: hasSettingParams(), isPreviewHost: isPreviewHost,
