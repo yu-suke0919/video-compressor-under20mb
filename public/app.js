@@ -57,7 +57,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-02b';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-02c';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -123,7 +123,7 @@
   };
 
   // 3ステップの画面の 2 で変えた値（その動画だけ。新しい動画を選ぶ・圧縮の仕方を選び直す・設定のステップで設定を変えると戻す）
-  //   res     … 解像度（'1080' | '720' | '480'。null なら設定のまま）
+  //   res     … 解像度（'1080' | '720'。null なら設定のまま）
   //   halfFps … 60fpsの動画を30fpsにするか（null なら設定のまま）
   //   mode    … 圧縮方法（'quality'＝指定ビットレートでなるべく圧縮 | 'size'＝目標サイズに収まるなるべく高いビットレート。null なら設定のまま）
   var adjust = { res: null, halfFps: null, mode: null };
@@ -336,8 +336,6 @@
         '1080': readKbps(els.minRate1080, DEFAULT_MIN_KBPS['1080']) * 1000
       }
     };
-    // 480p（3ステップの画面の 2 だけで選べる）は、720p の下限を画素数に比例させる
-    s.minBitrate['480'] = Math.round(s.minBitrate['720'] * 4 / 9);
     if (!EASY) return s;
     // 3ステップの画面：720p・1080p ではない動画は元の解像度のまま。2 で変えた値を重ねる
     if (easyResFixed()) s.res = 'source';
@@ -883,7 +881,7 @@
   // ---------------------------------------------------------------- 圧縮プラン
   function resolutionCap(meta, res) {
     if (res === 'source') return 1;   // 元の解像度のまま
-    var limit = res === '1080' ? 1080 : res === '480' ? 480 : 720;
+    var limit = res === '1080' ? 1080 : 720;
     var shortSide = Math.min(meta.width, meta.height);
     return shortSide > limit ? limit / shortSide : 1;   // 拡大はしない
   }
@@ -3003,7 +3001,7 @@
   // ---------------------------------------------------------------- 3ステップの画面：2 の解像度・fps・圧縮方法（その動画だけ）
   // 720p・1080p ではない動画は、圧縮の仕方に関係なく元の解像度のまま（解像度は選べない）
   function easyResFixed() { return EASY && !!state.meta && !isStandardRes(state.meta); }
-  var ADJ_RES = ['480', '720', '1080'];
+  var ADJ_RES = ['720', '1080'];
   function updateAdjust(enabled) {
     if (!$('adjBox')) return;
     var hasFile = !!(state.file && state.meta);
