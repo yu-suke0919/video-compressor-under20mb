@@ -50,14 +50,14 @@
   var DEFAULT_FPS = 30;
   var MAX_FPS = 60;
   var MAX_ATTEMPTS = 3;                  // 初回 + 最大2回の再圧縮
-  // ビットレートを下げて圧縮し直しても（予圧縮をやり直しても）、前回よりこの割合以上小さくならなければ、
+  // ビットレートを下げて圧縮し直しても（先行圧縮をやり直しても）、前回よりこの割合以上小さくならなければ、
   // この端末ではそれ以上下げられないとみる（VBR の指定を守らず、下げても小さくならないエンコーダーがある。Android の実機であった）。
   // 「◯MB以内」の圧縮し直しはそこでやめ、指定ビットレートを下げる案内の代わりに MSG_DEVICE_FLOOR を出す
   var MIN_SHRINK = 0.03;
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-02i';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-02l';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -976,7 +976,7 @@
     var settings = readSettings();
     if (mode) settings.mode = mode;
     var audio = audioStrategy(state.meta, settings.audio, state.engine);
-    // 予圧縮の予想があれば当てはめる
+    // 先行圧縮の予想があれば当てはめる
     return withEstimate(makePlan(state.meta, state.trim, settings, audio, state.file.size));
   }
 
@@ -1043,12 +1043,12 @@
       ? '→ ' + copyLabel(plan) + '（再圧縮なし）・' +
         plan.width + '×' + plan.height + '・予想' + fmtBytes(trimEst)
       : '→ ' + plan.width + '×' + plan.height + '・' + fmtFps(plan.outFps) + '・' +
-        // 予圧縮で測れたら、ビットレートは実測の平均。目標サイズに収まる秒数の目安も出す
+        // 先行圧縮で測れたら、ビットレートは実測の平均。目標サイズに収まる秒数の目安も出す
         // （範囲が目安を超えていればトリミングを促し、収まっていれば収まる長さを伝える。見やすいように次の行に出す）
         fmtRate(plan.probed ? plan.expectedBps : plan.videoBitrate) + '・予想' + fmtBytes(plan.estBytes) + probeLabel(plan) +
         (plan.probed && plan.fitSec ? '\n' + (plan.duration <= plan.fitSec
           ? '約' + fmtDuration(plan.fitSec) + 'まで' + plan.targetMB + 'MBに収まるよ'
-          : plan.preFits ? plan.targetMB + 'MBに収まるよ'   // 目安より長いが、予圧縮の大きさ（正確な値）で収まると分かっている
+          : plan.preFits ? plan.targetMB + 'MBに収まるよ'   // 目安より長いが、先行圧縮の大きさ（正確な値）で収まると分かっている
           : plan.targetMB + 'MBに収めるなら約' + fmtDuration(plan.fitSec) + '以内にトリミングしてね') : '');
 
     var warns = [];
@@ -1058,7 +1058,7 @@
       var fitSec = Math.floor(plan.targetBytes * 8 * SIZE_SAFETY / (plan.floorBitrate + plan.audioBitrate));
       warns.push(resLabel(plan) + 'なら' + fmtDuration(fitSec) + 'まで' + plan.targetMB + 'MBに収められます。');
     } else if (plan.deviceFloor && !trimEst) {
-      warns.push(MSG_DEVICE_FLOOR);   // 指定ビットレートを下げても、予圧縮の大きさが変わらなかった
+      warns.push(MSG_DEVICE_FLOOR);   // 指定ビットレートを下げても、先行圧縮の大きさが変わらなかった
     }
     var probeOver = plan.probeOver && !trimEst;
     if (probeOver) warns.push(probeOverMessage(plan));
@@ -1233,7 +1233,7 @@
   // エンコーダーの候補の順番（高速モード・互換モードで共通）。
   // ハードウェアの可変ビットレート（VBR）→ ハードウェアの VBR が使えないときだけハードウェアの固定ビットレート（CBR）→
   // ソフトウェア（ブラウザに任せる）の VBR。どのモードでも、指定を守らないエンコーダーでも、CBR で圧縮し直すことはしない
-  // （サイズは予圧縮で実際に書き出した量から予想する）
+  // （サイズは先行圧縮で実際に書き出した量から予想する）
   var ENCODER_ORDER = [
     { hw: 'prefer-hardware', bitrateMode: 'variable' },
     { hw: 'prefer-hardware', bitrateMode: 'constant' },
@@ -1269,9 +1269,9 @@
   //   spec.prepareLog()           … 準備ができたときに診断情報へ書く見出し（なければ書かない）
   //   spec.invalidMessage         … 扱えない動画だったときの文言
   //   spec.startLog               … 変換を始めるときに診断情報へ書く文（なければ書かない）
-  //   spec.input                  … 使う読み込み（予圧縮からの切り出し）。渡したときは閉じない（なければ開いて、終わったら閉じる）
-  //   spec.output                 … 書き出し先（予圧縮）。渡したときは結果の blob を作らない
-  //   spec.onReady(conv, audioLost) … 変換の準備ができたとき（予圧縮で、音声が外れたかを早めに知る）
+  //   spec.input                  … 使う読み込み（先行圧縮からの切り出し）。渡したときは閉じない（なければ開いて、終わったら閉じる）
+  //   spec.output                 … 書き出し先（先行圧縮）。渡したときは結果の blob を作らない
+  //   spec.onReady(conv, audioLost) … 変換の準備ができたとき（先行圧縮で、音声が外れたかを早めに知る）
   function runConversion(spec, plan, onProgress, job) {
     var input = spec.input || new M.Input({ source: new M.BlobSource(state.file), formats: INPUT_FORMATS });
     var output = spec.output || newMp4Output();
@@ -1318,7 +1318,7 @@
     });
   }
 
-  // 高速モードの映像の設定（本番の圧縮と予圧縮で共通）
+  // 高速モードの映像の設定（本番の圧縮と先行圧縮で共通）
   function fastVideoConfig(plan, enc) {
     var video = {
       codec: enc.codec, width: plan.width, height: plan.height, fit: 'fill',
@@ -1337,7 +1337,7 @@
     return video;
   }
 
-  // 高速モードの変換の設定（本番の圧縮と予圧縮で共通）
+  // 高速モードの変換の設定（本番の圧縮と先行圧縮で共通）
   function fastOptions(plan, enc, input, output) {
     var audio;
     if (plan.audio.mode === 'aac') {
@@ -1390,22 +1390,22 @@
 
   function isFullTrimOf(plan) { return isFullRange(plan.trimStart, plan.trimEnd); }
 
-  // ---------------------------------------------------------------- 予圧縮（サイズの予想と、先に済ませておく圧縮）
+  // ---------------------------------------------------------------- 先行圧縮（サイズの予想と、先に済ませておく圧縮）
   // 端末のエンコーダーは、映像によって指定のビットレートを守らない（重い映像では下げきれず多く使い、軽い映像では使い切らない。
   // iPhone の 1080p60 のゲーム映像で、2.7Mbps・4.05Mbps のどちらを指定しても約7.5Mbps になった）。そこで、実際に圧縮して測る。
-  // 動画を読み込んだら（設定を変えたときも）、範囲に関係なく動画の最初から最後までを裏で圧縮し（予圧縮）、
-  // 書き出したデータの量から、ビットレートとサイズの予想を出す。予圧縮は、モードにかかわらず決めた下限ビットレートで行う
+  // 動画を読み込んだら（設定を変えたときも）、範囲に関係なく動画の最初から最後までを裏で圧縮し（先行圧縮）、
+  // 書き出したデータの量から、ビットレートとサイズの予想を出す。先行圧縮は、モードにかかわらず決めた下限ビットレートで行う
   // （範囲の長さでビットレートを変えると、範囲を変えるたびにやり直しになるため）。
   // 設定を変えずに「圧縮する」を押したら、範囲の始まりまで届いていれば、範囲の終わりまで続けて、範囲を切り出して使う。
   // 「◯MB以内」では、切り出した大きさが目標の95%以上・目標未満のときだけ使い、それ以外は予想と注意にだけ使って普通に圧縮する
   var FIT_MARGIN = 0.95;             // 「約◯秒まで◯MBに収まるよ」は、実測の平均で収まる秒数のこの割合を出す
-  // 「◯MB以内」でも、予圧縮を切り出した大きさが目標のこの割合以上（かつ目標未満）なら、予圧縮をそのまま使う
+  // 「◯MB以内」でも、先行圧縮を切り出した大きさが目標のこの割合以上（かつ目標未満）なら、先行圧縮をそのまま使う
   // （目標いっぱいまで使って圧縮し直しても、大きさ・画質はほとんど変わらないので、すぐ出せる方を選ぶ）
   var PRE_SIZE_USE_RATIO = 0.95;
-  var PRE_DELAY_MS = 1500;           // 設定を変えてから予圧縮をやり直すまで待つ（続けて変えたときに何度もやり直さない）
-  var PRE_FRAGMENT_SEC = 1;          // 予圧縮の書き出しの区切りの最短の長さ（実際はキーフレームごと＝約2秒ごとに書き出される）
+  var PRE_DELAY_MS = 1500;           // 設定を変えてから先行圧縮をやり直すまで待つ（続けて変えたときに何度もやり直さない）
+  var PRE_FRAGMENT_SEC = 1;          // 先行圧縮の書き出しの区切りの最短の長さ（実際はキーフレームごと＝約2秒ごとに書き出される）
   var PRE_TAIL_SEC = 1;              // 範囲の終わりからこれだけ先まで書き出せたら、範囲の終わりまで書き出せたとみる
-  // URL に probe=off があれば予圧縮しない（自動テスト・自己テストで、本番の圧縮だけを確かめるため）
+  // URL に probe=off があれば先行圧縮しない（自動テスト・自己テストで、本番の圧縮だけを確かめるため）
   var PROBE_OFF = /[?&]probe=off\b/.test(location.search);
   // pre … { file, key, plan, enc, job, chunks, bytes, marks: [{ t: 書き出したときの進み（秒）, bytes: そこまでの量 }],
   //         time: 進み（秒）, done, failed, audioLost, t0 }
@@ -1415,16 +1415,16 @@
     return !PROBE_OFF && !!(state.file && state.meta) && state.engine === 'fast' && !state.running && !state.busy && !isCompressed() &&
       !els.autoRun.checked && document.visibilityState === 'visible';
   }
-  // 予圧縮の計画（動画全体・今の解像度とfpsと音声・下限ビットレート）
+  // 先行圧縮の計画（動画全体・今の解像度とfpsと音声・下限ビットレート）
   function prePlan(plan) {
     return makePlan(state.meta, { start: 0, end: state.meta.duration }, Object.assign(planSettings(plan), { mode: 'quality' }),
       plan.audio, state.file.size);
   }
-  // 予圧縮の中身を決めるもの（これが変わったら予圧縮をやり直す）
+  // 先行圧縮の中身を決めるもの（これが変わったら先行圧縮をやり直す）
   function preKey(pp) {
     return pp.width + 'x' + pp.height + '@' + Math.round(pp.outFps) + '/' + pp.videoBitrate + '/' + pp.audio.mode + '/' + pp.audioBitrate;
   }
-  // 予圧縮で書き出した量から、範囲の映像のビットレートの予想を出す（まだどこも書き出していなければ null）
+  // 先行圧縮で書き出した量から、範囲の映像のビットレートの予想を出す（まだどこも書き出していなければ null）
   //   済んだ所 … 書き出した区切りごとの実測（音声の分を引く）。まだの所 … 済んだ所（動画全体のうち）の平均
   //   bps      … 本番で指定するビットレート（下限より高いとき）。区切りごとに「指定」と「実測」の大きい方になるとみる
   //              （下限の実測がそれより高い場面は、エンコーダーがそこまでしか下げられない）
@@ -1444,12 +1444,12 @@
     var rest = Math.max(0, (b - a) - inSec);
     return { videoBps: Math.round((inBits + rest * allBits / allSec) / (b - a)), covered: Math.min(1, inSec / (b - a)) };
   }
-  // 計画に予圧縮の予想を当てはめる（今の設定の予圧縮がまだ何も書き出していなければ、そのまま）
-  //   probed      … 予圧縮の予想を使った
+  // 計画に先行圧縮の予想を当てはめる（今の設定の先行圧縮がまだ何も書き出していなければ、そのまま）
+  //   probed      … 先行圧縮の予想を使った
   //   expectedBps … 映像のビットレートの予想（予想のサイズから求める）
   //   fitSec      … 目標サイズに収まる秒数の目安（下限ビットレートでの実測の平均で収まる秒数の95%）
   //   probeOver   … 「◯MB以内」で、範囲が fitSec より長い（目標サイズに収まらない可能性がある。押せなくはしない）
-  //   preFits     … 予圧縮を切り出した大きさ（正確な値）が目標サイズ未満（「◯MB以内」では、押せば予圧縮をそのまま使えるとき）。
+  //   preFits     … 先行圧縮を切り出した大きさ（正確な値）が目標サイズ未満（「◯MB以内」では、押せば先行圧縮をそのまま使えるとき）。
   //                 目安（fitSec）より長くても収まるので、収まらない注意・トリミングの促し・黄色の帯は出さない
   function withEstimate(plan) {
     if (state.engine !== 'fast' || !pre || pre.file !== state.file || pre.key !== preKey(prePlan(plan))) return plan;
@@ -1467,12 +1467,12 @@
       p.probeOver = !p.unreachable && p.duration > p.fitSec;
       var setBytes = Math.round((preEstimate(plan, pre, plan.videoBitrate).videoBps + p.audioBitrate) * p.duration / 8);
       p.estBytes = Math.max(floorBytes, Math.min(setBytes, Math.floor(p.targetBytes * SIZE_SAFETY)));
-      // 押したら予圧縮をそのまま使う大きさ（目標の95%以上・目標未満）なら、切り出したときの大きさを予想にする
+      // 押したら先行圧縮をそのまま使う大きさ（目標の95%以上・目標未満）なら、切り出したときの大きさを予想にする
       var cut = null;
       try { cut = exactCutBytes(plan, pre); } catch (e) { cut = null; }
       if (cut && cut >= p.targetBytes * PRE_SIZE_USE_RATIO && cut < p.targetBytes) { p.estBytes = cut; p.exactEst = true; }
     } else {
-      // なるべく圧縮：予圧縮が範囲の終わりまで済んでいれば、切り出したときの大きさ（1コマごとの表から数える）
+      // なるべく圧縮：先行圧縮が範囲の終わりまで済んでいれば、切り出したときの大きさ（1コマごとの表から数える）
       p.probeOver = false;
       var exact = null;
       try { exact = exactCutBytes(plan, pre); } catch (e) { exact = null; }
@@ -1480,7 +1480,7 @@
       p.exactEst = !!exact;
     }
     p.preFits = !!p.exactEst && p.estBytes < p.targetBytes && (plan.mode !== 'size' || !precompressWhyNot(p));
-    // 「◯MB以内」で予圧縮をそのまま使えるなら、下限ビットレートの計算では収まらなくても（エンコーダーが下限ちょうどに
+    // 「◯MB以内」で先行圧縮をそのまま使えるなら、下限ビットレートの計算では収まらなくても（エンコーダーが下限ちょうどに
     // 収めた軽い映像では、目標の97%を下限の大きさが超えることがある）押せるようにする
     if (p.preFits && plan.mode === 'size') { p.unreachable = false; p.probeOver = false; }
     p.deviceFloor = !!pre.floorHit;
@@ -1488,17 +1488,17 @@
     p.overDiscord = p.estBytes > DISCORD_FREE_BYTES;
     return p;
   }
-  // 画面の予想の後ろに付ける、予圧縮の状況
+  // 画面の予想の後ろに付ける、先行圧縮の状況
   function probeLabel(plan) {
-    if (plan.probed) return pre.done ? '（予圧縮済み）' : '（予圧縮 ' + Math.floor(pre.time / pre.plan.duration * 100) + '%）';
-    return pre && pre.file === state.file && (pre.job || preTimer) ? '（予圧縮中）' : '';
+    if (plan.probed) return pre.done ? '（先行圧縮済み）' : '（先行圧縮 ' + Math.floor(pre.time / pre.plan.duration * 100) + '%）';
+    return pre && pre.file === state.file && (pre.job || preTimer) ? '（先行圧縮中）' : '';
   }
-  // 予圧縮の結果を画面に出す。範囲が目標サイズに収まる長さの目安を超えていれば、トリミングの帯を黄色にする。
-  // 予圧縮が済んでいれば、押せばすぐ出せる選択肢（なるべく圧縮・条件を満たせば◯MB以内）の下に、その大きさを出す
+  // 先行圧縮の結果を画面に出す。範囲が目標サイズに収まる長さの目安を超えていれば、トリミングの帯を黄色にする。
+  // 先行圧縮が済んでいれば、押せばすぐ出せる選択肢（なるべく圧縮・条件を満たせば◯MB以内）の下に、その大きさを出す
   function showPrecompressHints(plan) {
     var idle = !!plan && !state.running && !isCompressed();
     els.trimBox.classList.toggle('is-over', idle && !!plan.probed && plan.fitSec > 0 && plan.duration > plan.fitSec && !plan.preFits);
-    // 「なるべく圧縮」「◯MB以内」それぞれ、押せば予圧縮をそのまま使えるなら、その大きさを選択肢の下に出す
+    // 「なるべく圧縮」「◯MB以内」それぞれ、押せば先行圧縮をそのまま使えるなら、その大きさを選択肢の下に出す
     var note = '', noteSize = '';
     if (idle && pre && pre.done) {
       var qp = plan.mode === 'quality' ? plan : currentPlan('quality');
@@ -1523,7 +1523,7 @@
       '・' + plan.targetMB + 'MBに収めるなら約' + plan.fitSec + '秒まで' + (plan.probeOver ? '（目標サイズに収まらない見込み）' : ''));
   }
 
-  // 今の設定の予圧縮がまだなら始める。設定が変わったら止めて、少し待ってからやり直す
+  // 今の設定の先行圧縮がまだなら始める。設定が変わったら止めて、少し待ってからやり直す
   function scheduleProbe() {
     if (!canProbe() || !state.plan) return;
     var file = state.file;
@@ -1541,7 +1541,7 @@
     }, delay) };
   }
 
-  // ---- 予圧縮の区切り（fragmented MP4）の表を読む。1コマごとの大きさ・時刻・キーフレームかどうかが分かるので、
+  // ---- 先行圧縮の区切り（fragmented MP4）の表を読む。1コマごとの大きさ・時刻・キーフレームかどうかが分かるので、
   // 範囲を切り出したときの大きさを正確に予想できる（区切りの途中で切ると、割合で数えるより正確。
   // 区切りの頭はキーフレームで大きいので、割合で数えると小さめに出ていた）
   // 切り出した mp4 の見出し（目次など）の大きさの目安（バイト）。実測では 1000＋1コマ（音声の1区切り）あたり約4.5バイト。
@@ -1653,7 +1653,7 @@
       });
     });
   }
-  // 範囲を切り出したときの大きさ（バイト）。予圧縮がまだ範囲の終わりまで届いていなければ null
+  // 範囲を切り出したときの大きさ（バイト）。先行圧縮がまだ範囲の終わりまで届いていなければ null
   //   映像は、切り出すときと同じく、範囲の始まり以前でいちばん近いキーフレームから数える（音声は範囲の始まりから）。
   //   キーフレームから範囲の始まりまでは再生されないが、ファイルには入る
   function exactCutBytes(plan, rec) {
@@ -1672,7 +1672,7 @@
     return bytes + CUT_OVERHEAD_BASE + CUT_OVERHEAD_PER_SAMPLE * n;
   }
 
-  // 予圧縮。書き出しは区切りごと（fragmented MP4）に受け取って持っておく（途中で止めても、区切りまでは読める）
+  // 先行圧縮。書き出しは区切りごと（fragmented MP4）に受け取って持っておく（途中で止めても、区切りまでは読める）
   function startPre(pp, key) {
     var file = state.file;
     var rec = pre = { file: file, key: key, plan: pp, job: newJob(), chunks: [], bytes: 0, marks: [{ t: 0, bytes: 0 }],
@@ -1697,7 +1697,7 @@
       format: new M.Mp4OutputFormat({ fastStart: 'fragmented', minimumFragmentDuration: PRE_FRAGMENT_SEC }),
       target: new M.StreamTarget(writable)
     });
-    log('予圧縮を開始 ' + describePlan(pp));
+    log('先行圧縮を開始 ' + describePlan(pp));
     pickFastEncoding(pp).then(function (enc) {
       if (!enc) throw new Error(MSG_NO_H264);
       rec.enc = enc;
@@ -1706,24 +1706,24 @@
         output: output,
         options: function (input, out) { return fastOptions(pp, enc, input, out); },
         onReady: function (conv, audioLost) { rec.audioLost = audioLost; },
-        invalidMessage: '予圧縮できない動画です'
+        invalidMessage: '先行圧縮できない動画です'
       }, pp, function (p) { rec.time = p * pp.duration; }, job);
     }).then(function () {
       rec.time = pp.duration;
       rec.marks[rec.marks.length - 1].t = pp.duration;   // 最後の書き出しは、動画の終わりまでの分
       rec.done = true;
-      log('予圧縮が完了 ' + fmtBytes(rec.bytes) + '（' + secondsSince(rec.t0) + '）');
+      log('先行圧縮が完了 ' + fmtBytes(rec.bytes) + '（' + secondsSince(rec.t0) + '）');
       checkDeviceFloor(rec);
     }, function (err) {
       if (isCancel(job, err)) return;
       rec.failed = true;   // 同じ設定では何度もやり直さない
-      log('予圧縮に失敗 ' + errText(err));
+      log('先行圧縮に失敗 ' + errText(err));
     }).then(function () {
       if (rec.job === job) rec.job = null;
       if (pre === rec && state.file === file && !state.running) refresh();
     });
   }
-  // 同じ動画・同じ解像度とfpsと音声で、指定ビットレートを下げて予圧縮をやり直したのに、前回より MIN_SHRINK 以上
+  // 同じ動画・同じ解像度とfpsと音声で、指定ビットレートを下げて先行圧縮をやり直したのに、前回より MIN_SHRINK 以上
   // 小さくならなければ、この端末ではそれ以上下げられないとみる（rec.floorHit。予想の注意に出す）
   var lastDonePre = null;
   function checkDeviceFloor(rec) {
@@ -1745,49 +1745,49 @@
     var job = pre && pre.job;
     if (!job) return Promise.resolve();
     pre.job = null;
-    if (why) log('予圧縮を中断（' + why + '・' + pre.time.toFixed(1) + '秒まで）');
+    if (why) log('先行圧縮を中断（' + why + '・' + pre.time.toFixed(1) + '秒まで）');
     stopJob(job, CANCELLED);
     return job.stopped || Promise.resolve();
   }
 
-  // 「なるべく圧縮」で、予圧縮が今の設定と同じで、範囲の始まりまで届いていれば、その予圧縮（使えなければ null）
+  // 「なるべく圧縮」で、先行圧縮が今の設定と同じで、範囲の始まりまで届いていれば、その先行圧縮（使えなければ null）
   function precompressUsable(plan) {
     return precompressWhyNot(plan) ? null : pre;
   }
   function precompressWhyNot(plan) {
-    if (!pre || pre.file !== state.file) return '予圧縮していない';
-    if (pre.failed) return '予圧縮に失敗した';
+    if (!pre || pre.file !== state.file) return '先行圧縮していない';
+    if (pre.failed) return '先行圧縮に失敗した';
     if (pre.key !== preKey(prePlan(plan))) return '設定が変わった';
-    if (!pre.done && !pre.job) return '予圧縮を途中で止めた';
+    if (!pre.done && !pre.job) return '先行圧縮を途中で止めた';
     if (!pre.done && pre.time < plan.trimStart) return '範囲の始まりまで届いていない（' + pre.time.toFixed(1) + '秒）';
     if (plan.mode === 'size') {
-      // 「◯MB以内」は、予圧縮が範囲の終わりまで済んでいて、切り出した大きさが目標の95%以上・目標未満のときだけ
+      // 「◯MB以内」は、先行圧縮が範囲の終わりまで済んでいて、切り出した大きさが目標の95%以上・目標未満のときだけ
       var cut = null;
       try { cut = exactCutBytes(plan, pre); } catch (e) { cut = null; }
-      if (!cut) return '「◯MB以内」で、予圧縮が範囲の終わりまで済んでいない';
-      if (cut >= plan.targetBytes) return '「◯MB以内」で、予圧縮の大きさ（' + fmtBytes(cut) + '）が目標以上';
-      if (cut < plan.targetBytes * PRE_SIZE_USE_RATIO) return '「◯MB以内」で、予圧縮の大きさ（' + fmtBytes(cut) + '）が目標の95%未満';
+      if (!cut) return '「◯MB以内」で、先行圧縮が範囲の終わりまで済んでいない';
+      if (cut >= plan.targetBytes) return '「◯MB以内」で、先行圧縮の大きさ（' + fmtBytes(cut) + '）が目標以上';
+      if (cut < plan.targetBytes * PRE_SIZE_USE_RATIO) return '「◯MB以内」で、先行圧縮の大きさ（' + fmtBytes(cut) + '）が目標の95%未満';
     }
     return '';
   }
-  // 予圧縮を範囲の終わりまで続け、範囲を切り出して結果にする（予圧縮に失敗したら、普通に圧縮する）
+  // 先行圧縮を範囲の終わりまで続け、範囲を切り出して結果にする（先行圧縮に失敗したら、普通に圧縮する）
   function finishFromPrecompress(rec, plan, onProgress, job) {
     var span = Math.max(0.1, plan.trimEnd - plan.trimStart);
     var need = Math.min(rec.plan.duration, plan.trimEnd + PRE_TAIL_SEC);
-    job.hooks.push(function () { return stopPre(); });   // キャンセル・停止したら予圧縮も止める
+    job.hooks.push(function () { return stopPre(); });   // キャンセル・停止したら先行圧縮も止める
     return new Promise(function (resolve, reject) {
       (function wait() {
         if (job.cancelled) return reject(new Error(CANCELLED));
-        if (rec.failed) return reject(new Error('予圧縮に失敗'));
+        if (rec.failed) return reject(new Error('先行圧縮に失敗'));
         if (rec.done || rec.marks[rec.marks.length - 1].t >= need) return resolve();
-        if (!rec.job) return reject(new Error('予圧縮が止まった'));
+        if (!rec.job) return reject(new Error('先行圧縮が止まった'));
         onProgress(Math.max(0, Math.min(0.95, (rec.time - plan.trimStart) / span)));
         setTimeout(wait, 200);
       })();
     }).then(function () {
       throwIfCancelled(job);
       var stopping = rec.done ? null : stopPre();   // 範囲の終わりまで書き出せたので、残りは要らない
-      if (!rec.done) log('予圧縮を範囲の終わりで止める（' + rec.time.toFixed(1) + '秒）');
+      if (!rec.done) log('先行圧縮を範囲の終わりで止める（' + rec.time.toFixed(1) + '秒）');
       return Promise.resolve(stopping);
     }).then(function () {
       throwIfCancelled(job);
@@ -1806,8 +1806,8 @@
             tags: outputTags, showWarnings: false
           };
         },
-        prepareLog: function () { return '予圧縮から切り出す準備'; },
-        invalidMessage: '予圧縮から切り出せませんでした'
+        prepareLog: function () { return '先行圧縮から切り出す準備'; },
+        invalidMessage: '先行圧縮から切り出せませんでした'
       }, plan, function (p) { onProgress(0.95 + 0.05 * p); }, job).then(function (res) {
         try { input.dispose(); } catch (e) { /* noop */ }
         return checkCutDuration(res, span).then(function () {
@@ -1818,11 +1818,11 @@
       });
     }).catch(function (err) {
       if (isCancel(job, err)) throw err;
-      log('予圧縮を使えないため、普通に圧縮する（' + errText(err) + '）');
+      log('先行圧縮を使えないため、普通に圧縮する（' + errText(err) + '）');
       return convertFast(plan, onProgress, job);
     });
   }
-  // 切り出した動画が範囲より短ければ失敗にする（予圧縮の書き出しが範囲の終わりまで届いていなかった）
+  // 切り出した動画が範囲より短ければ失敗にする（先行圧縮の書き出しが範囲の終わりまで届いていなかった）
   function checkCutDuration(res, span) {
     return blobDuration(res.blob).then(function (d) {
       if (d < span - 0.25) throw new Error('切り出した動画が短い（' + d.toFixed(2) + '秒／' + span.toFixed(2) + '秒）');
@@ -2418,16 +2418,16 @@
     showDiag(false);
     log('圧縮開始 ' + describePlan(plan) + ' engine=' + engine);
     logEstimate(plan);
-    // 設定を変えておらず、予圧縮が範囲の始まりまで届いていれば（「◯MB以内」では、切り出した大きさが目標の95%以上・目標未満なら）、
-    // 予圧縮をそのまま使う
+    // 設定を変えておらず、先行圧縮が範囲の始まりまで届いていれば（「◯MB以内」では、切り出した大きさが目標の95%以上・目標未満なら）、
+    // 先行圧縮をそのまま使う
     var usePre = engine === 'fast' && precompressUsable(plan);
     var preTried = false;
     if (usePre) {
-      log('予圧縮を使う（' + (usePre.done ? '完了済み' : usePre.time.toFixed(1) + '秒まで済み') + '）');
-      // 「◯MB以内」は予圧縮のビットレート（下限）で圧縮したことになるので、結果の欄と圧縮し直しの判断もその値で行う
+      log('先行圧縮を使う（' + (usePre.done ? '完了済み' : usePre.time.toFixed(1) + '秒まで済み') + '）');
+      // 「◯MB以内」は先行圧縮のビットレート（下限）で圧縮したことになるので、結果の欄と圧縮し直しの判断もその値で行う
       if (plan.mode === 'size') plan = replan(plan, { bitrate: usePre.plan.videoBitrate });
-    } else if (pre && pre.file === state.file && engine === 'fast') log('予圧縮は使わない（' + precompressWhyNot(plan) + '）');
-    // （使わない）予圧縮の途中なら止め、エンコーダーなどを片付け終わるのを少し待ってから始める
+    } else if (pre && pre.file === state.file && engine === 'fast') log('先行圧縮は使わない（' + precompressWhyNot(plan) + '）');
+    // （使わない）先行圧縮の途中なら止め、エンコーダーなどを片付け終わるのを少し待ってから始める
     var probeStopped = usePre ? Promise.resolve() : stopPre('圧縮を開始');
     var bgRetries = 0;   // 別のアプリに切り替えたためにやり直した回数
     var lastGood = null;     // 圧縮し直す前にできた結果と、その計画（圧縮し直しに失敗したら、こちらを使う）
@@ -2753,7 +2753,7 @@
     updateMediaLayout();
   }
 
-  // 今の動画の予圧縮で、この端末ではそれ以上ビットレートを下げられないと分かっているか
+  // 今の動画の先行圧縮で、この端末ではそれ以上ビットレートを下げられないと分かっているか
   function deviceFloorKnown(plan) {
     return !!(pre && pre.file === state.file && pre.floorHit && pre.key === preKey(prePlan(plan)));
   }
@@ -2800,7 +2800,7 @@
 
     var warns = [];
     if (plan.mode === 'size' && size >= plan.targetBytes) {
-      // 圧縮し直しても小さくならなかった・予圧縮で下げても小さくならなかったなら、下げる案内はしない
+      // 圧縮し直しても小さくならなかった・先行圧縮で下げても小さくならなかったなら、下げる案内はしない
       warns.push(res.deviceFloor || deviceFloorKnown(plan) ? MSG_UNREACHABLE_FLOOR : MSG_UNREACHABLE);
       // 60fpsのままだと、エンコーダが下限ビットレートまで下げきれず目標を超えることがある
       if (plan.outFps > 40 && !plan.halfFps) warns.push(MSG_HALF_FPS_HINT);
@@ -2864,8 +2864,8 @@
   // 別のアプリに切り替えると、画面を暗くしない設定は自動で外れる。戻ったときに圧縮中（やり直し中を含む）なら取り直す
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible' && state.running) requestWakeLock();
-    // 予圧縮は、画面を離れたら止める（iPhone は裏に回ると読み込み・書き出しを壊す）。戻ったら最初からやり直す
-    // （圧縮中に予圧縮を使っているときは、圧縮の見回りに任せる）
+    // 先行圧縮は、画面を離れたら止める（iPhone は裏に回ると読み込み・書き出しを壊す）。戻ったら最初からやり直す
+    // （圧縮中に先行圧縮を使っているときは、圧縮の見回りに任せる）
     if (state.running) return;
     if (document.visibilityState !== 'visible') stopPre('画面を離れた');
     else if (state.meta) refresh();

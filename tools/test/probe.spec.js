@@ -1,4 +1,4 @@
-// 予圧縮（動画を読み込んだら全体を裏で圧縮し、書き出した量でサイズを予想する。押したら予圧縮をそのまま使う）
+// 先行圧縮（動画を読み込んだら全体を裏で圧縮し、書き出した量でサイズを予想する。押したら先行圧縮をそのまま使う）
 'use strict';
 
 const { test, expect } = require('@playwright/test');
@@ -21,19 +21,19 @@ const videoStart = page => page.evaluate(async () => {
   return (await input.getPrimaryVideoTrack()).getFirstTimestamp();
 });
 
-test('読み込んだら全体を予圧縮し、実測の平均ビットレート・予想・目標サイズに収まる秒数を出す', async ({ page }) => {
+test('読み込んだら全体を先行圧縮し、実測の平均ビットレート・予想・目標サイズに収まる秒数を出す', async ({ page }) => {
   await open(page, '?probe=on&mode=quality');
   await pick(page, '1080p60-45s.mp4');   // 初期設定は 720p・30fps
   await waitPc(page, () => { const p = window.__compressor.precomp().pre; return p && p.marks.length > 2; });
-  expect((await ui(page)).planInfo).toMatch(/・予想[\d.]+ MB（予圧縮 \d+%）\n約.+まで20MBに収まるよ$/);
+  expect((await ui(page)).planInfo).toMatch(/・予想[\d.]+ MB（先行圧縮 \d+%）\n約.+まで20MBに収まるよ$/);
   await preDone(page);
   const u = await ui(page);
-  expect(u.planInfo).toMatch(/（予圧縮済み）\n約.+まで20MBに収まるよ$/);
+  expect(u.planInfo).toMatch(/（先行圧縮済み）\n約.+まで20MBに収まるよ$/);
   const d = await diag(page);
-  expect(d).toMatch(/予圧縮を開始 720 1280x720 mode=quality 1200kbps fps=60→30/);   // なるべく圧縮は下限ビットレート
-  expect(d).toMatch(/予圧縮が完了 /);
+  expect(d).toMatch(/先行圧縮を開始 720 1280x720 mode=quality 1200kbps fps=60→30/);   // なるべく圧縮は下限ビットレート
+  expect(d).toMatch(/先行圧縮が完了 /);
   expect(d).not.toMatch(/試し圧縮/);
-  // 予圧縮が済んだら、予想は書き出した量とほぼ同じ。表示のビットレートは実測の平均、秒数は収まる秒数の95%
+  // 先行圧縮が済んだら、予想は書き出した量とほぼ同じ。表示のビットレートは実測の平均、秒数は収まる秒数の95%
   const r = await pc(page, () => { const p = window.__compressor.state.plan; return { bytes: window.__compressor.precomp().pre.bytes, est: p.estBytes, bps: p.expectedBps, audio: p.audioBitrate, fit: p.fitSec }; });
   expect(Math.abs(r.est - r.bytes) / r.bytes).toBeLessThan(0.02);
   expect(r.fit).toBe(Math.floor(20000000 * 8 / (r.bps + r.audio) * 0.95));
@@ -41,19 +41,19 @@ test('読み込んだら全体を予圧縮し、実測の平均ビットレー�
   expect(u.planInfo).toContain('・' + label + '・予想');
 });
 
-test('「なるべく圧縮」で、予圧縮が済んでいれば、押したら範囲を切り出してすぐ結果にする', async ({ page }) => {
+test('「なるべく圧縮」で、先行圧縮が済んでいれば、押したら範囲を切り出してすぐ結果にする', async ({ page }) => {
   await open(page, '?probe=on&mode=quality');
   await pick(page, '720p-60s.mp4');
   await preDone(page);
-  await setTrim(page, 10.7, 30.7);   // 「なるべく圧縮」では、範囲を変えても予圧縮はやり直さない（始まりはキーフレームの間）
-  expect((await ui(page)).planInfo).toMatch(/（予圧縮済み）/);
+  await setTrim(page, 10.7, 30.7);   // 「なるべく圧縮」では、範囲を変えても先行圧縮はやり直さない（始まりはキーフレームの間）
+  expect((await ui(page)).planInfo).toMatch(/（先行圧縮済み）/);
   const est = await pc(page, () => window.__compressor.state.plan.estBytes);
   await compress(page);
   const d = await diag(page);
-  expect(d).toMatch(/予圧縮を使う（完了済み）/);
-  expect(d).toMatch(/予圧縮から切り出す準備/);
+  expect(d).toMatch(/先行圧縮を使う（完了済み）/);
+  expect(d).toMatch(/先行圧縮から切り出す準備/);
   expect(d).not.toMatch(/変換を開始/);   // 普通の圧縮はしていない
-  expect(d).not.toMatch(/予圧縮を中断（設定を変えた/);
+  expect(d).not.toMatch(/先行圧縮を中断（設定を変えた/);
   const u = await ui(page);
   expect(u.hasOut).toBe(true);
   expect(u.outWarn).toBe('');
@@ -71,45 +71,45 @@ test('「なるべく圧縮」で、予圧縮が済んでいれば、押した�
   await page.waitForFunction(l => document.getElementById('outInfo').textContent.includes('・' + l), label, { timeout: 10000 });
 });
 
-test('予圧縮の途中で押しても、範囲の始まりを越えていれば、範囲の終わりまで続けて使う', async ({ page }) => {
+test('先行圧縮の途中で押しても、範囲の始まりを越えていれば、範囲の終わりまで続けて使う', async ({ page }) => {
   await open(page, '?probe=on&mode=quality');
   await pick(page, '720p-60s.mp4');
   await setTrim(page, 2.5, 20.5);
   await waitPc(page, () => { const p = window.__compressor.precomp().pre; return p && !p.done && p.time >= 3; });
   await compress(page);
   const d = await diag(page);
-  expect(d).toMatch(/予圧縮を使う（[\d.]+秒まで済み）/);
-  expect(d).toMatch(/予圧縮を範囲の終わりで止める/);
+  expect(d).toMatch(/先行圧縮を使う（[\d.]+秒まで済み）/);
+  expect(d).toMatch(/先行圧縮を範囲の終わりで止める/);
   expect(d).not.toMatch(/変換を開始/);
   const dur = await outDuration(page);
   expect(dur).toBeGreaterThanOrEqual(17.8);
   expect(dur).toBeLessThanOrEqual(18.2);
 });
 
-test('予圧縮が範囲の始まりまで届いていなければ、使わずに範囲だけを圧縮する', async ({ page }) => {
+test('先行圧縮が範囲の始まりまで届いていなければ、使わずに範囲だけを圧縮する', async ({ page }) => {
   await open(page, '?probe=on&mode=quality');
   await pick(page, '720p-60s.mp4');
   await setTrim(page, 50, 58);
   await waitPc(page, () => { const p = window.__compressor.precomp().pre; return p && p.job && p.time < 40; });
   await compress(page);
   const d = await diag(page);
-  expect(d).toMatch(/予圧縮は使わない（範囲の始まりまで届いていない/);
-  expect(d).toMatch(/予圧縮を中断（圧縮を開始/);
+  expect(d).toMatch(/先行圧縮は使わない（範囲の始まりまで届いていない/);
+  expect(d).toMatch(/先行圧縮を中断（圧縮を開始/);
   expect(d).toMatch(/変換を開始/);
   expect((await ui(page)).hasOut).toBe(true);
 });
 
-test('「◯MB以内」でも下限ビットレートで予圧縮し、範囲を変えてもやり直さない。押したら普通に圧縮する', async ({ page }) => {
+test('「◯MB以内」でも下限ビットレートで先行圧縮し、範囲を変えてもやり直さない。押したら普通に圧縮する', async ({ page }) => {
   await open(page, '?probe=on&mode=size&target=10');
   await pick(page, '720p-60s.mp4');
   await setTrim(page, 0, 30);
   await preDone(page);
-  expect(await diag(page)).toMatch(/予圧縮を開始 720 1280x720 mode=quality 1200kbps/);
+  expect(await diag(page)).toMatch(/先行圧縮を開始 720 1280x720 mode=quality 1200kbps/);
   await setTrim(page, 0, 20);
   await page.waitForTimeout(2000);
   const d0 = await diag(page);
-  expect(d0).not.toMatch(/予圧縮を中断/);
-  expect(d0.match(/予圧縮を開始/g)).toHaveLength(1);
+  expect(d0).not.toMatch(/先行圧縮を中断/);
+  expect(d0.match(/先行圧縮を開始/g)).toHaveLength(1);
   // 範囲が「約◯秒まで」以内なら、収まらない注意は出さず、予想は狙うサイズ（目標の97%）までにする
   const r = await pc(page, () => { const p = window.__compressor.state.plan; return { est: p.estBytes, over: p.probeOver, fit: p.fitSec, dur: p.duration, probed: p.probed }; });
   expect(r.probed).toBe(true);
@@ -119,12 +119,12 @@ test('「◯MB以内」でも下限ビットレートで予圧縮し、範囲を
   expect((await ui(page)).planWarn).not.toMatch(/収まらない/);
   await compress(page);
   const d = await diag(page);
-  expect(d).toMatch(/予圧縮は使わない（「◯MB以内」で、予圧縮の大きさ（.*）が目標の95%未満）/);   // 10MB の目標に対して小さい
+  expect(d).toMatch(/先行圧縮は使わない（「◯MB以内」で、先行圧縮の大きさ（.*）が目標の95%未満）/);   // 10MB の目標に対して小さい
   expect(d).toMatch(/変換を開始/);
 });
 
 test('「◯MB以内」で収まらない見込みなら、押す前に知らせる（押すことはできる）', async ({ page }) => {
-  // 下限を 100kbps まで下げ、目標を小さくする。エンコーダーは下限ほど小さくできないので、予圧縮の結果は目標を超える
+  // 下限を 100kbps まで下げ、目標を小さくする。エンコーダーは下限ほど小さくできないので、先行圧縮の結果は目標を超える
   await open(page, '?probe=on&res=1080&fps=source&mode=size&target=3&min1080=100');
   await pick(page, '1080p60-45s.mp4');
   await preDone(page);
@@ -133,17 +133,17 @@ test('「◯MB以内」で収まらない見込みなら、押す前に知らせ
   expect(u.runDisabled).toBe(false);
 });
 
-test('「動画を選んだらすぐ圧縮」がオンのとき・probe=off のときは、予圧縮しない', async ({ page }) => {
+test('「動画を選んだらすぐ圧縮」がオンのとき・probe=off のときは、先行圧縮しない', async ({ page }) => {
   await open(page, '?probe=on&auto=on');
   await pick(page, 'small-5mb.mp4');
   await page.waitForFunction(() => !window.__compressor.state.running, null, { timeout: 120000 });
   await page.waitForTimeout(2000);
-  expect(await diag(page)).not.toMatch(/予圧縮/);
+  expect(await diag(page)).not.toMatch(/先行圧縮/);
 
   await open(page);   // probe=off
   await pick(page, '720p-60s.mp4');
   await page.waitForTimeout(2000);
-  expect(await diag(page)).not.toMatch(/予圧縮/);
+  expect(await diag(page)).not.toMatch(/先行圧縮/);
 });
 
 test('予想の計算：済んだ所は区切りごとの実測、まだの所は済んだ所の平均。指定が高いときは区切りごとに大きい方', async ({ page }) => {
@@ -171,7 +171,7 @@ test('予想の計算：済んだ所は区切りごとの実測、まだの所�
   expect(r.none).toBe(null);
 });
 
-test('範囲が目標サイズに収まる長さの目安を超えていればトリミングの帯を黄色にし、予圧縮が済んだら「なるべく圧縮」の下に即出力の大きさを出す', async ({ page }) => {
+test('範囲が目標サイズに収まる長さの目安を超えていればトリミングの帯を黄色にし、先行圧縮が済んだら「なるべく圧縮」の下に即出力の大きさを出す', async ({ page }) => {
   await open(page, '?probe=on&mode=size&target=3');   // 3MB なら、この動画は20秒ほどしか入らない
   await pick(page, '720p-60s.mp4');
   expect(await page.isVisible('#quickNote')).toBe(false);
@@ -216,7 +216,7 @@ test('「◯MB以内」の予想は、範囲が目安の長さを超えるかど
   expect(await page.textContent('#planWarn')).toContain('（目安は約' + fit + '秒まで）');
 });
 
-test('予圧縮が範囲の終わりまで済んでいれば、切り出したときの大きさを1コマごとの表から正確に予想する', async ({ page }) => {
+test('先行圧縮が範囲の終わりまで済んでいれば、切り出したときの大きさを1コマごとの表から正確に予想する', async ({ page }) => {
   await open(page, '?probe=on&mode=quality');
   await pick(page, '720p-60s.mp4');
   await preDone(page);
@@ -231,7 +231,7 @@ test('予圧縮が範囲の終わりまで済んでいれば、切り出した�
   }
 });
 
-test('「◯MB以内」でも、予圧縮を切り出した大きさが目標の95%以上・目標未満なら、予圧縮をそのまま使い、選択肢の下に出す', async ({ page }) => {
+test('「◯MB以内」でも、先行圧縮を切り出した大きさが目標の95%以上・目標未満なら、先行圧縮をそのまま使い、選択肢の下に出す', async ({ page }) => {
   await open(page, '?probe=on&mode=size');
   await pick(page, '720p-60s.mp4');
   await preDone(page);
@@ -249,7 +249,7 @@ test('「◯MB以内」でも、予圧縮を切り出した大きさが目標の
   expect(await pc(page, () => window.__compressor.state.plan.estBytes)).toBe(cut);   // 予想の行も切り出したときの大きさ
   await compress(page);
   const d = await diag(page);
-  expect(d).toMatch(/予圧縮を使う（完了済み）/);
+  expect(d).toMatch(/先行圧縮を使う（完了済み）/);
   expect(d).not.toMatch(/変換を開始/);
   const size = await pc(page, () => window.__compressor.state.out.blob.size);
   expect(size).toBeLessThan(target * 1000000);
@@ -263,7 +263,7 @@ test('「◯MB以内」でも、予圧縮を切り出した大きさが目標の
   expect(await page.isVisible('#quickNote')).toBe(true);
 });
 
-test('VBR の指定を守らない端末（Android）でも、予圧縮は VBR のまま。押したら圧縮し直さずに切り出し、予想と合う', async ({ page }) => {
+test('VBR の指定を守らない端末（Android）でも、先行圧縮は VBR のまま。押したら圧縮し直さずに切り出し、予想と合う', async ({ page }) => {
   // VBR のときだけ、指定の3倍のビットレートで書き出すエンコーダー（robustness.spec.js と同じ）
   await page.addInitScript(() => {
     const orig = VideoEncoder.prototype.configure;
@@ -276,20 +276,20 @@ test('VBR の指定を守らない端末（Android）でも、予圧縮は VBR �
   await pick(page, '720p-60s.mp4');
   await setTrim(page, 0, 10);
   await preDone(page);
-  expect((await diag(page)).match(/予圧縮を開始/g)).toHaveLength(1);
+  expect((await diag(page)).match(/先行圧縮を開始/g)).toHaveLength(1);
   expect(await pc(page, () => window.__compressor.precomp().pre.enc.bitrateMode)).toBe('variable');
   const est = await pc(page, () => window.__compressor.state.plan.estBytes);
   expect(est).toBeGreaterThan(1200 * 1000 * 10 / 8 * 2);   // 予想は実際に書き出した量（指定の約3倍）
   await compress(page);
   const d = await diag(page);
-  expect(d).toMatch(/予圧縮を使う（完了済み）/);
+  expect(d).toMatch(/先行圧縮を使う（完了済み）/);
   expect(d).not.toMatch(/変換を開始/);
   expect(d).not.toMatch(/CBR/);
   const size = await pc(page, () => window.__compressor.state.out.blob.size);
   expect(Math.abs(size - est) / size).toBeLessThan(0.01);
 });
 
-test('指定ビットレートを下げても予圧縮の大きさが変わらなければ、「この端末ではこれ以上ビットレートを下げられないみたいです。」と出す', async ({ page }) => {
+test('指定ビットレートを下げても先行圧縮の大きさが変わらなければ、「この端末ではこれ以上ビットレートを下げられないみたいです。」と出す', async ({ page }) => {
   // 3Mbps より下げられないエンコーダー（Android の実機では約2.4Mbps より下がらなかった）
   await page.addInitScript(() => {
     const orig = VideoEncoder.prototype.configure;
@@ -301,7 +301,7 @@ test('指定ビットレートを下げても予圧縮の大きさが変わら�
   expect((await ui(page)).planWarn).not.toContain('下げられない');
   await page.click('details.settings:not(#diagBox) > summary');
   await page.fill('#minRate720', '800');   // 1200kbps → 800kbps
-  await page.waitForFunction(() => (document.getElementById('diagOut').value.match(/予圧縮が完了/g) || []).length >= 2, null, { timeout: 120000 });
+  await page.waitForFunction(() => (document.getElementById('diagOut').value.match(/先行圧縮が完了/g) || []).length >= 2, null, { timeout: 120000 });
   expect(await diag(page)).toMatch(/指定ビットレートを下げても小さくならない（1\.2Mbps .+ → 800kbps .+）/);
   expect((await ui(page)).planWarn).toContain('この端末ではこれ以上ビットレートを下げられないみたいです。');
 

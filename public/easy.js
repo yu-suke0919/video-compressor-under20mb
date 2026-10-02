@@ -64,11 +64,21 @@
     // 2. 圧縮ルールの名前（今の設定がテンプレートと同じならその名前、違えば「カスタム」）
     $('easyModeName').textContent = preset ? C.ruleName() : '';
 
-    // 2. 押せばすぐ出せるとき（予圧縮が使えるとき）は、その大きさを出す。目標以下の動画は、圧縮せずに進める
+    // 2. 押せばすぐ出せるとき（先行圧縮が使えるとき）は、その大きさを出す。目標以下の動画は、圧縮せずに進める
     var note = C.readSettings().mode === 'size' ? $('quickNoteSize') : $('quickNote');
+    // 「圧縮する」の2行目に出す（ボタンの文字は app.js が画面を出し直すたびに書き直すので、そのたびに足す）
     var quick = !note.classList.contains('hidden') && note.textContent;
-    $('easyQuick').textContent = quick || '';
-    show($('easyQuick'), !!quick);
+    var run = $('runBtn');
+    if (quick && !s.running && run.textContent === '圧縮する') {
+      var main = document.createElement('span'), sub = document.createElement('span');
+      main.textContent = '圧縮する';
+      sub.id = 'easyQuick';
+      sub.className = 'run-sub';
+      sub.textContent = '（' + quick.replace(/するよ$/, 'します') + '）';
+      run.textContent = '';
+      run.appendChild(main);
+      run.appendChild(sub);
+    }
     show($('easyPass'), !!(s.out && s.out.original && !s.running));
 
     // 3. 圧縮中はキャンセル、終わったら共有・保存を目立たせ、やり直す・別の動画のボタンを出す
