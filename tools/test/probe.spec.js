@@ -322,6 +322,28 @@ test('指定より大きく書き出すエンコーダー（Windows）では、�
   expect(size).toBeGreaterThan(10 * 1000 * 1000 * 0.75);   // 下げすぎない
 });
 
+test('下限より下げられないだけの端末（iPhone 型）で指定を下げすぎたら、1回だけ上げて圧縮し直し、目標近くに仕上げる', async ({ page }) => {
+  // 2.2Mbps より下げられず、それより上は指定どおりに書き出すエンコーダー（iPhone の実機：4.05Mbps で7.0Mbps、8.9Mbps で8.9Mbps）。
+  // 先行圧縮（下限 1.2Mbps）だけを見ると「指定の約1.8倍で書き出す」ように見える
+  await page.addInitScript(() => {
+    const orig = VideoEncoder.prototype.configure;
+    VideoEncoder.prototype.configure = function (c) { return orig.call(this, c.bitrate ? Object.assign({}, c, { bitrate: Math.max(c.bitrate, 2200000) }) : c); };
+  });
+  await open(page, '?probe=on&mode=size&audio=off&target=10');
+  await pick(page, '720p-60s.mp4');
+  await setTrim(page, 0, 20);
+  await preDone(page);
+  expect(await pc(page, () => window.__compressor.state.plan.overshoot)).toBeGreaterThan(1.15);   // 1回目は下げる
+  await compress(page);
+  const d = await diag(page);
+  expect(d).toMatch(/目標より小さいため（指定どおりに書き出す端末）、再圧縮 映像/);
+  expect(d.match(/変換を開始/g)).toHaveLength(2);
+  const size = await pc(page, () => window.__compressor.state.out.blob.size);
+  expect(size).toBeLessThan(10 * 1000 * 1000);
+  expect(size).toBeGreaterThan(10 * 1000 * 1000 * 0.97 * 0.85);
+  expect((await ui(page)).outInfo).toContain('2回で調整');
+});
+
 test('指定ビットレートを下げても先行圧縮の大きさが変わらなければ、「この端末ではこれ以上ビットレートを下げられないみたいです。」と出す', async ({ page }) => {
   // 3Mbps より下げられないエンコーダー（Android の実機では約2.4Mbps より下がらなかった）
   await page.addInitScript(() => {

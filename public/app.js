@@ -58,7 +58,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-02za';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-03b';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1400,8 +1400,12 @@
   var PRE_SIZE_USE_RATIO = 0.90;
   // 先行圧縮で、下限ビットレートの指定に対して実際の大きさがこの倍率以上になったら、指定より大きく書き出すエンコーダーとみる
   // （Windows のハードウェアエンコーダーなどは、指定の1.6〜1.9倍で書き出す）。「◯MB以内」の指定ビットレートを、この倍率で割って下げる
+  // iPhone・Mac の Safari（VideoToolbox）は、下限より下げられないだけで、それより上は指定どおりに書き出すので下げない
+  // （iPhone の実機：4.05Mbps の指定で7.0Mbps、8.9Mbps の指定で8.9Mbps。比で下げると目標の6割にしかならなかった）
   var OVERSHOOT_MIN = 1.15;
   var OVERSHOOT_MAX = 3;
+  // 指定を下げて圧縮した結果が、狙うサイズのこの割合より小さければ、指定どおりに書き出す端末とみて、1回だけ指定を上げて圧縮し直す
+  var UNDERFILL_RATIO = 0.85;
   var PRE_DELAY_MS = 1500;           // 設定を変えてから先行圧縮をやり直すまで待つ（続けて変えたときに何度もやり直さない）
   var PRE_FRAGMENT_SEC = 1;          // 先行圧縮の書き出しの区切りの最短の長さ（実際はキーフレームごと＝約2秒ごとに書き出される）
   var PRE_TAIL_SEC = 1;              // 範囲の終わりからこれだけ先まで書き出せたら、範囲の終わりまで書き出せたとみる
@@ -1450,6 +1454,7 @@
   //   fitSec      … 目標サイズに収まる秒数の目安（下限ビットレートでの実測の平均で収まる秒数の95%）
   //   probeOver   … 「◯MB以内」で、範囲が fitSec より長い（目標サイズに収まらない可能性がある。押せなくはしない）
   //   overshoot   … 「◯MB以内」で、エンコーダーが指定より大きく書き出すため、指定ビットレートを下げた倍率（下げていなければ無し）
+  //   budgetBps   … 下げる前の指定ビットレート（目標サイズに収まる値。上げて圧縮し直すときの上限）
   //   preFits     … 先行圧縮を切り出した大きさ（正確な値）が目標サイズ未満（「◯MB以内」では、押せば先行圧縮をそのまま使えるとき）。
   //                 目安（fitSec）より長くても収まるので、収まらない注意・トリミングの促し・黄色の帯は出さない
   function withEstimate(plan) {
@@ -1468,10 +1473,12 @@
       var setBytes;
       // 先行圧縮で、下限の指定より大きく書き出していれば（範囲の実測と指定の比）、指定の大きさに比例して大きくなるとみて、
       // 指定ビットレートをその比で割って下げる（1回目の圧縮から目標に寄せる。下限は下回らない）。
-      // 下限より下げられないと分かっている端末（指定を下げても大きさが変わらない）では、比例しないので下げない
+      // 下限より下げられないと分かっている端末（指定を下げても大きさが変わらない）・Safari では、比例しないので下げない。
+      // 比例しない端末で下げてしまったら、圧縮したあとに上げて圧縮し直す（retryLarger）
       var ratio = pre.plan.videoBitrate > 0 ? floorEst.videoBps / pre.plan.videoBitrate : 0;
-      if (ratio >= OVERSHOOT_MIN && !pre.floorHit && !p.unreachable) {
+      if (ratio >= OVERSHOOT_MIN && !pre.floorHit && !p.unreachable && !isWebKit()) {
         ratio = Math.min(ratio, OVERSHOOT_MAX);
+        p.budgetBps = plan.videoBitrate;
         p.videoBitrate = Math.max(p.floorBitrate, Math.floor(plan.videoBitrate / ratio));
         p.overshoot = ratio;
         setBytes = Math.round((floorEst.videoBps * p.videoBitrate / pre.plan.videoBitrate + p.audioBitrate) * p.duration / 8);
@@ -2499,6 +2506,7 @@
     var probeStopped = usePre ? Promise.resolve() : stopPre('圧縮を開始');
     var bgRetries = 0;   // 別のアプリに切り替えたためにやり直した回数
     var lastGood = null;     // 圧縮し直す前にできた結果と、その計画（圧縮し直しに失敗したら、こちらを使う）
+    var grownFrom = null;    // ビットレートを上げて圧縮し直す前の結果と、その計画（上げたら目標を超えたときは、こちらを使う）
     var audioRetried = false;   // 元の音声をそのまま使えず、音声を作り直す（外す）やり直しをした
 
     // prevSize: 前回の圧縮結果のサイズ（再圧縮のときに表示する）。note: 進捗の欄に出す補足
@@ -2583,10 +2591,40 @@
           plan.audio = noAudio();
           plan.audioBitrate = 0;
         }
-        var retry = retrySmaller(res);
+        if (grownFrom) return afterLarger(res);
+        var retry = retrySmaller(res) || retryLarger(res);
         if (retry) return retry;
         res.attempts = index + 1;
         return res;
+      }
+
+      // 「◯MB以内」で、エンコーダーが指定より大きく書き出すとみて指定を下げた（plan.overshoot）のに、目標よりかなり小さく
+      // 仕上がったら、下限より下げられないだけで、それより上は指定どおりに書き出す端末なので、1回だけ指定を上げて圧縮し直す
+      function retryLarger(res) {
+        if (plan.mode !== 'size' || !plan.overshoot || index !== 0 || index + 1 >= MAX_ATTEMPTS) return null;
+        var audioBytes = audioBytesOf(plan);
+        var allowed = plan.targetBytes * SIZE_SAFETY - audioBytes, videoBytes = res.blob.size - audioBytes;
+        if (res.blob.size >= plan.targetBytes * SIZE_SAFETY * UNDERFILL_RATIO || !(videoBytes > 0)) return null;
+        var next = Math.min(plan.budgetBps, Math.floor(plan.videoBitrate * allowed / videoBytes));
+        if (!(next > plan.videoBitrate * 1.05)) return null;
+        grownFrom = lastGood = { res: res, plan: plan };   // 上げた圧縮に失敗したら、この結果を使う
+        plan = replan(plan, { bitrate: next });
+        log('目標より小さいため（指定どおりに書き出す端末）、再圧縮 映像 ' + fmtRate(plan.videoBitrate));
+        return attempt(index + 1, res.blob.size,
+          '圧縮結果が' + (res.blob.size / MB).toFixed(2) + 'MBと小さいため、ビットレートを上げて再圧縮中（' + (index + 2) + '回目）');
+      }
+      // 上げて圧縮し直した結果：目標未満ならそれを使い、超えたら前の（収まっていた）結果を使う
+      function afterLarger(res) {
+        var prev = grownFrom;
+        grownFrom = null;
+        if (res.blob.size < plan.targetBytes) {
+          res.attempts = index + 1;
+          return res;
+        }
+        log('上げたら目標を超えたため、前の結果を使う');
+        plan = prev.plan;
+        prev.res.attempts = index + 1;
+        return prev.res;
       }
 
       // トリミングのみで目標を超えたら、通常の圧縮に切り替える
