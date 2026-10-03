@@ -68,7 +68,7 @@ test('「なるべく圧縮」で、先行圧縮が済んでいれば、押し�
   const audio = await pc(page, () => window.__compressor.state.plan.audioBitrate);
   const bps = size * 8 / dur - audio;
   const label = bps >= 1000000 ? (bps / 1000000).toFixed(1) + 'Mbps' : Math.round(bps / 1000) + 'kbps';
-  await page.waitForFunction(l => document.getElementById('outInfo').textContent.includes('・' + l), label, { timeout: 10000 });
+  await page.waitForFunction(l => document.getElementById('outInfo').textContent.includes('/' + l), label, { timeout: 10000 });
 });
 
 test('先行圧縮の途中で押しても、範囲の始まりを越えていれば、範囲の終わりまで続けて使う', async ({ page }) => {
@@ -312,7 +312,8 @@ test('指定ビットレートを下げても先行圧縮の大きさが変わ�
   await page.evaluate(() => { const s = document.getElementById('modeSize'); s.checked = true; s.dispatchEvent(new Event('change', { bubbles: true })); });
   await page.fill('#targetSize', '3');
   const w = (await ui(page)).planWarn;
-  expect(w).toContain('目標サイズに圧縮できません。この端末ではこれ以上ビットレートを下げられないみたいです。');
+  expect(w).toMatch(/3MBに収まらない可能性があります（目安は約\d+秒まで）。/);
+  expect(w).toContain('この端末ではこれ以上ビットレートを下げられないみたいです。');
   expect(w).not.toContain('指定ビットレートを引き下げてください');
 });
 
