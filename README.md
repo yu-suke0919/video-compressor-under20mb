@@ -483,7 +483,7 @@ iPhone・Android の実機では、`https://maka-u20mb.pages.dev/selftest.html` 
 | --- | --- |
 | `main.js` | 入口。画面のボタン・入力の配線と起動、テスト用の `window.__compressor` |
 | `constants.js` | 定数（`APP_VERSION` を含む） |
-| `calc.js` | 計算だけの関数：圧縮の計画（`makePlan`）、圧縮し直すビットレート、先行圧縮からの予想・切り出す大きさ、収まる長さの目安、表示の書式など |
+| `calc.js` | 計算だけの関数：圧縮の計画（`makePlan`）、圧縮し直すビットレート、先行圧縮からの予想・切り出す大きさ、収まる長さの目安、表示の書式、圧縮1回ぶんのあとの判断（`retryAfterSize`：目標を超えたら圧縮し直すか、`recoveryAfterFailure`：失敗・停止したらどうやり直すか）など |
 | `dom.js` / `state.js` | 画面の要素（`els`）と、アプリの状態（`state`） |
 | `util.js` | 診断情報への記録、処理の中断（job）、進捗の表示 |
 | `settings.js` | 設定：画面からの読み取り（`readSettings`）、設定の一覧（`SETTING_DEFS`）、保存・読み込み・初期値に戻す、URL の読み取りと作成 |
@@ -493,7 +493,7 @@ iPhone・Android の実機では、`https://maka-u20mb.pages.dev/selftest.html` 
 | `plan.js` | 今の画面の設定での計画（`currentPlan`。先行圧縮の予想を当てはめる） |
 | `precompress.js` | 先行圧縮（裏で全体を圧縮してサイズを予想し、押したら範囲を切り出してすぐ結果にする） |
 | `fast.js` / `compat.js` | 高速モード（Mediabunny の Conversion）・トリミングのみ ／ 互換モード（`<video>` を再生しながら取り込み） |
-| `run.js` | 圧縮の実行：方式の選択、圧縮し直し、互換モードへの切り替え、別のアプリに切り替えたときのやり直し、画面スリープ防止 |
+| `run.js` | 圧縮の実行：`run()`（準備 → 1回ぶんの圧縮 `attempt()` → 結果かエラー）。1回ぶんのあとは `calc.js` の判断に従って、圧縮し直し・互換モードへの切り替え・別のアプリから戻ってのやり直しなどをする。画面スリープ防止 |
 | `view.js` | 画面の出し直し（予想の行・注意・ボタン）、圧縮結果の表示、共有・保存 |
 | `trim.js` | トリミングの部品（範囲のつまみ・目盛り・再生位置・シーク） |
 | `adjust.js` | 3ステップの画面の2択（`EASY_PRESETS`）と、2 でその動画だけ変える解像度・fps・圧縮方法・ファイル名 |
