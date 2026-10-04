@@ -93,6 +93,7 @@ test.describe('目標サイズに収まらない長さ', () => {
   test('4K を 720p に縮小して圧縮できる', async ({ page }) => {
     await open(page);
     await pick(page, '4k-15s.mp4');
+    await setTrim(page, 0, 5);   // 4K の縮小は時間がかかるので短く
     await compress(page);
     const out = await outputInfo(page);
     expect([out.width, out.height]).toEqual([1280, 720]);

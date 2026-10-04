@@ -19,7 +19,7 @@ test('自動テストが最後まで動き、失敗がない', async ({ page }) 
 test('手元の動画でも試せる', async ({ page }) => {
   test.setTimeout(5 * 60 * 1000);
   await page.goto('/selftest.html');
-  await page.setInputFiles('#file', require('./helpers').video('720p-60s.mp4'));
+  await page.setInputFiles('#file', require('./helpers').video('small-5mb.mp4'));   // 720p・10秒（3回圧縮するので短い動画で）
   await page.waitForFunction(() => /^3\/3 件完了/.test(document.getElementById('summary').textContent), null, { timeout: 4 * 60 * 1000 });
   const results = await page.evaluate(() => window.__selftest.results.map(r => ({ title: r.title, status: r.status, detail: r.detail })));
   expect(results.filter(r => r.status === 'ng')).toEqual([]);

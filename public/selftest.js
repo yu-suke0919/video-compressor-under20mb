@@ -733,7 +733,7 @@
       }
     },
     {
-      title: '「◯MB以内」でも、先行圧縮の大きさが目標の95〜100%なら、先行圧縮を使う',
+      title: '「◯MB以内」でも、先行圧縮の大きさが目標の97.5%（許容する最小サイズ以上・目標未満）なら、先行圧縮を使う',
       run: async function (source, r) {
         var s = await openAndPick('res=720&mode=size&target=2', source.file, r, true);
         if (!s) return;

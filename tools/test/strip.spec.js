@@ -113,4 +113,43 @@ test.describe('全体かどうかの判定とトリミングのみ', () => {
     expect(Math.abs(out.duration - 40)).toBeLessThan(3);
     expect((await ui(page)).outInfo).toContain('トリミングのみ（再圧縮なし）');
   });
+
+  test('トリミングのみで目標を超えたら（キーフレームまで広がった分）、普通の圧縮に切り替えて収める', async ({ page }) => {
+    // small-5mb は 10秒・約4MB で、キーフレームは先頭だけ。5〜7.4秒を切り出すと、見込み（約0.95MB）は 1MB 未満だが、
+    // トリミングのみではキーフレーム（0秒）から入るので約3MB になる
+    await open(page, '?target=1');
+    await pick(page, 'small-5mb.mp4');
+    await setTrim(page, 5, 7.4);
+    expect((await ui(page)).planInfo).toContain('（予想・トリミングのみ）');
+    await compress(page);
+    const d = await page.inputValue('#diagOut');
+    expect(d).toMatch(/トリミングのみでは目標を超えたため、通常の圧縮に切り替え/);
+    expect(d).toMatch(/変換を開始/);
+    const out = await outputInfo(page);
+    expect(out.size).toBeLessThan(1000 * 1000);
+    expect((await ui(page)).outInfo).not.toContain('再圧縮なし');
+  });
+
+  test('トリミングのみに失敗したら、高速モードで圧縮し直す', async ({ page }) => {
+    // 映像をそのまま写す変換（video: {}）の準備だけ、1回失敗させる
+    await page.addInitScript(() => {
+      window.addEventListener('DOMContentLoaded', () => {
+        const C = window.Mediabunny.Conversion, init = C.init;
+        let failed = false;
+        C.init = function (o) {
+          if (!failed && o && o.video && !o.video.codec && !o.video.bitrate && !o.video.width) { failed = true; return Promise.reject(new Error('copy failed (test)')); }
+          return init.apply(this, arguments);
+        };
+      });
+    });
+    await open(page, '?target=2');
+    await pick(page, 'lowrate-60s-noaudio.mp4');
+    await setTrim(page, 0, 40);
+    expect((await ui(page)).planInfo).toContain('（予想・トリミングのみ）');
+    await compress(page);
+    expect(await page.inputValue('#diagOut')).toMatch(/変換を開始/);   // 高速モードで圧縮した
+    expect((await outputInfo(page)).videoCodec).toBe('avc');
+    // （この動画は元のビットレートが低く、再圧縮では 2MB まで下げきれないことがある。収まるかはここでは見ない）
+    expect((await ui(page)).outInfo).not.toContain('再圧縮なし');
+  });
 });

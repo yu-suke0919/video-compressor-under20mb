@@ -69,6 +69,8 @@ for (const [name, args] of Object.entries(VIDEOS)) {
 
 // 他の動画から作るもの
 const derived = {
+  // 1080p60 の短い動画（縮小に時間がかかるので、長さを確かめるのでないテストはこちらを使う）
+  '1080p60-10s.mp4': () => run(['-i', path.join(OUT, '1080p60-45s.mp4'), '-c', 'copy', '-t', '10', path.join(OUT, '1080p60-10s.mp4')]),
   // iPhone の縦動画と同じ「横長で保存して、回転情報で縦に見せる」形
   'portrait-rot90.mov': () => run(['-display_rotation', '90', '-i', path.join(OUT, '1080p60-45s.mp4'), '-c', 'copy', '-t', '20', path.join(OUT, 'portrait-rot90.mov')]),
   // 位置情報入りの小さい動画（Android の ©xyz と、iPhone の com.apple.quicktime.location.ISO6709 の2通り）

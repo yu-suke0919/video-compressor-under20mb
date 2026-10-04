@@ -23,9 +23,12 @@ const videoStart = page => page.evaluate(async () => {
 
 test('読み込んだら全体を先行圧縮し、実測の平均ビットレート・予想・目標サイズに収まる秒数を出す', async ({ page }) => {
   await open(page, '?probe=on&mode=quality');
-  await pick(page, '1080p60-45s.mp4');   // 初期設定は 720p・30fps
+  await pick(page, '1080p60-10s.mp4');   // 初期設定は 720p・30fps
   await waitPc(page, () => { const p = window.__compressor.precomp().pre; return p && p.marks.length > 2; });
-  expect((await ui(page)).planInfo).toMatch(/^現在の設定：720p\/30fps\/45秒\/.+\n→ [\d.]+MB（予想・先行圧縮 \d+%）$/);   // 20MBに収まるので3行目は出さない
+  // 途中なら進み具合を出す（短い動画なので、見た時にはもう済んでいることもある）
+  const mid = await pc(page, () => ({ info: document.getElementById('planInfo').textContent, done: window.__compressor.precomp().pre.done }));
+  expect(mid.info).toMatch(mid.done ? /^現在の設定：720p\/30fps\/10秒\/.+\n→ [\d.]+MB（確定・先行圧縮済み）$/
+    : /^現在の設定：720p\/30fps\/10秒\/.+\n→ [\d.]+MB（予想・先行圧縮 \d+%）$/);   // 20MBに収まるので3行目は出さない
   await preDone(page);
   const u = await ui(page);
   expect(u.planInfo).toMatch(/（確定・先行圧縮済み）$/);
@@ -113,16 +116,57 @@ test('3 から戻って範囲を縮めたときは、範囲の終わりで止め
 test('「◯MB以内」で先行圧縮を使わずに圧縮しても、止めたところまでの先行圧縮は残し、3 から戻ったときの予想に使う', async ({ page }) => {
   await open(page, '?probe=on&mode=size&target=10');
   await pick(page, '1080p60-45s.mp4');   // 720p に縮小するので、トリミングのみにはならない
-  await setTrim(page, 0, 10);
-  await waitPc(page, () => { const p = window.__compressor.precomp().pre; return p && !p.done && p.time >= 12; });
+  await setTrim(page, 0, 4);
+  await waitPc(page, () => { const p = window.__compressor.precomp().pre; return p && !p.done && p.time >= 6; });
   await compress(page);
   const d0 = await diag(page);
   expect(d0).toMatch(/先行圧縮を中断（圧縮を開始/);
   await page.click('#runBtn');   // やり直す
-  await setTrim(page, 0, 8);
+  await setTrim(page, 0, 3);
   await page.waitForTimeout(2000);
   expect(((await diag(page)).match(/先行圧縮を開始/g) || []).length).toBe(1);   // やり直さない
   expect((await ui(page)).planInfo).toMatch(/先行圧縮済み/);
+});
+
+// Mediabunny の変換の準備（Conversion.init）を、条件に合うときだけ失敗させる
+const failConversion = (page, kind) => page.addInitScript(k => {
+  window.addEventListener('DOMContentLoaded', () => {
+    const M = window.Mediabunny, init = M.Conversion.init;
+    M.Conversion.init = function (o) {
+      const pre = o && o.output && o.output.target instanceof M.StreamTarget;   // 先行圧縮だけ、書き出しを区切りごとに受け取る
+      if ((k === 'pre' && pre) || (k === 'cut' && o && o.copy)) return Promise.reject(new Error(k + ' failed (test)'));
+      return init.apply(this, arguments);
+    };
+  });
+}, kind);
+
+test('先行圧縮に失敗したら、同じ設定ではやり直さず、押したら普通に圧縮する', async ({ page }) => {
+  await failConversion(page, 'pre');
+  await open(page, '?probe=on&mode=quality');
+  await pick(page, 'small-5mb.mp4');
+  await waitPc(page, () => /先行圧縮に失敗/.test(document.getElementById('diagOut').value), 10000);
+  await page.waitForTimeout(2000);
+  expect((await diag(page)).match(/先行圧縮を開始/g)).toHaveLength(1);
+  await setTrim(page, 0, 3);
+  await compress(page);
+  const d = await diag(page);
+  expect(d).toMatch(/先行圧縮は使わない（先行圧縮に失敗した）/);
+  expect(d).toMatch(/変換を開始/);
+  expect((await ui(page)).hasOut).toBe(true);
+});
+
+test('先行圧縮から切り出せなかったら、普通に圧縮する', async ({ page }) => {
+  await failConversion(page, 'cut');
+  await open(page, '?probe=on&mode=quality');
+  await pick(page, 'small-5mb.mp4');
+  await preDone(page);
+  await setTrim(page, 0, 3);
+  await compress(page);
+  const d = await diag(page);
+  expect(d).toMatch(/先行圧縮を使う（完了済み）/);
+  expect(d).toMatch(/先行圧縮を使えないため、普通に圧縮する（Error: cut failed \(test\)）/);
+  expect(d).toMatch(/変換を開始/);
+  expect(Math.abs(await outDuration(page) - 3)).toBeLessThan(0.3);
 });
 
 test('先行圧縮が範囲の始まりまで届いていなければ、使わずに範囲だけを圧縮する', async ({ page }) => {

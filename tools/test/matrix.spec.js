@@ -8,17 +8,19 @@ const { PROFILES, open, pick, compress, ui, outputInfo } = require('./helpers');
 // （画面録画（886×1920）は 720p・1080p ではない 1080p 以下の動画なので、設定に関係なく元の解像度のまま）
 const CASES = [
   ['720p-60s.mp4', '', 1280, 720],
-  ['1080p60-45s.mp4', '', 1280, 720],
+  ['1080p60-10s.mp4', '', 1280, 720],   // 縮小は時間がかかるので短い動画で（45秒は下の 1080p で）
   ['1080p60-45s.mp4', '?res=1080', 1920, 1080],
   ['portrait-1080x1920.mov', '', 720, 1280],
   ['portrait-rot90.mov', '', 720, 1280],
   ['screenrec-886x1920.mp4', '', 886, 1920],
   ['screenrec-886x1920.mp4', '?res=source', 886, 1920],
 ];
-// Android と iPhone の画面では、代表的なものだけ試す（中身の処理は同じ Chrome なので）
-const MOBILE_CASES = CASES.filter(c => ['720p-60s.mp4|', '1080p60-45s.mp4|?res=1080', 'portrait-rot90.mov|', 'screenrec-886x1920.mp4|?res=source'].includes(c[0] + '|' + c[1]));
+// Android と iPhone の画面では、端末で処理が変わるものだけ試す（中身の処理は同じ Chrome。ほかの組み合わせは PC と同じ処理を通るだけ）
+//   Android … 動画をブラウザ内に写してから読む（いちばん短い動画で）
+//   iPhone  … 解像度を変えないとき、全体を切り抜く指定で描き直す（元の解像度のまま）。共有と保存を1つのボタンにまとめる
+const pick1 = key => CASES.filter(c => c[0] + '|' + c[1] === key);
 
-for (const [profile, cases] of [['pc', CASES], ['android', MOBILE_CASES], ['ios', MOBILE_CASES]]) {
+for (const [profile, cases] of [['pc', CASES], ['android', pick1('720p-60s.mp4|')], ['ios', pick1('screenrec-886x1920.mp4|?res=source')]]) {
   test.describe(profile, () => {
     test.use(PROFILES[profile]);
     for (const [file, query, w, h] of cases) {
