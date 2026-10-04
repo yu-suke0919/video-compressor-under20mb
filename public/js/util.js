@@ -57,7 +57,7 @@ export function setAlert(el, lines, danger) {
   show(el, lines.length > 0);
 }
 // 診断情報（うまく動かないときに、どこで止まったかを伝えてもらうための記録。動画の中身やファイル名は含めない）
-export var diag = { t0: Date.now(), lines: [] };
+var diag = { t0: Date.now(), lines: [] };
 export function log(msg) {
   var line = ((Date.now() - diag.t0) / 1000).toFixed(1) + 's ' + msg;
   diag.lines.push(line);
@@ -68,7 +68,7 @@ export function log(msg) {
 export function errText(err) { return err ? ((err.name ? err.name + ': ' : '') + (err.message || String(err))) : String(err); }
 // 診断情報を普段から表示するか。本番ではエラーや停止のときだけ表示する（記録は常に続ける）
 //   プレビュー（<ブランチ名>.<プロジェクト名>.pages.dev）・手元の確認環境・URLに debug=1 のときは、圧縮を始めたら表示
-export var DIAG_ALWAYS = (function () {
+var DIAG_ALWAYS = (function () {
   var h = location.hostname;
   var debug = false;
   try { debug = /^(1|on|true)$/i.test(new URLSearchParams(location.search).get('debug') || ''); } catch (e) { /* noop */ }
@@ -83,7 +83,7 @@ export function showDiag(open) {
 
 // 進捗は1フレームに1回だけ描く。数字とゲージを同じタイミングで更新し、
 // 処理中に頻繁に呼ばれてもゲージが遅れないよう、CSSのアニメーションは使わない
-export var progress = { value: 0, label: null, raf: 0 };
+var progress = { value: 0, label: null, raf: 0 };
 export function setProgress(ratio, label) {
   progress.value = Math.max(0, Math.min(1, ratio || 0));
   if (label) progress.label = label;
@@ -93,7 +93,7 @@ export function setPhase(label) {
   progress.label = label;
   if (!progress.raf) progress.raf = requestAnimationFrame(drawProgress);
 }
-export function drawProgress() {
+function drawProgress() {
   progress.raf = 0;
   els.progressBar.style.transform = 'scaleX(' + progress.value.toFixed(4) + ')';
   els.pct.textContent = Math.round(progress.value * 100) + '%';

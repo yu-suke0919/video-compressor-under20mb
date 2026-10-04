@@ -1,15 +1,15 @@
 // 高速モード（Mediabunny の Conversion で直接デコード→再エンコード）と、トリミングのみ（再エンコードしない）
 
-import { AUDIO_BITRATE, CANCELLED, FAST_AUDIO_CODEC, FAST_VIDEO_CODECS, INPUT_FORMATS, KEYFRAME_INTERVAL, M, SIZE_SAFETY } from './constants.js';
+import { AUDIO_BITRATE, CANCELLED, FAST_AUDIO_CODEC, FAST_VIDEO_CODECS, KEYFRAME_INTERVAL, M, SIZE_SAFETY } from './constants.js';
 import { state } from './state.js';
 import { errText, log, throwIfCancelled } from './util.js';
 import { readSettings } from './settings.js';
-import { MSG_NO_H264, isIOS, outputTags } from './media.js';
+import { MSG_NO_H264, closeInput, isIOS, openInput, outputTags } from './media.js';
 import { isFullRange } from './plan.js';
 import { stripNeeds } from './view.js';
 
 // ---------------------------------------------------------------- 高速モード（Mediabunny Conversion）
-export function encKey(c) { return c.codec + '/' + c.hw + '/' + c.bitrateMode; }
+function encKey(c) { return c.codec + '/' + c.hw + '/' + c.bitrateMode; }
 // エンコーダーの候補の順番（高速モード・互換モードで共通）。
 // ハードウェアの可変ビットレート（VBR）→ ハードウェアの VBR が使えないときだけハードウェアの固定ビットレート（CBR）→
 // ソフトウェア（ブラウザに任せる）の VBR。どのモードでも、指定を守らないエンコーダーでも、CBR で圧縮し直すことはしない
@@ -53,11 +53,11 @@ export function outputBlob(output) { return new Blob([output.target.buffer], { t
 //   spec.output                 … 書き出し先（先行圧縮）。渡したときは結果の blob を作らない
 //   spec.onReady(conv, audioLost) … 変換の準備ができたとき（先行圧縮で、音声が外れたかを早めに知る）
 export function runConversion(spec, plan, onProgress, job) {
-  var input = spec.input || new M.Input({ source: new M.BlobSource(state.file), formats: INPUT_FORMATS });
+  var input = spec.input || openInput(state.file);
   var output = spec.output || newMp4Output();
   function dispose() {
     if (spec.input) return;
-    try { input.dispose(); } catch (e) { /* noop */ }
+    closeInput(input);
   }
   job.hooks.push(dispose);   // 準備中に止めた場合も、ファイルの読み込みを閉じる
 
@@ -102,7 +102,7 @@ export function runConversion(spec, plan, onProgress, job) {
 }
 
 // 高速モードの映像の設定（本番の圧縮と先行圧縮で共通）
-export function fastVideoConfig(plan, enc) {
+function fastVideoConfig(plan, enc) {
   var video = {
     codec: enc.codec, width: plan.width, height: plan.height, fit: 'fill',
     quality: new M.Quality({ bitrate: plan.videoBitrate, bitrateMode: enc.bitrateMode }),
@@ -158,7 +158,7 @@ export function convertFast(plan, onProgress, job) {
 // 音声を残すつもりだったのに、書き出す動画に音声が1本も入らないか。
 // iPhone の動画には、空間オーディオ（APAC）など読めない音声が AAC と一緒に入っていることがあり、
 // それだけが外されたときは AAC が残るので「音声なし」にしない
-export function audioTrackLost(plan, conv) {
+function audioTrackLost(plan, conv) {
   if (plan.audio.mode === 'none') return false;
   return !(conv.utilizedTracks || []).some(function (t) { return t && t.type === 'audio'; });
 }

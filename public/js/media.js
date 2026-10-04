@@ -26,7 +26,7 @@ export function detectCaps() {
 
 // 撮影場所（GPS）の情報が入っているか。Android は ©xyz、iPhone は com.apple.quicktime.location.ISO6709 などに入る。
 // メタデータを読めなかったときは null（不明）を返す。不明なときは「なし」と同じに扱わない（元の動画をそのまま渡さない）
-export function hasLocationTag(tags) {
+function hasLocationTag(tags) {
   if (!tags) return null;
   var raw = tags.raw;
   if (!raw) return false;
@@ -39,9 +39,27 @@ export function outputTags(tags) {
   return out;
 }
 
+// 動画（File・Blob）を Mediabunny で開く（mp4・mov）。閉じるときは closeInput
+export function openInput(blob) { return new M.Input({ source: new M.BlobSource(blob), formats: INPUT_FORMATS }); }
+// 開いた動画を閉じる（閉じるときの例外は無視する）
+export function closeInput(input) { try { input.dispose(); } catch (e) { /* noop */ } }
+// 動画を開いて use(input) を行い、成功しても失敗しても閉じる（use は Promise を返す）
+export function withInput(blob, use) {
+  var input = openInput(blob);
+  return Promise.resolve().then(function () { return use(input); }).then(function (r) {
+    closeInput(input);
+    return r;
+  }, function (err) {
+    closeInput(input);
+    throw err;
+  });
+}
+
 // 高速モード: Mediabunny でコンテナを読んで情報を得る
 export function loadMetaFast(file) {
-  var input = new M.Input({ source: new M.BlobSource(file), formats: INPUT_FORMATS });
+  return withInput(file, readMetaFast);
+}
+function readMetaFast(input) {
   var meta = {};
   return input.getPrimaryVideoTrack().then(function (vt) {
     if (!vt) throw new Error(MSG_NO_VIDEO_TRACK);
@@ -70,26 +88,20 @@ export function loadMetaFast(file) {
       meta.audio = { codec: at.codec, bitrate: r2[0].averageBitrate || 0, canDecode: r2[1] };
       return meta;
     });
-  }).then(function (m) {
-    try { input.dispose(); } catch (e) { /* noop */ }
-    return m;
-  }, function (err) {
-    try { input.dispose(); } catch (e) { /* noop */ }
-    throw err;
   });
 }
 
 // 読み込めなかったときの文言。codec は高速モードで分かった映像の形式（分からなければ undefined）
-export var CODEC_NAMES = { hevc: 'HEVC/H.265', avc: 'H.264', vp9: 'VP9', vp8: 'VP8', av1: 'AV1' };
+var CODEC_NAMES = { hevc: 'HEVC/H.265', avc: 'H.264', vp9: 'VP9', vp8: 'VP8', av1: 'AV1' };
 // 端末によっては一時的に読み込めず、もう一度選ぶと読み込めることがあるので、まず選び直してもらう
 export var MSG_READ_FAIL = '動画をうまく受け取れませんでした（端末側で一時的に読み込めないことがあります）。「動画を選択」からもう一度同じ動画を選んでください。';
-export var MSG_PICK_AGAIN = '一時的に読み込めないこともあるので、まずは「動画を選択」からもう一度選び直してください。';
+var MSG_PICK_AGAIN = '一時的に読み込めないこともあるので、まずは「動画を選択」からもう一度選び直してください。';
 // iPhone は、動画の処理中に別のアプリに切り替えると、動画のデコーダーが固まることがある。
 // 固まるとこのページからは直せず、Safari（ホーム画面のアプリ）を開き直すまで動画を読み込めない
-export var MSG_CODEC_STUCK = 'この端末の動画の処理が止まったままになっています。ブラウザ（ホーム画面に追加した場合はそのアプリ）をいったん完全に閉じて開き直してから、もう一度お試しください（iPhone は、アプリの切り替え画面で上にスワイプすると閉じられます）。';
-export var MSG_KILL_BROWSER = 'ブラウザをタスクキルしてください！';
+var MSG_CODEC_STUCK = 'この端末の動画の処理が止まったままになっています。ブラウザ（ホーム画面に追加した場合はそのアプリ）をいったん完全に閉じて開き直してから、もう一度お試しください（iPhone は、アプリの切り替え画面で上にスワイプすると閉じられます）。';
+var MSG_KILL_BROWSER = 'ブラウザをタスクキルしてください！';
 export var MSG_NO_H264 = 'この端末では動画のエンコード（H.264）に対応していません。';
-export var MSG_NO_VIDEO_TRACK = '映像トラックが見つかりませんでした。';
+var MSG_NO_VIDEO_TRACK = '映像トラックが見つかりませんでした。';
 export var MSG_CANVAS_FAIL = 'canvasを初期化できませんでした。';
 export var MSG_STALLED = '圧縮が進まなくなりました。画面を表示したまま、もう一度お試しください。';
 export var MSG_PLAY_FAILED = '動画を再生できませんでした。画面を表示したまま、もう一度お試しください。';
@@ -175,7 +187,7 @@ export function borrowVideo(videoEl, hideControls) {
   };
 }
 
-export function probeFps(videoEl) {
+function probeFps(videoEl) {
   var giveBack = borrowVideo(videoEl, false);
   return new Promise(function (resolve) {
     var times = [], done = false;

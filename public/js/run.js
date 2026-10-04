@@ -15,7 +15,7 @@ import { convertCompat } from './compat.js';
 
 // ---------------------------------------------------------------- 実行
 // 音声のことで失敗したか（Mediabunny の音声の形式の検査など）
-export function isAudioError(err) { return /audio|aac|mp4a/i.test(errText(err)); }
+function isAudioError(err) { return /audio|aac|mp4a/i.test(errText(err)); }
 
 // 1回ぶんの処理の見張り。別のアプリに切り替えたかと、進捗が止まったままかを見る。
 // iPhone は裏に回ると動画の読み込み・書き出しを止めたり壊したりする。
@@ -24,7 +24,7 @@ export function isAudioError(err) { return /audio|aac|mp4a/i.test(errText(err));
 //   onStall(limit, done) … 止まったとみなしたとき（limit: 待った時間（ミリ秒）、done: そこまでの進捗 0〜1）。見回りはそこで止まる
 //   quick … 最初から早めに見切る（別のアプリから戻ってやり直すとき）
 //   onReturn() … 別のアプリから画面に戻ったとき
-export function watchAttempt(onStall, quick, onReturn) {
+function watchAttempt(onStall, quick, onReturn) {
   var lastVal = -1, idleMs = 0, lastTick = Date.now(), hidden = false;
   function markHidden(why) {
     if (!hidden) log('画面から離れた（' + why + '）');
@@ -81,7 +81,7 @@ export function watchAttempt(onStall, quick, onReturn) {
 
 // 選んだ動画のデコーダーが応答するか（応答しなければ codecStuckError。対応していないなどの失敗はここでは問わない）
 // job がキャンセルされていたら、結果は書かない
-export function decoderResponds(job) {
+function decoderResponds(job) {
   var codec = state.meta && state.meta.codecString;
   if (!codec || typeof VideoDecoder === 'undefined') return Promise.resolve();
   var p;
@@ -97,7 +97,7 @@ export function decoderResponds(job) {
 // 別のアプリから戻ったあと、動画の読み込みとデコーダーが応答するかを確かめ、診断情報に書く。
 // デコーダーが応答しなければ codecStuckError で失敗する（やり直しても互換モードでも進まないので、開き直してもらう）。
 // 裏に回っている間はデコーダーが応答しないのが普通なので、確かめている間ずっと画面を表示していたときだけ判断する
-export function checkAfterBackground(job) {
+function checkAfterBackground(job) {
   return waitVisible(job).then(function () {
     var leftDuring = false, lastTick = Date.now();
     function onVisibility() { if (document.visibilityState !== 'visible') leftDuring = true; }
@@ -119,7 +119,7 @@ export function checkAfterBackground(job) {
     });
   });
 }
-export function checkResponses() {
+function checkResponses() {
   var t = Date.now();
   function check(what, start) {
     var p;
@@ -429,13 +429,13 @@ function finishWithError(ctx, err) {
 //   changes.audio   … 音声の扱い（省略時は今のまま）
 //   changes.bitrate … 映像ビットレートを直接決める（再圧縮のとき）
 //   changes.cap     … 映像ビットレートの上限（省略時は今のまま）
-export function replan(plan, changes) {
+function replan(plan, changes) {
   return makePlan(state.meta, { start: plan.trimStart, end: plan.trimEnd }, planSettings(plan),
     changes.audio || plan.audio, state.file.size, changes.bitrate || null,
     changes.cap !== undefined ? changes.cap : plan.videoCapBps);
 }
 
-export function finishRun() {
+function finishRun() {
   state.running = false;
   state.job = null;
   state.attemptJob = null;
@@ -443,7 +443,7 @@ export function finishRun() {
   setRunningUi(false);   // 画面の更新（refresh）もここで行う
 }
 
-export function setRunningUi(running) {
+function setRunningUi(running) {
   els.app.classList.toggle('is-running', running);
   show(els.progressWrap, running);
   els.runBtn.classList.toggle('is-cancel', running);
@@ -481,7 +481,7 @@ export function requestWakeLock() {
     lock.addEventListener('release', function () { if (state.wakeLock === lock) state.wakeLock = null; });
   }).catch(function () { /* noop */ });
 }
-export function releaseWakeLock() {
+function releaseWakeLock() {
   if (state.wakeLock) {
     try { state.wakeLock.release(); } catch (e) { /* noop */ }
     state.wakeLock = null;

@@ -1,12 +1,12 @@
 // 先行圧縮：動画を読み込んだら裏で全体を圧縮し、サイズを予想する。押したら範囲を切り出してすぐ結果にする
 
-import { CANCELLED, INPUT_FORMATS, M, MIN_SHRINK } from './constants.js';
+import { CANCELLED, M, MIN_SHRINK } from './constants.js';
 import { describePlan, exactCutBytes, fmtBytes, fmtRate, makePlan, planSettings, preKey, preUseRatioOf } from './calc.js';
 import { fragmentsBlob, parseFragments } from './fmp4.js';
 import { els } from './dom.js';
 import { state } from './state.js';
 import { errText, isCancel, log, newJob, secondsSince, stopJob, throwIfCancelled } from './util.js';
-import { MSG_NO_H264, outputTags } from './media.js';
+import { MSG_NO_H264, closeInput, openInput, outputTags, withInput } from './media.js';
 import { isCompressed, refresh } from './view.js';
 import { convertFast, fastOptions, pickFastEncoding, runConversion } from './fast.js';
 
@@ -19,11 +19,11 @@ import { convertFast, fastOptions, pickFastEncoding, runConversion } from './fas
 // 設定を変えずに「圧縮する」を押したら、範囲の始まりまで届いていれば、範囲の終わりまで続けて、範囲を切り出して使う。
 // 「◯MB以内」では、切り出した大きさが許容する最小サイズ（既定は目標の80%）以上・目標未満のときだけ使い、それ以外は予想と注意にだけ使って普通に圧縮する
 // 予想の当てはめと表示は estimate.js、書き出しの読み取りは fmp4.js
-export var PRE_DELAY_MS = 1500;           // 設定を変えてから先行圧縮をやり直すまで待つ（続けて変えたときに何度もやり直さない）
-export var PRE_FRAGMENT_SEC = 1;          // 先行圧縮の書き出しの区切りの最短の長さ（実際はキーフレームごと＝約2秒ごとに書き出される）
-export var PRE_TAIL_SEC = 1;              // 範囲の終わりからこれだけ先まで書き出せたら、範囲の終わりまで書き出せたとみる
+var PRE_DELAY_MS = 1500;           // 設定を変えてから先行圧縮をやり直すまで待つ（続けて変えたときに何度もやり直さない）
+var PRE_FRAGMENT_SEC = 1;          // 先行圧縮の書き出しの区切りの最短の長さ（実際はキーフレームごと＝約2秒ごとに書き出される）
+var PRE_TAIL_SEC = 1;              // 範囲の終わりからこれだけ先まで書き出せたら、範囲の終わりまで書き出せたとみる
 // URL に probe=off があれば先行圧縮しない（自動テスト・自己テストで、本番の圧縮だけを確かめるため）
-export var PROBE_OFF = /[?&]probe=off\b/.test(location.search);
+var PROBE_OFF = /[?&]probe=off\b/.test(location.search);
 // pre … { file, key, plan, enc, job, chunks, bytes, marks: [{ t: 書き出したときの進み（秒）, bytes: そこまでの量 }],
 //         time: 進み（秒）, done, failed, audioLost, t0 }
 export var pre = null, preTimer = null;
@@ -33,7 +33,7 @@ export function cutBytes(plan, rec) {
   try { return exactCutBytes(plan, rec); } catch (e) { return null; }
 }
 
-export function canProbe() {
+function canProbe() {
   return !PROBE_OFF && !!(state.file && state.meta) && state.engine === 'fast' && !state.running && !state.busy && !isCompressed() &&
     !els.autoRun.checked && document.visibilityState === 'visible';
 }
@@ -64,7 +64,7 @@ export function scheduleProbe() {
 }
 
 // 先行圧縮。書き出しは区切りごと（fragmented MP4）に受け取って持っておく（途中で止めても、区切りまでは読める）
-export function startPre(pp, key) {
+function startPre(pp, key) {
   var file = state.file;
   var rec = pre = { file: file, key: key, plan: pp, job: newJob(), chunks: [], bytes: 0, marks: [{ t: 0, bytes: 0 }],
     time: 0, done: false, failed: false, audioLost: false, t0: Date.now() };
@@ -118,14 +118,14 @@ export function startPre(pp, key) {
 // 小さくならなければ、この端末ではそれ以上下げられないとみる（rec.floorHit。予想の注意に出す）
 //   lastDonePre … 前回の先行圧縮で比べるのに要る数字だけ（動画や書き出したデータは持たない。新しい動画を選んだら消す）
 export var lastDonePre = null;
-export function preSummary(rec) {
+function preSummary(rec) {
   var p = rec.plan;
   return {
     fileId: state.fileId, bytes: rec.bytes, width: p.width, height: p.height, outFps: Math.round(p.outFps),
     audioMode: p.audio.mode, audioBitrate: p.audioBitrate, videoBitrate: p.videoBitrate
   };
 }
-export function checkDeviceFloor(rec) {
+function checkDeviceFloor(rec) {
   if (rec.file !== state.file) return;
   var prev = lastDonePre, b = preSummary(rec);
   lastDonePre = b;
@@ -208,8 +208,8 @@ export function finishFromPrecompress(rec, plan, onProgress, job) {
     return Promise.resolve(stopping);
   }).then(function () {
     throwIfCancelled(job);
-    var input = new M.Input({ source: new M.BlobSource(fragmentsBlob(rec)), formats: INPUT_FORMATS });
-    job.hooks.push(function () { try { input.dispose(); } catch (e) { /* noop */ } });
+    var input = openInput(fragmentsBlob(rec));
+    job.hooks.push(function () { closeInput(input); });
     return runConversion({
       input: input,
       options: function (inp, output) {
@@ -226,7 +226,7 @@ export function finishFromPrecompress(rec, plan, onProgress, job) {
       prepareLog: function () { return '先行圧縮から切り出す準備'; },
       invalidMessage: '先行圧縮から切り出せませんでした'
     }, plan, function (p) { onProgress(0.95 + 0.05 * p); }, job).then(function (res) {
-      try { input.dispose(); } catch (e) { /* noop */ }
+      closeInput(input);
       return checkCutDuration(res, span).then(function () {
         res.rateMode = rec.enc.bitrateMode;
         res.audioDropped = rec.audioLost;
@@ -240,19 +240,12 @@ export function finishFromPrecompress(rec, plan, onProgress, job) {
   });
 }
 // 切り出した動画が範囲より短ければ失敗にする（先行圧縮の書き出しが範囲の終わりまで届いていなかった）
-export function checkCutDuration(res, span) {
+function checkCutDuration(res, span) {
   return blobDuration(res.blob).then(function (d) {
     if (d < span - 0.25) throw new Error('切り出した動画が短い（' + d.toFixed(2) + '秒／' + span.toFixed(2) + '秒）');
   });
 }
 // 書き出した動画の長さ（秒）
 export function blobDuration(blob) {
-  var input = new M.Input({ source: new M.BlobSource(blob), formats: INPUT_FORMATS });
-  return input.computeDuration().then(function (d) {
-    try { input.dispose(); } catch (e) { /* noop */ }
-    return d;
-  }, function (e) {
-    try { input.dispose(); } catch (e2) { /* noop */ }
-    throw e;
-  });
+  return withInput(blob, function (input) { return input.computeDuration(); });
 }

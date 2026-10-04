@@ -19,15 +19,15 @@ export function setupTrim(duration) {
 }
 
 // 目盛りの間隔: 5秒 → 10秒 → 30秒 … のうち、線が24本以下に収まる最小のもの
-export var TICK_INTERVALS = [5, 10, 30, 60, 120, 300, 600];
-export function tickInterval(duration) {
+var TICK_INTERVALS = [5, 10, 30, 60, 120, 300, 600];
+function tickInterval(duration) {
   for (var i = 0; i < TICK_INTERVALS.length; i++) {
     if (duration / TICK_INTERVALS[i] <= 24) return TICK_INTERVALS[i];
   }
   return TICK_INTERVALS[TICK_INTERVALS.length - 1];
 }
 
-export function renderTicks(duration) {
+function renderTicks(duration) {
   els.trimTicks.innerHTML = '';
   state.tickInterval = tickInterval(duration);
   for (var t = state.tickInterval; t < duration - 0.05; t += state.tickInterval) {
@@ -37,7 +37,7 @@ export function renderTicks(duration) {
   }
 }
 
-export function renderTrim() {
+function renderTrim() {
   var dur = state.meta ? state.meta.duration : 1;
   var a = state.trim.start / dur, b = state.trim.end / dur;
   // つまみの幅（--thumb-w）の半分だけ内側を実際の可動域とする
@@ -52,7 +52,7 @@ export function renderTrim() {
 }
 
 // 元動画の再生位置をトリミングのバー（シークバー）に表示する（再生中は画面の書き換えに合わせてなめらかに動かす）
-export var headRaf = 0, seekDragging = false;
+var headRaf = 0, seekDragging = false;
 export function renderPlayhead() {
   var dur = state.meta ? state.meta.duration : 0;
   if (!(dur > 0) || !state.file) { show(els.trimSeek, false); return; }
@@ -63,8 +63,8 @@ export function renderPlayhead() {
 }
 // 指の操作に合わせて動画を移動する。移動が終わるまで次の移動は出さず、最新の位置だけ覚えておく
 // （Android の Chrome は、移動の途中で次の移動が来ると取りやめるため、動かしている間は映像が変わらなかった）
-export var seekQueue = { pending: null, at: 0 };
-export function seekVideo(t) {
+var seekQueue = { pending: null, at: 0 };
+function seekVideo(t) {
   var v = els.srcVideo;
   if (v.seeking && Date.now() - seekQueue.at < 1000) { seekQueue.pending = t; return; }
   seekQueue.pending = null;
@@ -86,9 +86,9 @@ export function endSeekDrag() { seekDragging = false; }
 
 // バーの何もない所を触ったら、その位置へシークする（そのまま指を動かすとシークし続ける）。
 // つまみや再生位置の線を触ったときは、それぞれの操作を優先する（触った要素が input のとき）
-export var trimBar = document.querySelector('.trim');
-export var barPointer = null;
-export function seekFromX(clientX) {
+var trimBar = document.querySelector('.trim');
+var barPointer = null;
+function seekFromX(clientX) {
   var rect = trimBar.getBoundingClientRect();
   var thumbW = parseFloat(getComputedStyle(trimBar).getPropertyValue('--thumb-w')) || 44;
   var a = Math.min(1, Math.max(0, (clientX - rect.left - thumbW / 2) / Math.max(1, rect.width - thumbW)));
@@ -117,7 +117,7 @@ trimBar.addEventListener('pointermove', function (e) {
 });
 }
 export function followPlayheadSoon() { if (!headRaf) headRaf = requestAnimationFrame(followPlayhead); }
-export function followPlayhead() {
+function followPlayhead() {
   headRaf = 0;
   renderPlayhead();
   if (!els.srcVideo.paused && !els.srcVideo.ended) headRaf = requestAnimationFrame(followPlayhead);
