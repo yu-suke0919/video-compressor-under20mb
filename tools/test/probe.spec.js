@@ -119,7 +119,7 @@ test('「◯MB以内」でも下限ビットレートで先行圧縮し、範囲
   expect((await ui(page)).planWarn).not.toMatch(/収まらない/);
   await compress(page);
   const d = await diag(page);
-  expect(d).toMatch(/先行圧縮は使わない（「◯MB以内」で、先行圧縮の大きさ（.*）が目標の95%未満）/);   // 10MB の目標に対して小さい
+  expect(d).toMatch(/先行圧縮は使わない（「◯MB以内」で、先行圧縮の大きさ（.*）が目標の80%未満）/);   // 10MB の目標に対して小さい
   expect(d).toMatch(/変換を開始/);
 });
 
@@ -212,10 +212,14 @@ test('「◯MB以内」の予想は、範囲が目安の長さを超えるかど
   await preDone(page);
   const fit = await pc(page, () => window.__compressor.state.plan.fitSec);
   const at = async end => { await setTrim(page, 0, end); return pc(page, () => { const p = window.__compressor.state.plan; return { est: p.estBytes, over: p.probeOver }; }); };
-  const inside = await at(fit), outside = await at(fit + 0.1);
+  const inside = await at(fit), edge = await at(fit + 0.1);
   expect(inside.over).toBe(false);
-  expect(outside.over).toBe(true);
-  expect(outside.est).toBeGreaterThanOrEqual(inside.est);
+  expect(edge.est).toBeGreaterThanOrEqual(inside.est);
+  // 目安を少し超えただけなら、先行圧縮を切り出した大きさ（正確な値）が目標未満・80%以上で、押せば先行圧縮をそのまま使うので、
+  // 収まらない注意は出さない。目標を超える長さなら注意を出す
+  const outside = await at(Math.ceil(fit * 1.3));
+  expect(outside.est).toBeGreaterThanOrEqual(edge.est);
+  expect(outside.est).toBeGreaterThan(3000000);
   expect(await page.textContent('#planWarn')).toContain('（目安は約' + fit + '秒まで）');
 });
 
@@ -234,14 +238,14 @@ test('先行圧縮が範囲の終わりまで済んでいれば、切り出し�
   }
 });
 
-test('「◯MB以内」でも、先行圧縮を切り出した大きさが目標の95%以上・目標未満なら、先行圧縮をそのまま使い、選択肢の下に出す', async ({ page }) => {
+test('「◯MB以内」でも、先行圧縮を切り出した大きさが目標の80%以上・目標未満なら、先行圧縮をそのまま使い、選択肢の下に出す', async ({ page }) => {
   await open(page, '?probe=on&mode=size');
   await pick(page, '720p-60s.mp4');
   await preDone(page);
   await setTrim(page, 0, 30);
   const cut = await pc(page, () => window.__compressor.exactCutBytes(window.__compressor.state.plan, window.__compressor.precomp().pre));
-  // 目標を、切り出した大きさがその 97% になるようにする
-  const target = Math.ceil(cut / 0.97 / 100000) / 10;   // MB（小数1桁）
+  // 目標を、切り出した大きさがその約85% になるようにする（以前の95%の条件では使わなかった大きさ）
+  const target = Math.ceil(cut / 0.85 / 100000) / 10;   // MB（小数1桁）
   await page.evaluate(() => { document.querySelector('details.settings:not(#diagBox)').open = true; });   // 詳細設定（設定のステップでは開いたまま）
   await page.fill('#targetSize', String(target));
   await page.dispatchEvent('#targetSize', 'change');
@@ -258,9 +262,9 @@ test('「◯MB以内」でも、先行圧縮を切り出した大きさが目標
   expect(size).toBeLessThan(target * 1000000);
   expect(await page.isVisible('#quickNoteSize')).toBe(false);   // 圧縮後は出さない
 
-  // 目標を大きくして 95% 未満になると、使わずに普通に圧縮する（選択肢の下にも出さない）
+  // 目標を大きくして 80% 未満になると、使わずに普通に圧縮する（選択肢の下にも出さない）
   await page.click('#runBtn');   // やり直す
-  await page.fill('#targetSize', String(Math.ceil(target * 1.2)));
+  await page.fill('#targetSize', String(Math.ceil(target * 1.3)));
   await page.dispatchEvent('#targetSize', 'change');
   expect(await page.isVisible('#quickNoteSize')).toBe(false);
   expect(await page.isVisible('#quickNote')).toBe(true);

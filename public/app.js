@@ -58,7 +58,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-02z';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-04a';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1392,11 +1392,13 @@
   // 書き出したデータの量から、ビットレートとサイズの予想を出す。先行圧縮は、モードにかかわらず決めた下限ビットレートで行う
   // （範囲の長さでビットレートを変えると、範囲を変えるたびにやり直しになるため）。
   // 設定を変えずに「圧縮する」を押したら、範囲の始まりまで届いていれば、範囲の終わりまで続けて、範囲を切り出して使う。
-  // 「◯MB以内」では、切り出した大きさが目標の95%以上・目標未満のときだけ使い、それ以外は予想と注意にだけ使って普通に圧縮する
+  // 「◯MB以内」では、切り出した大きさが目標の80%以上・目標未満のときだけ使い、それ以外は予想と注意にだけ使って普通に圧縮する
   var FIT_MARGIN = 0.95;             // 「約◯秒まで◯MBに収まるよ」は、実測の平均で収まる秒数のこの割合を出す
   // 「◯MB以内」でも、先行圧縮を切り出した大きさが目標のこの割合以上（かつ目標未満）なら、先行圧縮をそのまま使う
-  // （目標いっぱいまで使って圧縮し直しても、大きさ・画質はほとんど変わらないので、すぐ出せる方を選ぶ）
-  var PRE_SIZE_USE_RATIO = 0.95;
+  // （目標いっぱいまで使って圧縮し直しても、大きさ・画質はほとんど変わらないので、すぐ出せる方を選ぶ。
+  // 指定の約2倍で書き出す端末（Android・Windows）では、圧縮し直すと1回目が目標を超え、何回も圧縮し直したうえで
+  // 先行圧縮とほぼ同じ大きさになることがある（Android：先行圧縮 18.6MB を使わず、3回圧縮して 19.4MB）。余裕をもって80%にする）
+  var PRE_SIZE_USE_RATIO = 0.80;
   var PRE_DELAY_MS = 1500;           // 設定を変えてから先行圧縮をやり直すまで待つ（続けて変えたときに何度もやり直さない）
   var PRE_FRAGMENT_SEC = 1;          // 先行圧縮の書き出しの区切りの最短の長さ（実際はキーフレームごと＝約2秒ごとに書き出される）
   var PRE_TAIL_SEC = 1;              // 範囲の終わりからこれだけ先まで書き出せたら、範囲の終わりまで書き出せたとみる
@@ -1461,7 +1463,7 @@
       p.probeOver = !p.unreachable && p.duration > p.fitSec;
       var setBytes = Math.round((preEstimate(plan, pre, plan.videoBitrate).videoBps + p.audioBitrate) * p.duration / 8);
       p.estBytes = Math.max(floorBytes, setBytes);
-      // 押したら先行圧縮をそのまま使う大きさ（目標の95%以上・目標未満）なら、切り出したときの大きさを予想にする
+      // 押したら先行圧縮をそのまま使う大きさ（目標の80%以上・目標未満）なら、切り出したときの大きさを予想にする
       var cut = null;
       try { cut = exactCutBytes(plan, pre); } catch (e) { cut = null; }
       if (cut && cut >= p.targetBytes * PRE_SIZE_USE_RATIO && cut < p.targetBytes) { p.estBytes = cut; p.exactEst = true; }
@@ -1805,12 +1807,12 @@
     if (!pre.done && !pre.job) return '先行圧縮を途中で止めた';
     if (!pre.done && pre.time < plan.trimStart) return '範囲の始まりまで届いていない（' + pre.time.toFixed(1) + '秒）';
     if (plan.mode === 'size') {
-      // 「◯MB以内」は、先行圧縮が範囲の終わりまで済んでいて、切り出した大きさが目標の95%以上・目標未満のときだけ
+      // 「◯MB以内」は、先行圧縮が範囲の終わりまで済んでいて、切り出した大きさが目標の80%以上・目標未満のときだけ
       var cut = null;
       try { cut = exactCutBytes(plan, pre); } catch (e) { cut = null; }
       if (!cut) return '「◯MB以内」で、先行圧縮が範囲の終わりまで済んでいない';
       if (cut >= plan.targetBytes) return '「◯MB以内」で、先行圧縮の大きさ（' + fmtBytes(cut) + '）が目標以上';
-      if (cut < plan.targetBytes * PRE_SIZE_USE_RATIO) return '「◯MB以内」で、先行圧縮の大きさ（' + fmtBytes(cut) + '）が目標の95%未満';
+      if (cut < plan.targetBytes * PRE_SIZE_USE_RATIO) return '「◯MB以内」で、先行圧縮の大きさ（' + fmtBytes(cut) + '）が目標の' + Math.round(PRE_SIZE_USE_RATIO * 100) + '%未満';
     }
     return '';
   }
@@ -2462,7 +2464,7 @@
     showDiag(false);
     log('圧縮開始 ' + describePlan(plan) + ' engine=' + engine);
     logEstimate(plan);
-    // 設定を変えておらず、先行圧縮が範囲の始まりまで届いていれば（「◯MB以内」では、切り出した大きさが目標の95%以上・目標未満なら）、
+    // 設定を変えておらず、先行圧縮が範囲の始まりまで届いていれば（「◯MB以内」では、切り出した大きさが目標の80%以上・目標未満なら）、
     // 先行圧縮をそのまま使う
     var usePre = engine === 'fast' && precompressUsable(plan);
     var preTried = false;
