@@ -7,9 +7,10 @@ import { state } from './state.js';
 import { errText, isCancel, log, newJob, secondsSince, setAlert, setPhase, setProgress, show, showDiag, sleep, stopJob, throwIfCancelled, waitVisible } from './util.js';
 import { MSG_AUDIO_COPY_FAILED, MSG_REPORT, MSG_STALLED, audioStrategy, codecStuckError, errorLines, withinDecoderCheck } from './media.js';
 import { currentPlan } from './plan.js';
+import { logEstimate } from './estimate.js';
 import { notifyUpdate, refresh, showResult } from './view.js';
 import { convertCopy, convertFast, trimOnlyEstimate } from './fast.js';
-import { finishFromPrecompress, logEstimate, pre, precompressUsable, precompressWhyNot, stopPre } from './precompress.js';
+import { finishFromPrecompress, pre, precompressUsable, precompressWhyNot, stopPre } from './precompress.js';
 import { convertCompat } from './compat.js';
 
 // ---------------------------------------------------------------- 実行

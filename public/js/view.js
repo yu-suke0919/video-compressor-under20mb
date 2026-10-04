@@ -9,8 +9,9 @@ import { customName, fileBase, passthroughName, randDigits, updateNamePreview } 
 import { readSettings, syncResOption } from './settings.js';
 import { errorLines, isWebKit } from './media.js';
 import { currentPlan, isFullTrim } from './plan.js';
+import { planParts, showPlanText, showPrecompressHints } from './estimate.js';
 import { copyLabel, isFullTrimOf, trimOnlyEstimate } from './fast.js';
-import { blobDuration, planParts, pre, prePlan, scheduleProbe, showPlanText, showPrecompressHints } from './precompress.js';
+import { blobDuration, pre, prePlan, scheduleProbe } from './precompress.js';
 import { easyResFixed, updateAdjust } from './adjust.js';
 
 // ---------------------------------------------------------------- 表示の更新

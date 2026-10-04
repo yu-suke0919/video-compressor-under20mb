@@ -410,7 +410,7 @@ npm install
 npm run test:videos   # テスト用の動画を tools/test/videos/ に作る（最初の1回だけ。約2分・約470MB。名前に大きさが入った動画は、その大きさで作れたかも確かめる）
 npm test              # すべてのテストを実行（約11分）
 npm test -- strip.spec.js   # 一部だけ実行するとき
-npm run test:unit     # 計算だけの関数（public/js/calc.js）の単体テスト（ブラウザ不要。1秒かからない）
+npm run test:unit     # 計算だけの関数（public/js/calc.js・fmp4.js）の単体テスト（ブラウザ不要。1秒かからない）
 npm run lint          # ESLint（未定義・未使用の名前、モジュールをまたいだ代入など）
 ```
 
@@ -491,7 +491,9 @@ iPhone・Android の実機では、`https://maka-u20mb.pages.dev/selftest.html` 
 | `media.js` | 端末の対応判定、動画のメタ情報（解像度・fps・音声）、音声の扱い |
 | `load.js` | 選んだ動画の読み込みと解析 |
 | `plan.js` | 今の画面の設定での計画（`currentPlan`。先行圧縮の予想を当てはめる） |
-| `precompress.js` | 先行圧縮（裏で全体を圧縮してサイズを予想し、押したら範囲を切り出してすぐ結果にする） |
+| `precompress.js` | 先行圧縮（裏で全体を圧縮し、始め方・止め方・持つルール、押したら範囲を切り出してすぐ結果にする） |
+| `estimate.js` | 先行圧縮の予想：計画に実測を当てはめ（`withEstimate`）、予想の行・即出力の大きさ・トリミングの帯・診断情報に出す |
+| `fmp4.js` | 先行圧縮の書き出し（区切りごとの MP4）を読む：1コマごとの表を作り、切り出し用に1つのファイルにまとめる（画面にも状態にも触らない） |
 | `fast.js` / `compat.js` | 高速モード（Mediabunny の Conversion）・トリミングのみ ／ 互換モード（`<video>` を再生しながら取り込み） |
 | `run.js` | 圧縮の実行：`run()`（準備 → 1回ぶんの圧縮 `attempt()` → 結果かエラー）。1回ぶんのあとは `calc.js` の判断に従って、圧縮し直し・互換モードへの切り替え・別のアプリから戻ってのやり直しなどをする。画面スリープ防止 |
 | `view.js` | 画面の出し直し（予想の行・注意・ボタン）、圧縮結果の表示、共有・保存 |
@@ -500,7 +502,7 @@ iPhone・Android の実機では、`https://maka-u20mb.pages.dev/selftest.html` 
 
 決まり（`npm run lint` で一部を確かめる）:
 - **読み込んだ時点で動く処理（画面の配線・起動）は `main.js` だけ**に置きます。ほかのモジュールは関数と値の宣言だけにします（モジュールどうしは互いに読み込み合うので、読み込む順番に頼らないため）。
-- **`constants.js`・`calc.js`・`dom.js`・`state.js` はほかのモジュールを読み込みません**（`calc.js` は `constants.js` だけ）。`calc.js` は画面にも状態にも触らないので、Node の単体テスト（`tools/test/unit/`）でそのまま試せます。計算を足すときはここに置き、単体テストも足します。
+- **`constants.js`・`calc.js`・`fmp4.js`・`dom.js`・`state.js` はほかのモジュールを読み込みません**（`calc.js` は `constants.js` だけ）。`calc.js`・`fmp4.js` は画面にも状態にも触らないので、Node の単体テスト（`tools/test/unit/`。`fmp4.js` は `fixtures/` の小さな mp4 で試す）でそのまま試せます。計算を足すときはここに置き、単体テストも足します。
 - **モジュールの変数を書き換えるのは、宣言したモジュールの中だけ**です（ES モジュールでは、読み込んだ側からは書き換えられない）。ほかから変えるときは、宣言したモジュールに関数を用意します（例：`precompress.js` の `forgetPre()`、`naming.js` の `resetNaming()`）。
 - 画面の設定を足すときは、`settings.js` の `SETTING_DEFS` に1つ足せば、保存・初期値に戻す・URL の読み取りと作成に反映されます。
 
