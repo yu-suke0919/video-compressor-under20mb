@@ -61,7 +61,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-04c';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-04d';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -2733,9 +2733,6 @@
       notifyUpdate();
     });
   }
-
-  // 画面に出す解像度の名前（例: 720p、元の解像度）
-  function resLabel(plan) { return plan.res === 'source' ? '元の解像度' : plan.res + 'p'; }
 
   function describePlan(plan) {
     return plan.res + ' ' + plan.width + 'x' + plan.height + ' mode=' + plan.mode + ' ' + Math.round(plan.videoBitrate / 1000) + 'kbps' +
