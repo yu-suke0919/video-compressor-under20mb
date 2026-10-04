@@ -4,7 +4,7 @@ import { makePlan } from './calc.js';
 import { state } from './state.js';
 import { readSettings } from './settings.js';
 import { audioStrategy } from './media.js';
-import { withEstimate } from './precompress.js';
+import { withEstimate } from './estimate.js';
 
 // ---------------------------------------------------------------- 圧縮プラン
 
