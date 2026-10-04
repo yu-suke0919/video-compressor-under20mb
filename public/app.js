@@ -61,7 +61,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-04b';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-04c';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -1524,8 +1524,8 @@
     var tag;
     if (trimEst) tag = '予想・' + copyLabel(plan);
     else {
-      var sure = !!(plan.probed && pre && pre.done && plan.exactEst && !precompressWhyNot(plan));
-      var probe = plan.probed ? (pre.done ? '先行圧縮済み' : '先行圧縮 ' + Math.floor(pre.time / pre.plan.duration * 100) + '%')
+      var sure = !!(plan.probed && pre && preReady(plan) && plan.exactEst && !precompressWhyNot(plan));
+      var probe = plan.probed ? (preReady(plan) ? '先行圧縮済み' : '先行圧縮 ' + Math.floor(pre.time / pre.plan.duration * 100) + '%')
         : pre && pre.file === state.file && (pre.job || preTimer) ? '先行圧縮中' : '';
       tag = (sure ? '確定' : '予想') + (probe ? '・' + probe : '');
     }
@@ -1548,7 +1548,7 @@
     el.appendChild(document.createTextNode(parts.tag + (parts.line3 ? '\n' + parts.line3 : '')));
   }
   function probeLabel(plan) {
-    if (plan.probed) return pre.done ? '（先行圧縮済み）' : '（先行圧縮 ' + Math.floor(pre.time / pre.plan.duration * 100) + '%）';
+    if (plan.probed) return preReady(plan) ? '（先行圧縮済み）' : '（先行圧縮 ' + Math.floor(pre.time / pre.plan.duration * 100) + '%）';
     return pre && pre.file === state.file && (pre.job || preTimer) ? '（先行圧縮中）' : '';
   }
   // 先行圧縮の結果を画面に出す。範囲が目標サイズに収まる長さの目安を超えていれば、トリミングの帯を黄色にする。
@@ -1559,7 +1559,7 @@
     els.trimBox.classList.toggle('is-over', idle && isOverTarget(plan, trimOnlyEstimate(plan)));
     // 「なるべく圧縮」「◯MB以内」それぞれ、押せば先行圧縮をそのまま使えるなら、その大きさを選択肢の下に出す
     var note = '', noteSize = '';
-    if (idle && pre && pre.done) {
+    if (idle && pre && preReady(plan)) {
       var qp = plan.mode === 'quality' ? plan : currentPlan('quality');
       var sp = plan.mode === 'size' ? plan : currentPlan('size');
       var quick = qp.probed ? fmtBytes(qp.estBytes).replace(' ', '') + 'で即出力するよ' : '';
@@ -1582,7 +1582,9 @@
     if (!canProbe() || !state.plan) return;
     var file = state.file;
     var key = preKey(prePlan(state.plan));
-    if (pre && pre.file === file && pre.key === key && (pre.job || pre.done || pre.failed)) return;
+    // 圧縮を始めて途中で止めた先行圧縮も、範囲の終わりまで届いていれば残す（3 から戻って範囲を変えたときに使う）。
+    // 範囲を延ばして届かなくなったら、最初からやり直す
+    if (pre && pre.file === file && pre.key === key && (pre.job || pre.failed || preReady(state.plan))) return;
     if (pre && pre.job) stopPre('設定を変えた');
     if (preTimer && preTimer.key === key) return;
     if (preTimer) clearTimeout(preTimer.id);
@@ -1802,16 +1804,27 @@
         fmtRate(b.videoBitrate) + ' ' + fmtBytes(b.bytes) + '）');
     }
   }
-  function stopPre(why) {
+  // keep … 止めたところまでのデータを残して使う（圧縮を始めたとき・範囲の終わりまで書き出せたとき）。
+  //         画面を離れたとき（iPhone は裏に回ると書き出しを壊す）・設定を変えたときは残さない（戻ったら最初からやり直す）
+  function stopPre(why, keep) {
     if (preTimer) { clearTimeout(preTimer.id); preTimer = null; }
     var job = pre && pre.job;
     if (!job) return Promise.resolve();
     pre.job = null;
+    pre.kept = !!keep;
     if (why) log('先行圧縮を中断（' + why + '・' + pre.time.toFixed(1) + '秒まで）');
     stopJob(job, CANCELLED);
     return job.stopped || Promise.resolve();
   }
 
+  // 先行圧縮が、この範囲について済んでいるか（全体が済んだか、圧縮を始めて止めたところまでで範囲の終わりまで届いている）
+  function preReady(plan) {
+    if (!pre || !plan) return false;
+    if (pre.done) return true;
+    if (!pre.kept || pre.job) return false;
+    var need = Math.min(pre.plan.duration, plan.trimEnd + PRE_TAIL_SEC);   // finishFromPrecompress と同じ
+    return pre.marks[pre.marks.length - 1].t >= need;
+  }
   // 「なるべく圧縮」で、先行圧縮が今の設定と同じで、範囲の始まりまで届いていれば、その先行圧縮（使えなければ null）
   function precompressUsable(plan) {
     return precompressWhyNot(plan) ? null : pre;
@@ -1820,7 +1833,7 @@
     if (!pre || pre.file !== state.file) return '先行圧縮していない';
     if (pre.failed) return '先行圧縮に失敗した';
     if (pre.key !== preKey(prePlan(plan))) return '設定が変わった';
-    if (!pre.done && !pre.job) return '先行圧縮を途中で止めた';
+    if (!pre.done && !pre.job && !preReady(plan)) return '先行圧縮を途中で止めた（' + pre.time.toFixed(1) + '秒まで）';
     if (!pre.done && pre.time < plan.trimStart) return '範囲の始まりまで届いていない（' + pre.time.toFixed(1) + '秒）';
     if (plan.mode === 'size') {
       // 「◯MB以内」は、先行圧縮が範囲の終わりまで済んでいて、切り出した大きさが目標の80%以上・目標未満のときだけ
@@ -1850,7 +1863,7 @@
       })();
     }).then(function () {
       throwIfCancelled(job);
-      var stopping = rec.done ? null : stopPre();   // 範囲の終わりまで書き出せたので、残りは要らない
+      var stopping = rec.done ? null : stopPre(null, true);   // 範囲の終わりまで書き出せたので、残りは今は要らない（3 から戻ったときのために残す）
       if (!rec.done) log('先行圧縮を範囲の終わりで止める（' + rec.time.toFixed(1) + '秒）');
       return Promise.resolve(stopping);
     }).then(function () {
@@ -2492,7 +2505,7 @@
       if (plan.mode === 'size') plan = replan(plan, { bitrate: usePre.plan.videoBitrate });
     } else if (pre && pre.file === state.file && engine === 'fast') log('先行圧縮は使わない（' + precompressWhyNot(plan) + '）');
     // （使わない）先行圧縮の途中なら止め、エンコーダーなどを片付け終わるのを少し待ってから始める
-    var probeStopped = usePre ? Promise.resolve() : stopPre('圧縮を開始');
+    var probeStopped = usePre ? Promise.resolve() : stopPre('圧縮を開始', true);
     var bgRetries = 0;   // 別のアプリに切り替えたためにやり直した回数
     var lastGood = null;     // 圧縮し直す前にできた結果と、その計画（圧縮し直しに失敗したら、こちらを使う）
     var audioRetried = false;   // 元の音声をそのまま使えず、音声を作り直す（外す）やり直しをした

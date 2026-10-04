@@ -86,6 +86,45 @@ test('先行圧縮の途中で押しても、範囲の始まりを越えてい�
   expect(dur).toBeLessThanOrEqual(18.2);
 });
 
+test('3 から戻って範囲を縮めたときは、範囲の終わりで止めた先行圧縮をそのまま使う。範囲を延ばして届かなければ最初からやり直す', async ({ page }) => {
+  const starts = async () => ((await diag(page)).match(/先行圧縮を開始/g) || []).length;
+  await open(page, '?probe=on&mode=quality');
+  await pick(page, '720p-60s.mp4');
+  await setTrim(page, 2.5, 20.5);
+  await waitPc(page, () => { const p = window.__compressor.precomp().pre; return p && !p.done && p.time >= 3; });
+  await compress(page);
+  expect(await diag(page)).toMatch(/先行圧縮を範囲の終わりで止める/);
+  await page.click('#runBtn');   // やり直す（3 の「← 戻る」と同じ）
+  await setTrim(page, 5, 15);
+  await page.waitForTimeout(2000);
+  expect(await starts()).toBe(1);   // やり直さない
+  expect((await ui(page)).planInfo).toMatch(/確定・先行圧縮済み/);
+  await compress(page);
+  const d = await diag(page);
+  expect(d.match(/先行圧縮を使う/g)).toHaveLength(2);
+  expect(d).not.toMatch(/変換を開始/);
+  expect(Math.abs(await outDuration(page) - 10)).toBeLessThan(0.3);
+  // 範囲を延ばして、止めたところより先が要るなら、最初からやり直す
+  await page.click('#runBtn');
+  await setTrim(page, 5, 50);
+  await waitPc(page, () => (document.getElementById('diagOut').value.match(/先行圧縮を開始/g) || []).length >= 2, 10000);
+});
+
+test('「◯MB以内」で先行圧縮を使わずに圧縮しても、止めたところまでの先行圧縮は残し、3 から戻ったときの予想に使う', async ({ page }) => {
+  await open(page, '?probe=on&mode=size&target=10');
+  await pick(page, '1080p60-45s.mp4');   // 720p に縮小するので、トリミングのみにはならない
+  await setTrim(page, 0, 10);
+  await waitPc(page, () => { const p = window.__compressor.precomp().pre; return p && !p.done && p.time >= 12; });
+  await compress(page);
+  const d0 = await diag(page);
+  expect(d0).toMatch(/先行圧縮を中断（圧縮を開始/);
+  await page.click('#runBtn');   // やり直す
+  await setTrim(page, 0, 8);
+  await page.waitForTimeout(2000);
+  expect(((await diag(page)).match(/先行圧縮を開始/g) || []).length).toBe(1);   // やり直さない
+  expect((await ui(page)).planInfo).toMatch(/先行圧縮済み/);
+});
+
 test('先行圧縮が範囲の始まりまで届いていなければ、使わずに範囲だけを圧縮する', async ({ page }) => {
   await open(page, '?probe=on&mode=quality');
   await pick(page, '720p-60s.mp4');
