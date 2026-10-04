@@ -22,6 +22,9 @@
   // ---------------------------------------------------------------- 定数
   var DEFAULT_TARGET_MB = 20;            // Discord無料アカウントの上限（2026年8月に10MBから引き上げ）
   var MIN_TARGET_MB = 1;
+  // 許容する最小サイズ（目標サイズに対する％）。「◯MB以内」で、先行圧縮を切り出した大きさがこれ以上（目標未満）なら、そのまま使う
+  var PRE_USE_PCT_DEFAULT = 80;
+  var PRE_USE_PCT_LIMITS = [50, 100];
   var MAX_TARGET_MB = 500;
   var MB = 1000 * 1000;                  // 1MB = 100万バイト（iPhoneのファイル表示と同じ数え方）
   var SIZE_SAFETY = 0.97;                // 目標サイズの97%を狙う（20MB→19.4MB）。エンコーダの誤差（数%）を吸収して再圧縮を避ける
@@ -58,7 +61,7 @@
   var KEYFRAME_INTERVAL = 2;             // 秒
   var MIN_TRIM_LENGTH = 0.5;             // 秒
   var AUDIO_DECODE_MAX_BYTES = 400 * MB;   // 互換モードで音声を扱うファイルサイズの上限
-  var APP_VERSION = '2026-10-04a';        // 診断情報に出す（どの版で起きたかを見分ける）
+  var APP_VERSION = '2026-10-04b';        // 診断情報に出す（どの版で起きたかを見分ける）
   var CANCELLED = 'cancelled';
   var SNAPSHOT_MAX_BYTES = 600 * MB;     // Android で動画をブラウザ内に写し取る上限（これより大きい動画は写さない）
   var STALLED = 'stalled';
@@ -98,6 +101,7 @@
     sizeLabel: $('sizeLabel'), planInfo: $('planInfo'), planWarn: $('planWarn'),
     targetSize: $('targetSize'), halfFps: $('halfFps'), audioOn: $('audioOn'), audioLabel: $('audioLabel'),
     minRate720: $('minRate720'), minRate1080: $('minRate1080'), autoRun: $('autoRun'), capLabel: $('capLabel'),
+    preUse: $('preUse'), preUseLabel: $('preUseLabel'),
     urlCopy: $('urlCopy'), urlStatus: $('urlStatus'),
     resetSettings: $('resetSettings'), runBtn: $('runBtn'), progressWrap: $('progressWrap'), progressBar: $('progressBar'), progressNote: $('progressNote'),
     phase: $('phase'), pct: $('pct'),
@@ -284,6 +288,12 @@
     return Math.min(MIN_KBPS_LIMITS[1], Math.max(MIN_KBPS_LIMITS[0], Math.round(v)));
   }
   function resValue(v) { return v === '1080' || v === 'source' || v === '480' ? v : '720'; }
+  // 許容する最小サイズ（目標サイズに対する％）。入力がおかしければ初期値、範囲外なら範囲に収める
+  function readPreUsePct() {
+    var v = parseFloat(els.preUse.value);
+    if (!isFinite(v)) v = PRE_USE_PCT_DEFAULT;
+    return Math.min(PRE_USE_PCT_LIMITS[1], Math.max(PRE_USE_PCT_LIMITS[0], Math.round(v)));
+  }
 
   function isStandardRes(meta) {
     var shortSide = Math.min(meta.width, meta.height);
@@ -309,6 +319,8 @@
       targetMB: mb,
       // 上限（この値「未満」に収める）。見積もりはこの97%を狙う
       targetBytes: Math.floor(mb * MB),
+      // 許容する最小サイズ（目標サイズに対する割合）。「◯MB以内」で、先行圧縮を切り出した大きさがこれ以上なら、そのまま使う
+      preUseRatio: readPreUsePct() / 100,
       halfFps: !!els.halfFps.checked,
       audio: !!els.audioOn.checked,
       autoRun: !!els.autoRun.checked,
@@ -539,6 +551,7 @@
       toUrl: String
     },
     numberSetting('target', 'targetSize', DEFAULT_TARGET_MB, MIN_TARGET_MB, MAX_TARGET_MB, false, readTargetMB),
+    numberSetting('preuse', 'preUse', PRE_USE_PCT_DEFAULT, PRE_USE_PCT_LIMITS[0], PRE_USE_PCT_LIMITS[1], true, readPreUsePct),
     numberSetting('min720', 'minRate720', DEFAULT_MIN_KBPS['720'], MIN_KBPS_LIMITS[0], MIN_KBPS_LIMITS[1], true,
       function () { return readKbps(els.minRate720, DEFAULT_MIN_KBPS['720']); }),
     numberSetting('min1080', 'minRate1080', DEFAULT_MIN_KBPS['1080'], MIN_KBPS_LIMITS[0], MIN_KBPS_LIMITS[1], true,
@@ -596,7 +609,7 @@
     } catch (e) { return false; }
   }
   // ショートカットなどから URL で初期値を渡せる（詳細設定の項目も含む）
-  //   res=720|1080|source  mode=size|quality  target=MB  min720=kbps  min1080=kbps  fps=30|source  auto=on|off  audio=on|off
+  //   res=720|1080|source  mode=size|quality  target=MB  preuse=%  min720=kbps  min1080=kbps  fps=30|source  auto=on|off  audio=on|off
   function applyUrlParams() {
     var params;
     try { params = new URLSearchParams(window.location.search); } catch (e) { return; }
@@ -932,6 +945,7 @@
       mode: settings.mode, res: settings.res, halfFps: settings.halfFps,
       wantAudio: !!settings.audio,                     // 「音声を残す」（圧縮を始めたときの設定。やり直しでもこれを使う）
       targetMB: settings.targetMB, targetBytes: settings.targetBytes, minBitrate: settings.minBitrate,
+      preUseRatio: settings.preUseRatio,
       trimStart: trim.start, trimEnd: trim.end, duration: duration,
       srcFps: srcFps, outFps: outFps, fpsChanged: Math.abs(outFps - srcFps) > 0.05,
       width: width, height: height, videoBitrate: videoBps, floorBitrate: minBps, videoCapBps: videoCapBps || null,
@@ -998,6 +1012,7 @@
     els.sizeLabel.textContent = String(s.targetMB);
     // 狙うサイズは丸めずに見せる（例: 50MB → 48.5 MB、33MB → 32.01 MB）
     els.capLabel.textContent = String(Math.round(s.targetBytes * SIZE_SAFETY / MB * 100) / 100) + ' MB';
+    els.preUseLabel.textContent = String(Math.round(s.targetBytes * s.preUseRatio / MB * 100) / 100) + ' MB';
     var hasFile = !!(state.file && state.meta);
     var locked = state.running || state.busy;
     // 圧縮が終わったら「やり直す」を押すまで、トリミングと設定を変えられないようにする
@@ -1006,7 +1021,7 @@
     [els.trimStart, els.trimEnd].forEach(function (el) { el.disabled = !hasFile || locked || done; });
     // シークバーは圧縮後も元動画の確認に使えるようにする（圧縮中だけ止める）
     els.trimSeek.disabled = !hasFile || locked;
-    [els.res720, els.res1080, els.resSource, els.modeQuality, els.modeSize, els.targetSize, els.halfFps, els.audioOn,
+    [els.res720, els.res1080, els.resSource, els.modeQuality, els.modeSize, els.targetSize, els.preUse, els.halfFps, els.audioOn,
       els.minRate720, els.minRate1080, els.autoRun, els.nameOn, els.resetSettings].forEach(function (el) { el.disabled = state.running || done; });
     if (isSmallSource(state.meta)) els.res1080.disabled = true;   // 720p以下の動画は 1080p を選べない
     if (els.res480) els.res480.disabled = state.running || done;
@@ -1398,7 +1413,8 @@
   // （目標いっぱいまで使って圧縮し直しても、大きさ・画質はほとんど変わらないので、すぐ出せる方を選ぶ。
   // 指定の約2倍で書き出す端末（Android・Windows）では、圧縮し直すと1回目が目標を超え、何回も圧縮し直したうえで
   // 先行圧縮とほぼ同じ大きさになることがある（Android：先行圧縮 18.6MB を使わず、3回圧縮して 19.4MB）。余裕をもって80%にする）
-  var PRE_SIZE_USE_RATIO = 0.80;
+  // 詳細設定の「許容する最小サイズ」（％。PRE_USE_PCT_DEFAULT）で変えられる。100% にすると、「◯MB以内」では先行圧縮を使わない
+  function preUseRatioOf(plan) { return plan.preUseRatio > 0 ? plan.preUseRatio : PRE_USE_PCT_DEFAULT / 100; }
   var PRE_DELAY_MS = 1500;           // 設定を変えてから先行圧縮をやり直すまで待つ（続けて変えたときに何度もやり直さない）
   var PRE_FRAGMENT_SEC = 1;          // 先行圧縮の書き出しの区切りの最短の長さ（実際はキーフレームごと＝約2秒ごとに書き出される）
   var PRE_TAIL_SEC = 1;              // 範囲の終わりからこれだけ先まで書き出せたら、範囲の終わりまで書き出せたとみる
@@ -1466,7 +1482,7 @@
       // 押したら先行圧縮をそのまま使う大きさ（目標の80%以上・目標未満）なら、切り出したときの大きさを予想にする
       var cut = null;
       try { cut = exactCutBytes(plan, pre); } catch (e) { cut = null; }
-      if (cut && cut >= p.targetBytes * PRE_SIZE_USE_RATIO && cut < p.targetBytes) { p.estBytes = cut; p.exactEst = true; }
+      if (cut && cut >= p.targetBytes * preUseRatioOf(p) && cut < p.targetBytes) { p.estBytes = cut; p.exactEst = true; }
     } else {
       // なるべく圧縮：先行圧縮が範囲の終わりまで済んでいれば、切り出したときの大きさ（1コマごとの表から数える）
       p.probeOver = false;
@@ -1812,7 +1828,9 @@
       try { cut = exactCutBytes(plan, pre); } catch (e) { cut = null; }
       if (!cut) return '「◯MB以内」で、先行圧縮が範囲の終わりまで済んでいない';
       if (cut >= plan.targetBytes) return '「◯MB以内」で、先行圧縮の大きさ（' + fmtBytes(cut) + '）が目標以上';
-      if (cut < plan.targetBytes * PRE_SIZE_USE_RATIO) return '「◯MB以内」で、先行圧縮の大きさ（' + fmtBytes(cut) + '）が目標の' + Math.round(PRE_SIZE_USE_RATIO * 100) + '%未満';
+      if (cut < plan.targetBytes * preUseRatioOf(plan)) {
+        return '「◯MB以内」で、先行圧縮の大きさ（' + fmtBytes(cut) + '）が許容する最小サイズ（目標の' + Math.round(preUseRatioOf(plan) * 100) + '%）未満';
+      }
     }
     return '';
   }
@@ -2716,7 +2734,7 @@
   function planSettings(plan) {
     return {
       mode: plan.mode, res: plan.res, halfFps: plan.halfFps, audio: plan.wantAudio,
-      targetMB: plan.targetMB, targetBytes: plan.targetBytes, minBitrate: plan.minBitrate
+      targetMB: plan.targetMB, targetBytes: plan.targetBytes, minBitrate: plan.minBitrate, preUseRatio: plan.preUseRatio
     };
   }
   // 同じ範囲・同じ設定のまま、一部だけ変えて計画し直す（再圧縮・互換モードへの切り替え・トリミングのみからの切り替え）
@@ -3313,6 +3331,11 @@
       el.value = String(readKbps(el, DEFAULT_MIN_KBPS[el === els.minRate720 ? '720' : '1080']));   // 確定したら正規化
       refresh();
     });
+  });
+  els.preUse.addEventListener('input', refresh);
+  els.preUse.addEventListener('change', function () {
+    els.preUse.value = String(readPreUsePct());   // 確定したら正規化
+    refresh();
   });
   els.targetSize.addEventListener('input', refresh);
   els.targetSize.addEventListener('change', function () {
