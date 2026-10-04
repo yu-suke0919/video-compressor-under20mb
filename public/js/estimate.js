@@ -10,7 +10,7 @@ import { isCompressed } from './view.js';
 import { copyLabel, trimOnlyEstimate } from './fast.js';
 import { cutBytes, pre, prePlan, preReady, preTimer, precompressWhyNot } from './precompress.js';
 
-export var FIT_MARGIN = 0.95;             // 「約◯秒まで◯MBに収まるよ」は、実測の平均で収まる秒数のこの割合を出す
+var FIT_MARGIN = 0.95;             // 「約◯秒まで◯MBに収まるよ」は、実測の平均で収まる秒数のこの割合を出す
 // 計画に先行圧縮の予想を当てはめる（今の設定の先行圧縮がまだ何も書き出していなければ、そのまま）
 //   probed      … 先行圧縮の予想を使った
 //   expectedBps … 映像のビットレートの予想（予想のサイズから求める）
@@ -83,7 +83,7 @@ export function showPlanText(parts) {
   el.appendChild(size);
   el.appendChild(document.createTextNode(parts.tag + (parts.line3 ? '\n' + parts.line3 : '')));
 }
-export function probeLabel(plan) {
+function probeLabel(plan) {
   if (plan.probed) return preReady(plan) ? '（先行圧縮済み）' : '（先行圧縮 ' + Math.floor(pre.time / pre.plan.duration * 100) + '%）';
   return pre && pre.file === state.file && (pre.job || preTimer) ? '（先行圧縮中）' : '';
 }

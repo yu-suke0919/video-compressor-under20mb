@@ -17,8 +17,8 @@ import { resetAdjust, resetEasyName } from './adjust.js';
 // Android では、ファイル選択で渡された動画が時間が経つと読めなくなることがある（TypeError: network error）。
 // 読めるうちに中身をブラウザ内に写し取り、以降はその写しを使う（大きすぎる動画は写さない）
 // 選んだ直後に、端末が動画を一時的に読ませてくれないことがある（NotReadableError）。少し待って1回だけ読み直す
-export var READ_RETRY_MS = 800;
-export function snapshotFile(file) {
+var READ_RETRY_MS = 800;
+function snapshotFile(file) {
   if (!/Android/i.test(navigator.userAgent || '') || file.size > SNAPSHOT_MAX_BYTES) return Promise.resolve(file);
   var t0 = Date.now();
   function read(retry) {
@@ -34,7 +34,7 @@ export function snapshotFile(file) {
   return read(false);
 }
 // 動画の中身ではなく、端末から受け取るところで失敗したか（Android で選んだ直後などに一時的に起きる）
-export function isReadError(err) {
+function isReadError(err) {
   if (!err) return false;
   return err.name === 'NotReadableError' || err.name === 'NotFoundError' ||
     (err.name === 'TypeError' && /network error/i.test(err.message || ''));
@@ -52,7 +52,7 @@ export function onFileChosen(picked) {
   });
 }
 
-export function loadChosenFile(file) {
+function loadChosenFile(file) {
   forgetPre();
   state.busy = true;
   state.loadError = null;
@@ -133,7 +133,7 @@ export function loadChosenFile(file) {
 
 // 「動画を選んだらすぐ圧縮」がオンなら、選んだ直後に圧縮を始める。
 // 目標サイズに収まらない（ボタンが無効）ときや、元のままで目標以下（圧縮不要）のときは始めない
-export function autoRunIfEnabled(file) {
+function autoRunIfEnabled(file) {
   if (!els.autoRun.checked || state.file !== file || !state.meta || state.running) return;
   if (els.runBtn.disabled || (state.out && state.out.original)) return;
   run();

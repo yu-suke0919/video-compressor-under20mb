@@ -2,7 +2,7 @@
 
 export function boxType(buf, o) { return String.fromCharCode(buf[o], buf[o + 1], buf[o + 2], buf[o + 3]); }
 // buf の [start, end) にある箱を順に fn(type, 中身の始まり, 終わり) で渡す
-export function eachBox(buf, dv, start, end, fn) {
+function eachBox(buf, dv, start, end, fn) {
   var o = start;
   while (o + 8 <= end) {
     var size = dv.getUint32(o), head = 8;
@@ -44,7 +44,7 @@ export function parseFragments(rec) {
     rec.parseOff += size;
   }
 }
-export function parseMoov(rec, buf, dv, size) {
+function parseMoov(rec, buf, dv, size) {
   eachBox(buf, dv, 8, size, function (type, s, e) {
     if (type === 'trak') {
       var t = { timescale: 1000, kind: null, id: 0 };
@@ -69,7 +69,7 @@ export function parseMoov(rec, buf, dv, size) {
     }
   });
 }
-export function parseMoof(rec, buf, dv, size) {
+function parseMoof(rec, buf, dv, size) {
   eachBox(buf, dv, 8, size, function (type, s, e) {
     if (type !== 'traf') return;
     var tr = null, dur = 0, sz = 0, flags = 0, dts = 0;

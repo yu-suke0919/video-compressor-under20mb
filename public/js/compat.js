@@ -8,7 +8,7 @@ import { MSG_CANVAS_FAIL, MSG_NO_H264, MSG_PLAY_FAILED, MSG_PLAY_LOW_POWER, borr
 import { ENCODER_ORDER, newMp4Output, outputBlob } from './fast.js';
 
 // ---------------------------------------------------------------- 互換モード（再生しながら取り込み）
-export function findCompatVideoConfig(plan, job) {
+function findCompatVideoConfig(plan, job) {
   var cands = [];
   ENCODER_ORDER.forEach(function (o) {
     COMPAT_VIDEO_CODECS.forEach(function (c) {
@@ -40,7 +40,7 @@ export function findCompatVideoConfig(plan, job) {
   })(0);
 }
 
-export function drain(encoder, max, job) {
+function drain(encoder, max, job) {
   return new Promise(function (resolve, reject) {
     (function check() {
       if (job && job.cancelled) return reject(new Error(CANCELLED));
@@ -51,7 +51,7 @@ export function drain(encoder, max, job) {
 }
 
 // 音声: ファイル全体をWeb Audioでデコードし、トリミング範囲だけAACへ再エンコードする
-export function encodeCompatAudio(plan, onProgress, job) {
+function encodeCompatAudio(plan, onProgress, job) {
   var key = plan.trimStart + '-' + plan.trimEnd;
   if (state.compatAudio && state.compatAudio.key === key) return Promise.resolve(state.compatAudio.data);
   var decoded = null;
@@ -90,8 +90,8 @@ export function encodeCompatAudio(plan, onProgress, job) {
 // iPhone の Safari（WebKit）の AudioEncoder は、AAC の設定データ（AudioSpecificConfig）の代わりに、
 // MP4 の入れ物（esds）ごと入れてくる（https://bugs.webkit.org/show_bug.cgi?id=302253）。
 // そのまま書くと、書き出した動画の音声が正しく読めないので、Mediabunny と同じく、設定データを作り直す
-export var AAC_RATES = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
-export function aacSpecificConfig(sampleRate, channels) {
+var AAC_RATES = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+function aacSpecificConfig(sampleRate, channels) {
   // 種類（2: AAC-LC）5ビット・サンプリング周波数の番号 4ビット（一覧にないときは 15 と周波数 24ビット）・チャンネル数 4ビット・残り3ビットは0
   var bits = [], idx = AAC_RATES.indexOf(sampleRate);
   function put(v, n) { for (var i = n - 1; i >= 0; i--) bits.push((v >> i) & 1); }
@@ -103,7 +103,7 @@ export function aacSpecificConfig(sampleRate, channels) {
   bits.forEach(function (b, i) { if (b) out[i >> 3] |= 0x80 >> (i & 7); });
   return out;
 }
-export function fixAacMeta(meta) {
+function fixAacMeta(meta) {
   var dc = meta && meta.decoderConfig;
   if (!dc) return meta;
   var d = dc.description, bytes = null;
@@ -114,7 +114,7 @@ export function fixAacMeta(meta) {
     description: aacSpecificConfig(dc.sampleRate, dc.numberOfChannels) } };
 }
 
-export function runAudioEncoder(audioBuffer, from, to, channels, sampleRate, config, onProgress, job) {
+function runAudioEncoder(audioBuffer, from, to, channels, sampleRate, config, onProgress, job) {
   return new Promise(function (resolve, reject) {
     var packets = [];
     var encoder = new AudioEncoder({
@@ -168,7 +168,7 @@ export function runAudioEncoder(audioBuffer, from, to, channels, sampleRate, con
 // 映像: <video> をトリミング範囲だけ再生し、フレームを取り出してエンコードする
 // 取り込んだコマを描く面。OffscreenCanvas を使い、そこから VideoFrame を作れない環境では、ふつうの canvas に切り替える。
 // 作れなければ null
-export function frameSurface(width, height) {
+function frameSurface(width, height) {
   function make(offscreen) {
     var c;
     if (offscreen && typeof OffscreenCanvas !== 'undefined') c = new OffscreenCanvas(width, height);
@@ -198,7 +198,7 @@ export function frameSurface(width, height) {
   };
 }
 
-export function encodeCompatVideo(videoEl, plan, config, onPacket, onProgress, job) {
+function encodeCompatVideo(videoEl, plan, config, onPacket, onProgress, job) {
   // キャンセル済みなら、プレビューの動画（ミュート・再生位置など）に触れずに終える
   if (job.cancelled) return Promise.reject(new Error(CANCELLED));
   var width = plan.width, height = plan.height;

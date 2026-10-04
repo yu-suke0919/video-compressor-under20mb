@@ -17,7 +17,7 @@ import { easyResFixed, updateAdjust } from './adjust.js';
 // ---------------------------------------------------------------- 表示の更新
 // 圧縮前は元動画を大きく、圧縮が終わったら圧縮後の動画を大きく表示する。
 // 元のまま共有できる（圧縮不要）ときや、圧縮し直している間は、元動画を大きくする
-export function updateMediaLayout() {
+function updateMediaLayout() {
   var done = isCompressed();
   els.srcBox.classList.toggle('is-large', !done);
   els.srcBox.classList.toggle('is-small', done);
@@ -34,7 +34,7 @@ export function refresh() {
 export function notifyUpdate() {
   try { document.dispatchEvent(new CustomEvent('compressor:update')); } catch (e) { /* noop */ }
 }
-export function refreshUi() {
+function refreshUi() {
   updateMediaLayout();
   syncResOption();
   var s = readSettings();
@@ -121,7 +121,7 @@ export function stripNeeds(settings) {
   return { location: meta.hasLocation !== false, audio: !settings.audio && meta.audio !== null };
 }
 // すでに目標サイズ以下なら、圧縮せずそのまま共有・保存できるようにする
-export function updatePassthrough(settings) {
+function updatePassthrough(settings) {
   if (state.running) return;
   // 位置情報や音声を取り除く必要がある動画は、元の動画をそのまま渡さない（「圧縮する」で取り除いて書き出す）
   var need = stripNeeds(settings);
@@ -140,7 +140,7 @@ export function updatePassthrough(settings) {
 }
 
 // ---------------------------------------------------------------- 結果
-export function setOutput(out) {
+function setOutput(out) {
   clearOutput();
   out.url = URL.createObjectURL(out.blob);
   state.out = out;
@@ -179,7 +179,7 @@ export function clearOutput() {
 }
 
 // 今の動画の先行圧縮で、この端末ではそれ以上ビットレートを下げられないと分かっているか
-export function deviceFloorKnown(plan) {
+function deviceFloorKnown(plan) {
   return !!(pre && pre.file === state.file && pre.floorHit && pre.key === preKey(prePlan(plan)));
 }
 export function showResult(res, plan, engine, elapsed) {
@@ -243,7 +243,7 @@ export function showResult(res, plan, engine, elapsed) {
 }
 
 // ---------------------------------------------------------------- 共有・保存
-export function outFile() {
+function outFile() {
   return new File([state.out.blob], state.out.name, { type: state.out.type || 'video/mp4' });
 }
 
@@ -265,7 +265,7 @@ export function share() {
   });
 }
 
-export function showShareProblem(message) {
+function showShareProblem(message) {
   console.warn(message);
   setAlert(els.outWarn, [message], true);
 }

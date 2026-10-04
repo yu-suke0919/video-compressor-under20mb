@@ -9,7 +9,7 @@ import { withEstimate } from './estimate.js';
 // ---------------------------------------------------------------- 圧縮プラン
 
 // 範囲が動画の全体か（ほんの少し（0.05秒以内）ずれているだけなら全体とみなす）
-export var FULL_RANGE_MARGIN = 0.05;
+var FULL_RANGE_MARGIN = 0.05;
 export function isFullRange(start, end) {
   if (!state.meta) return true;
   return start <= FULL_RANGE_MARGIN && end >= state.meta.duration - FULL_RANGE_MARGIN;

@@ -19,7 +19,7 @@ import { clearOutput, isCompressed, refresh } from './view.js';
 //   1080p より大きい動画（4K など）は、ほかの動画と同じく解像度を選べる
 //   2 で、解像度・fps・圧縮方法をその動画だけ変えられる（adjust。保存しない）
 export var easyPreset = null;       // 3ステップの画面で選んだもの（quality・size・custom）
-export var EASY_PRESETS = {
+var EASY_PRESETS = {
   // なるべく圧縮：720p・30fps・指定ビットレートは初期値
   quality: { res: '720', mode: 'quality', halfFps: true },
   // 画質優先（20MB以内）：元の画質とfpsのまま、20MB に収まるなるべく高いビットレート
@@ -44,8 +44,8 @@ export function resetEasyName() { easyName = ''; easyNameTouched = false; easyNa
 export function easyResFixed() {
   return !!state.meta && !isStandardRes(state.meta) && Math.min(state.meta.width, state.meta.height) <= 1080 + 8;
 }
-export var ADJ_RES = ['480', '720', '1080', 'source'];
-export function adjResEl(r) { return $(r === 'source' ? 'adjResSource' : 'adjRes' + r); }
+var ADJ_RES = ['480', '720', '1080', 'source'];
+function adjResEl(r) { return $(r === 'source' ? 'adjResSource' : 'adjRes' + r); }
 export function updateAdjust(enabled) {
   if (!$('adjBox')) return;
   var hasFile = !!(state.file && state.meta);
@@ -100,8 +100,8 @@ export function updateAdjust(enabled) {
   $('resFixedNote').textContent = easyResFixed() ? notes[0] : '';
   show($('resFixedNote'), easyResFixed());
 }
-export function adjustable() { return !!state.meta && !state.running && !state.busy && !isCompressed(); }
-export function logAdjust(what) {
+function adjustable() { return !!state.meta && !state.running && !state.busy && !isCompressed(); }
+function logAdjust(what) {
   log('2 で変更 ' + what + '（解像度 ' + (adjust.res || '設定のまま') + '・fps ' + (adjust.halfFps === null ? '設定のまま' : adjust.halfFps ? '30' : '元のまま') +
     '・圧縮方法 ' + (adjust.mode || '設定のまま') + '）');
 }
@@ -145,9 +145,9 @@ export function setupAdjust() {
 // 今の設定（2 で変えた値を含む）がテンプレートと同じならその名前、違えば「カスタム」にする（「詳しく設定する」で選んだときも同じ）。
 // 動画を選んでいれば、書き出す動画が同じになるか（解像度・fps・圧縮方法・ビットレート・目標サイズ・音声）で比べる
 // （1080p の動画の「元の解像度」と「1080p」、30fps の動画の「60fpsを30fpsにする」のあり・なしなどは同じとみる）
-export var RULE_NAMES = { quality: 'なるべく圧縮', size: '画質優先（20MB以内）' };
-export var RULE_CUSTOM = 'カスタム';
-export function templateSettings(name) {
+var RULE_NAMES = { quality: 'なるべく圧縮', size: '画質優先（20MB以内）' };
+var RULE_CUSTOM = 'カスタム';
+function templateSettings(name) {
   var p = EASY_PRESETS[name];
   var s = {
     res: easyResFixed() ? 'source' : p.res, mode: p.mode, halfFps: p.halfFps, audio: true, autoRun: false,
@@ -157,7 +157,7 @@ export function templateSettings(name) {
   s.minBitrate['480'] = Math.round(s.minBitrate['720'] * 4 / 9);
   return s;
 }
-export function sameRule(a, b) {
+function sameRule(a, b) {
   if (a.mode !== b.mode || a.audio !== b.audio || (a.mode === 'size' && a.targetBytes !== b.targetBytes)) return false;
   if (!state.meta || !state.file) {
     return a.res === b.res && a.halfFps === b.halfFps &&

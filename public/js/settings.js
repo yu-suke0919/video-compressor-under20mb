@@ -9,7 +9,7 @@ import { isCompressed, refresh } from './view.js';
 import { adjust, easyPreset, easyResFixed } from './adjust.js';
 
 // ---------------------------------------------------------------- 設定
-export function radioValue(name, fallback) {
+function radioValue(name, fallback) {
   var el = document.querySelector('input[name="' + name + '"]:checked');
   return el ? el.value : fallback;
 }
@@ -28,7 +28,7 @@ export function syncResOption() {
   els.res1080.classList.toggle('is-locked', isSmallSource(state.meta));
 }
 // 目標サイズ（MB）。入力がおかしければ初期値、上限を超えたら上限にする
-export function readTargetMB() {
+function readTargetMB() {
   var mb = parseFloat(els.targetSize.value);
   if (!isFinite(mb) || mb < MIN_TARGET_MB) mb = DEFAULT_TARGET_MB;
   return Math.min(mb, MAX_TARGET_MB);
@@ -64,7 +64,7 @@ export function readSettings() {
 }
 // ---------------------------------------------------------------- 設定の一覧
 // チェックボックスの設定
-export function checkSetting(key, url, id, def, fromUrl, toUrl) {
+function checkSetting(key, url, id, def, fromUrl, toUrl) {
   return {
     key: key, url: url, def: def, ids: [id],
     read: function () { return !!els[id].checked; },
@@ -74,7 +74,7 @@ export function checkSetting(key, url, id, def, fromUrl, toUrl) {
   };
 }
 // 数値の設定（範囲外は無視する）
-export function numberSetting(key, id, def, min, max, round, read) {
+function numberSetting(key, id, def, min, max, round, read) {
   return {
     key: key, url: key, def: def, ids: [id], read: read,
     write: function (v) {
@@ -156,7 +156,7 @@ export function resetSettings() {
 }
 
 // ファイル名の設定の URL での名前（name=date,text1,opt と、自由入力の text1=… text2=…）
-export var SETTING_PARAMS = SETTING_DEFS.map(function (d) { return d.url; }).concat(['name', 'text1', 'text2']);
+var SETTING_PARAMS = SETTING_DEFS.map(function (d) { return d.url; }).concat(['name', 'text1', 'text2']);
 export function hasSettingParams() {
   try {
     var params = new URLSearchParams(window.location.search);

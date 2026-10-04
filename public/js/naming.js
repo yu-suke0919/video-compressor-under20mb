@@ -8,7 +8,7 @@ import { easyName, easyNameTouched } from './adjust.js';
 
 // ---------------------------------------------------------------- 書き出す動画のファイル名
 // 詳細設定でオンにすると、選んだ項目を選んだ順に「_」でつないだ名前にする（全部オフなら今までの名前）
-export var NAME_PARTS = [
+var NAME_PARTS = [
   { key: 'date', label: '日付' },
   { key: 'datetime', label: '日付+時間' },
   { key: 'text1', label: '自由入力' },
@@ -17,10 +17,10 @@ export var NAME_PARTS = [
   { key: 'opt', label: '圧縮オプション' },
   { key: 'orig', label: '元のファイル名' }
 ];
-export var NAME_KEYS = NAME_PARTS.map(function (p) { return p.key; });
-export var NAME_TEXT_MAX = 10;    // 自由入力の文字数
-export var NAME_ORIG_MAX = 30;    // 元のファイル名の文字数
-export function defaultNaming() {
+var NAME_KEYS = NAME_PARTS.map(function (p) { return p.key; });
+var NAME_TEXT_MAX = 10;    // 自由入力の文字数
+var NAME_ORIG_MAX = 30;    // 元のファイル名の文字数
+function defaultNaming() {
   return { on: false, order: NAME_KEYS.slice(), enabled: ['date', 'text1', 'opt'], text: { text1: '', text2: '' } };
 }
 export var naming = defaultNaming();
@@ -36,17 +36,17 @@ export function cleanText(v) {
   return Array.from(String(v || '').replace(/[^\p{L}\p{N}_-]/gu, '')).slice(0, NAME_TEXT_MAX).join('');
 }
 // ファイル名は多くの端末で 255 バイトまでなので、拡張子のぶんを残して 200 バイトに収める
-export var NAME_MAX_BYTES = 200;
-export function limitBytes(t) {
+var NAME_MAX_BYTES = 200;
+function limitBytes(t) {
   var chars = Array.from(t);
   var enc = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
   var size = function (x) { return enc ? enc.encode(x).length : unescape(encodeURIComponent(x)).length; };
   while (chars.length && size(chars.join('')) > NAME_MAX_BYTES) chars.pop();
   return chars.join('');
 }
-export function pad2(n) { return (n < 10 ? '0' : '') + n; }
+function pad2(n) { return (n < 10 ? '0' : '') + n; }
 // ランダムな英数字4文字（数字だけだと意味があるように見えるため。見間違えやすい 0 o 1 l i は使わない）
-export var RAND_CHARS = 'abcdefghjkmnpqrstuvwxyz23456789';
+var RAND_CHARS = 'abcdefghjkmnpqrstuvwxyz23456789';
 export function randDigits() {
   var v = new Uint32Array(4), out = '';
   try { crypto.getRandomValues(v); } catch (e) { for (var j = 0; j < 4; j++) v[j] = Math.floor(Math.random() * 1e9); }
@@ -70,7 +70,7 @@ export function setNaming(on, enabledKeys, orderKeys) {
   naming.order = order;
 }
 // kind: compressed（圧縮した）/ trimmed（トリミングのみ）/ copy（位置情報だけ除いた）/ original（元の動画のまま）
-export function namePart(key, ctx) {
+function namePart(key, ctx) {
   var d = ctx.now;
   var ymd = d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate());
   if (key === 'date') return ymd;
@@ -157,7 +157,7 @@ export function renderNameList() {
   });
   // ファイル名の例は refresh() で更新する（呼ぶ側は、このあと必ず refresh() する）
 }
-export var previewRand = randDigits();
+var previewRand = randDigits();
 export function updateNamePreview() {
   var name = customName({ kind: 'compressed', now: new Date(), rand: previewRand, base: state.file ? fileBase() : 'IMG_1234', settings: readSettings() });
   els.namePreview.textContent = name ? name + '.mp4' : '（項目がないので今までの名前）' + (state.file ? fileBase() : 'IMG_1234') + '_compressed.mp4';
