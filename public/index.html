@@ -93,6 +93,11 @@
       </div>
       <p class="hint">目標サイズの97%（<span id="capLabel">19.4 MB</span>）を狙って圧縮し、目標サイズ未満に収まらなければ自動で圧縮し直します（1MB＝100万バイト）。</p>
       <div class="row" style="margin-top: 8px">
+        <label for="preUse">許容する最小サイズ（目標サイズの）</label>
+        <span><input id="preUse" type="number" inputmode="numeric" min="50" max="100" step="5" value="80"> %</span>
+      </div>
+      <p class="hint">「MB以内に圧縮」で、先行圧縮の大きさが <span id="preUseLabel">16 MB</span> 以上（目標サイズ未満）なら、圧縮し直さずにすぐ出力します。目標いっぱいまで使うより少し小さくなりますが、待たずに済みます。100%にすると、すぐ出力はしません。</p>
+      <div class="row" style="margin-top: 8px">
         <label for="minRate720">指定ビットレート（720p）</label>
         <span><input id="minRate720" type="number" inputmode="numeric" min="100" max="50000" step="100" value="1200"> kbps</span>
       </div>

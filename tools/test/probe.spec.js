@@ -119,7 +119,7 @@ test('「◯MB以内」でも下限ビットレートで先行圧縮し、範囲
   expect((await ui(page)).planWarn).not.toMatch(/収まらない/);
   await compress(page);
   const d = await diag(page);
-  expect(d).toMatch(/先行圧縮は使わない（「◯MB以内」で、先行圧縮の大きさ（.*）が目標の80%未満）/);   // 10MB の目標に対して小さい
+  expect(d).toMatch(/先行圧縮は使わない（「◯MB以内」で、先行圧縮の大きさ（.*）が許容する最小サイズ（目標の80%）未満）/);   // 10MB の目標に対して小さい
   expect(d).toMatch(/変換を開始/);
 });
 
@@ -268,6 +268,18 @@ test('「◯MB以内」でも、先行圧縮を切り出した大きさが目標
   await page.dispatchEvent('#targetSize', 'change');
   expect(await page.isVisible('#quickNoteSize')).toBe(false);
   expect(await page.isVisible('#quickNote')).toBe(true);
+
+  // 詳細設定の「許容する最小サイズ」を 90% にすると、約85% では使わない（70% にすると使う）
+  await page.fill('#targetSize', String(target));
+  await page.dispatchEvent('#targetSize', 'change');
+  expect(await page.isVisible('#quickNoteSize')).toBe(true);
+  await page.fill('#preUse', '90');
+  await page.dispatchEvent('#preUse', 'change');
+  expect(await page.isVisible('#quickNoteSize')).toBe(false);
+  expect(await page.textContent('#preUseLabel')).toBe(String(Math.round(target * 0.9 * 100) / 100) + ' MB');
+  await page.fill('#preUse', '70');
+  await page.dispatchEvent('#preUse', 'change');
+  expect(await page.isVisible('#quickNoteSize')).toBe(true);
 });
 
 test('VBR の指定を守らない端末（Android）でも、先行圧縮は VBR のまま。押したら圧縮し直さずに切り出し、予想と合う', async ({ page }) => {
