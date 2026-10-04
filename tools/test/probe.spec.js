@@ -39,7 +39,8 @@ test('読み込んだら全体を先行圧縮し、実測の平均ビットレ�
   // 先行圧縮が済んだら、予想は書き出した量とほぼ同じ。表示のビットレートは実測の平均、秒数は収まる秒数の95%
   const r = await pc(page, () => { const p = window.__compressor.state.plan; return { bytes: window.__compressor.precomp().pre.bytes, est: p.estBytes, bps: p.expectedBps, audio: p.audioBitrate, fit: p.fitSec }; });
   expect(Math.abs(r.est - r.bytes) / r.bytes).toBeLessThan(0.02);
-  expect(r.fit).toBe(Math.floor(20000000 * 8 / (r.bps + r.audio) * 0.95));
+  // （表示のビットレートは予想の大きさから逆算した値で、目安の秒数は実測そのものから出すので、切り捨ての境目で1秒ずれることがある）
+  expect(Math.abs(r.fit - Math.floor(20000000 * 8 / (r.bps + r.audio) * 0.95))).toBeLessThanOrEqual(1);
   const label = r.bps >= 1000000 ? (r.bps / 1000000).toFixed(1) + 'Mbps' : Math.round(r.bps / 1000) + 'kbps';
   expect(u.planInfo).toContain('/' + label + '\n→ ');
 });
@@ -230,31 +231,6 @@ test('「動画を選んだらすぐ圧縮」がオンのとき・probe=off の�
   await pick(page, '720p-60s.mp4');
   await page.waitForTimeout(2000);
   expect(await diag(page)).not.toMatch(/先行圧縮/);
-});
-
-test('予想の計算：済んだ所は区切りごとの実測、まだの所は済んだ所の平均。指定が高いときは区切りごとに大きい方', async ({ page }) => {
-  await open(page);
-  const r = await page.evaluate(() => {
-    const c = window.__compressor;
-    // 0〜20秒まで、2秒ごとに 250000バイト（= 1Mbps）。10〜14秒だけ 2倍（2Mbps）。音声 0
-    const marks = [{ t: 0, bytes: 0 }];
-    let total = 0;
-    for (let t = 2; t <= 20; t += 2) { total += (t === 12 || t === 14) ? 500000 : 250000; marks.push({ t, bytes: total }); }
-    const rec = { marks, plan: { audioBitrate: 0 } };
-    return {
-      inside: c.preEstimate({ trimStart: 10, trimEnd: 14 }, rec, 0),
-      half: c.preEstimate({ trimStart: 10, trimEnd: 30 }, rec, 0),
-      raised: c.preEstimate({ trimStart: 0, trimEnd: 20 }, rec, 1500000),
-      none: c.preEstimate({ trimStart: 0, trimEnd: 10 }, { marks: [{ t: 0, bytes: 0 }], plan: { audioBitrate: 0 } }, 0)
-    };
-  });
-  expect(r.inside).toEqual({ videoBps: 2000000, covered: 1 });   // 10〜14秒は実測（2倍の区間）
-  expect(r.half.covered).toBeCloseTo(0.5, 5);
-  // 10〜20秒は実測（2Mbps×4秒＋1Mbps×6秒）、20〜30秒は全体の平均（1.2Mbps）
-  expect(r.half.videoBps).toBe(Math.round((2000000 * 4 + 1000000 * 6 + 1200000 * 10) / 20));
-  // 1.5Mbps を指定：1Mbps の区切りは 1.5Mbps、2Mbps の区切りは 2Mbps のまま
-  expect(r.raised.videoBps).toBe(Math.round((1500000 * 16 + 2000000 * 4) / 20));
-  expect(r.none).toBe(null);
 });
 
 test('範囲が目標サイズに収まる長さの目安を超えていればトリミングの帯を黄色にし、先行圧縮が済んだら「なるべく圧縮」の下に即出力の大きさを出す', async ({ page }) => {

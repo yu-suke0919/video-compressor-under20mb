@@ -42,7 +42,7 @@
 - 2択のときは、この端末に保存してある設定は使わず、2択で決めた設定も保存しません。
 - **720p・1080p ではない 1080p 以下の動画**（スマホの画面録画・小さい動画など）は、どれを選んでも元の解像度のまま圧縮し、2 に「720p・1080pではない動画のため、そのままの解像度（幅×高さ）で圧縮します。」と出します。2 の解像度は出さず、設定のステップの解像度も押せません。1080p より大きい動画（4K など）は固定せず、480p・720p・1080p・元の解像度から選べます。
 - **URLに設定のパラメータがあるとき**（ショートカットから開いたときなど）は、その設定の「詳しく設定する」にして、すぐ 2 から始めます（保存してある設定の代わりにURLの設定を使う）。`auto=on` なら、動画を選んだらそのまま圧縮して 3 に進みます
-- 圧縮の処理は `app.js`、ステップの切り替えは `easy.js` が行います。
+- 圧縮の処理は `public/js/`（入口は `js/main.js`）、ステップの切り替えは `easy.js` が行います。
 
 ### 画面の部品
 
@@ -381,7 +381,8 @@ Service Worker は、本番（`maka-u20mb.pages.dev`）では**キャッシュ�
 更新がすぐ反映され、オフラインのときや3秒以内に応答がないときだけキャッシュから起動します。どちらでもオフライン起動はできます。
 動画（mp4）は Service Worker を通さずネットから直接読みます（範囲指定の読み込みに対応するため。オフラインでは再生できません）。
 `public/` のファイルを変えたときは、コミットの前に `npm run bump` を実行して版を上げます
-（`public/sw.js` のキャッシュ名 `...-v100` → `...-v101` と、診断情報に出す `public/app.js` の `APP_VERSION` を一度に上げます）。
+（`public/sw.js` のキャッシュ名 `...-v100` → `...-v101` と、診断情報に出す `public/js/constants.js` の `APP_VERSION` を一度に上げます）。
+`public/js/` にファイルを足したときは、`public/sw.js` の `ASSETS` にも足します（オフラインで起動できなくなるため）。
 キャッシュ名を上げないと古いキャッシュが破棄されず、利用者は前の版のままになります。
 
 ### 同梱ライブラリの作り直し
@@ -407,8 +408,10 @@ npm run build:vendor
 ```sh
 npm install
 npm run test:videos   # テスト用の動画を tools/test/videos/ に作る（最初の1回だけ。約2分・約470MB。名前に大きさが入った動画は、その大きさで作れたかも確かめる）
-npm test              # すべてのテストを実行（約15分）
+npm test              # すべてのテストを実行（約11分）
 npm test -- strip.spec.js   # 一部だけ実行するとき
+npm run test:unit     # 計算だけの関数（public/js/calc.js）の単体テスト（ブラウザ不要。1秒かからない）
+npm run lint          # ESLint（未定義・未使用の名前、モジュールをまたいだ代入など）
 ```
 
 | 環境変数 | 内容 |
@@ -457,9 +460,9 @@ iPhone・Android の実機では、`https://maka-u20mb.pages.dev/selftest.html` 
 
 | ファイル | 内容 |
 | --- | --- |
-| `public/index.html` / `public/easy.js` | アプリの画面（3ステップ）と、ステップの切り替え（圧縮は `app.js`。フレームワークは使っていません） |
+| `public/index.html` / `public/easy.js` | アプリの画面（3ステップ）と、ステップの切り替え（圧縮は `public/js/`。フレームワークは使っていません） |
 | `public/style.css` | 見た目 |
-| `public/app.js` | 圧縮処理の本体（画面の設定を足すときは、先頭近くの `SETTING_DEFS` に1つ足せば、保存・初期値に戻す・URL の読み取りと作成に反映される） |
+| `public/js/` | 圧縮処理の本体（ブラウザ標準の ES モジュール。ビルド不要。下の「コードの構成」） |
 | `public/vendor/mediabunny.min.js` | Mediabunny の必要部分（MPL-2.0） |
 | `public/sw.js` | Service Worker（本番はキャッシュ優先、プレビューはネット優先。全アセットをキャッシュしてオフラインでも起動） |
 | `public/_headers` | Cloudflare Pages が付けるセキュリティ用のHTTPヘッダー（CSP など。読み込めるのはこのサイトのファイルだけ、他サイトへの埋め込みは禁止。同じサイトの中の埋め込みは自己テストのために許可） |
@@ -469,7 +472,37 @@ iPhone・Android の実機では、`https://maka-u20mb.pages.dev/selftest.html` 
 | `public/shortcut.html` | iPhoneのショートカットを併用した使い方のページ（説明書のカードから開く。画像は `public/help/sc-*.webp`） |
 | `public/selftest.html` / `public/selftest.js` | 実機での自己テストのページ（どこからもリンクしない。開発者向け） |
 | `package.json` / `tools/mediabunny-entry.js` | 同梱ライブラリを作り直すときと、テストに使う設定（公開はされない） |
-| `tools/test/` | テスト（テスト用の動画の作成、テスト用サーバー、各テスト） |
+| `tools/test/` | テスト（テスト用の動画の作成、テスト用サーバー、各テスト。`tools/test/unit/` は Node の単体テスト） |
+| `eslint.config.mjs` | ESLint の設定（`npm run lint`） |
+
+### コードの構成（`public/js/`）
+
+`index.html` が `js/main.js` を読み込み、`main.js` がほかのモジュールを読み込みます（`<script type="module">`）。
+
+| モジュール | 役割 |
+| --- | --- |
+| `main.js` | 入口。画面のボタン・入力の配線と起動、テスト用の `window.__compressor` |
+| `constants.js` | 定数（`APP_VERSION` を含む） |
+| `calc.js` | 計算だけの関数：圧縮の計画（`makePlan`）、圧縮し直すビットレート、先行圧縮からの予想・切り出す大きさ、収まる長さの目安、表示の書式など |
+| `dom.js` / `state.js` | 画面の要素（`els`）と、アプリの状態（`state`） |
+| `util.js` | 診断情報への記録、処理の中断（job）、進捗の表示 |
+| `settings.js` | 設定：画面からの読み取り（`readSettings`）、設定の一覧（`SETTING_DEFS`）、保存・読み込み・初期値に戻す、URL の読み取りと作成 |
+| `naming.js` | 書き出す動画のファイル名 |
+| `media.js` | 端末の対応判定、動画のメタ情報（解像度・fps・音声）、音声の扱い |
+| `load.js` | 選んだ動画の読み込みと解析 |
+| `plan.js` | 今の画面の設定での計画（`currentPlan`。先行圧縮の予想を当てはめる） |
+| `precompress.js` | 先行圧縮（裏で全体を圧縮してサイズを予想し、押したら範囲を切り出してすぐ結果にする） |
+| `fast.js` / `compat.js` | 高速モード（Mediabunny の Conversion）・トリミングのみ ／ 互換モード（`<video>` を再生しながら取り込み） |
+| `run.js` | 圧縮の実行：方式の選択、圧縮し直し、互換モードへの切り替え、別のアプリに切り替えたときのやり直し、画面スリープ防止 |
+| `view.js` | 画面の出し直し（予想の行・注意・ボタン）、圧縮結果の表示、共有・保存 |
+| `trim.js` | トリミングの部品（範囲のつまみ・目盛り・再生位置・シーク） |
+| `adjust.js` | 3ステップの画面の2択（`EASY_PRESETS`）と、2 でその動画だけ変える解像度・fps・圧縮方法・ファイル名 |
+
+決まり（`npm run lint` で一部を確かめる）:
+- **読み込んだ時点で動く処理（画面の配線・起動）は `main.js` だけ**に置きます。ほかのモジュールは関数と値の宣言だけにします（モジュールどうしは互いに読み込み合うので、読み込む順番に頼らないため）。
+- **`constants.js`・`calc.js`・`dom.js`・`state.js` はほかのモジュールを読み込みません**（`calc.js` は `constants.js` だけ）。`calc.js` は画面にも状態にも触らないので、Node の単体テスト（`tools/test/unit/`）でそのまま試せます。計算を足すときはここに置き、単体テストも足します。
+- **モジュールの変数を書き換えるのは、宣言したモジュールの中だけ**です（ES モジュールでは、読み込んだ側からは書き換えられない）。ほかから変えるときは、宣言したモジュールに関数を用意します（例：`precompress.js` の `forgetPre()`、`naming.js` の `resetNaming()`）。
+- 画面の設定を足すときは、`settings.js` の `SETTING_DEFS` に1つ足せば、保存・初期値に戻す・URL の読み取りと作成に反映されます。
 
 ---
 
