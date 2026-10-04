@@ -137,6 +137,7 @@
   //   （時刻は動画を選んだときのもの。設定を変えたら作り直す）
   var easyName = '', easyNameTouched = false, easyNameAt = null;
   function resetAdjust() { adjust = { res: null, halfFps: null, mode: null }; }
+  function resetEasyName() { easyName = ''; easyNameTouched = false; easyNameAt = new Date(); }
 
   // ---------------------------------------------------------------- 状態
   var state = {
@@ -359,6 +360,7 @@
     return { on: false, order: NAME_KEYS.slice(), enabled: ['date', 'text1', 'opt'], text: { text1: '', text2: '' } };
   }
   var naming = defaultNaming();
+  function resetNaming() { naming = defaultNaming(); }
   // ファイル名に使えない記号・制御文字を外し、長さをそろえる
   function cleanName(v, max) {
     var t = String(v || '').replace(/[\/\\:*?"<>|\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim().replace(/^\.+/, '');
@@ -595,7 +597,7 @@
     if (state.running || isCompressed()) return;
     try { localStorage.removeItem(SETTINGS_KEY); } catch (e) { /* noop */ }
     SETTING_DEFS.forEach(function (d) { d.write(d.def); });
-    naming = defaultNaming();
+    resetNaming();
     renderNameList();
     refresh();
   }
@@ -1200,6 +1202,7 @@
     els.trimSeek.value = String(t);
     seekVideo(t);
   }
+  function setupTrimBar() {
   trimBar.addEventListener('pointerdown', function (e) {
     if (e.target.tagName === 'INPUT' || els.trimSeek.disabled || !state.meta || e.button > 0) return;
     barPointer = e.pointerId;
@@ -1217,6 +1220,9 @@
       endSeekDrag();
     });
   });
+  }
+  setupTrimBar();
+  function followPlayheadSoon() { if (!headRaf) headRaf = requestAnimationFrame(followPlayhead); }
   function followPlayhead() {
     headRaf = 0;
     renderPlayhead();
@@ -1803,6 +1809,12 @@
       log('指定ビットレートを下げても小さくならない（' + fmtRate(prev.videoBitrate) + ' ' + fmtBytes(prev.bytes) + ' → ' +
         fmtRate(b.videoBitrate) + ' ' + fmtBytes(b.bytes) + '）');
     }
+  }
+  // 別の動画を選んだら、先行圧縮を止めて、前の動画の先行圧縮と比べるための数字も消す
+  function forgetPre() {
+    stopPre();
+    pre = null;
+    lastDonePre = null;
   }
   // keep … 止めたところまでのデータを残して使う（圧縮を始めたとき・範囲の終わりまで書き出せたとき）。
   //         画面を離れたとき（iPhone は裏に回ると書き出しを壊す）・設定を変えたときは残さない（戻ったら最初からやり直す）
@@ -3000,8 +3012,7 @@
   }
 
   function loadChosenFile(file) {
-    stopPre();
-    pre = null;
+    forgetPre();
     state.busy = true;
     state.loadError = null;
     state.file = file;
@@ -3009,11 +3020,8 @@
     state.nameRand = randDigits();   // 元の動画のまま渡すときの乱数（同じ動画のあいだは変えない）
     state.compatAudio = null;
     state.fileId = (state.fileId || 0) + 1;   // 動画ごとの番号（前回の先行圧縮と同じ動画かを見分ける）
-    lastDonePre = null;
     resetAdjust();   // 3ステップの画面の 2 で変えた値は、その動画だけ
-    easyName = '';
-    easyNameTouched = false;
-    easyNameAt = new Date();
+    resetEasyName();
     clearOutput();
     setProgress(0, '');
     show(els.progressWrap, false);
@@ -3237,7 +3245,7 @@
     easyPreset = name;
     resetAdjust();
     SETTING_DEFS.forEach(function (d) { d.write(p && d.key in p ? p[d.key] : d.def); });
-    naming = defaultNaming();
+    resetNaming();
     if (name === 'custom') {
       if (hasSettingParams()) applyUrlParams(); else loadSavedSettings();
     }
@@ -3312,9 +3320,7 @@
   ['pointerup', 'pointercancel', 'touchend', 'touchcancel'].forEach(function (type) {
     window.addEventListener(type, endSeekDrag, { passive: true });
   });
-  els.srcVideo.addEventListener('playing', function () {
-    if (!headRaf) headRaf = requestAnimationFrame(followPlayhead);
-  });
+  els.srcVideo.addEventListener('playing', followPlayheadSoon);
   // seeking: シークの完了を待たずに（大きな動画は時間がかかる）、移動先を表示する
   ['timeupdate', 'seeking', 'seeked', 'loadedmetadata', 'pause', 'ended', 'emptied'].forEach(function (type) {
     els.srcVideo.addEventListener(type, renderPlayhead);
