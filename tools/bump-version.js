@@ -1,5 +1,5 @@
 // 版を上げる（npm run bump）。public/ のファイルを変えたら、コミットの前に1回実行する
-//   app.js の APP_VERSION … 診断情報に出す版。今日の日付＋英字（同じ日なら英字を1つ進める：…k → l）
+//   js/constants.js の APP_VERSION … 診断情報に出す版。今日の日付＋英字（同じ日なら英字を1つ進める：…k → l）
 //   sw.js のキャッシュ名 … v100 → v101。上げないと、利用者のスマホに前の版のキャッシュが残り続ける
 'use strict';
 
@@ -32,7 +32,7 @@ function today() {
   return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
 }
 
-bump('app.js', /var APP_VERSION = '([^']+)'/, v => {
+bump('js/constants.js', /var APP_VERSION = '([^']+)'/, v => {
   const m = /^(\d{4}-\d{2}-\d{2})([a-z]*)$/.exec(v);
   const date = today();
   return m && m[1] === date ? date + nextLetters(m[2]) : date + 'a';

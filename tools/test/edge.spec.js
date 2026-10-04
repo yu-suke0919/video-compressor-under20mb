@@ -233,14 +233,7 @@ test('音声が2本ある動画は、メインの音声1本だけを書き出す
 });
 
 test('「30fps」は、30fps 以下になるまで元の fps を割る（120fps → 30fps）', async ({ page }) => {
-  await open(page);
-  // 計画：元の fps ごとの出力の fps
-  const fps = await page.evaluate(() => [24, 30, 50, 59.94, 60, 90, 120, 144].map(f => {
-    const meta = { width: 1280, height: 720, fps: f, duration: 10, videoCodec: 'avc' };
-    const st = Object.assign(window.__compressor.readSettings(), { halfFps: true, res: '720', mode: 'quality' });
-    return Math.round(window.__compressor.makePlan(meta, { start: 0, end: 10 }, st, { mode: 'none', bps: 0 }, 10000000).outFps * 100) / 100;
-  }));
-  expect(fps).toEqual([24, 30, 25, 29.97, 30, 30, 30, 28.8]);
+  // 元の fps ごとの出力の fps の計算は、単体テスト（tools/test/unit/calc.test.mjs）で確かめる
   // 実際に書き出した動画（120fps → 30fps）
   await open(page, '?mode=quality&fps=30');
   await pick(page, 'hfr-120fps.mp4');

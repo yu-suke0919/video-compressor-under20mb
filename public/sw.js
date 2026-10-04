@@ -9,7 +9,7 @@
 'use strict';
 
 var CACHE_PREFIX = 'video-compressor-under20mb-';   // このアプリのキャッシュ名の頭（同じドメインの別アプリのキャッシュは消さない）
-var CACHE = CACHE_PREFIX + 'v211';
+var CACHE = CACHE_PREFIX + 'v212';
 var NETWORK_TIMEOUT_MS = 3000;   // ネット優先のとき、ネットの応答をこれだけ待ってからキャッシュを使う
 
 // Cloudflare Pages のプレビュー（<ブランチ名>.<プロジェクト名>.pages.dev）と手元の確認環境だけネット優先にする
@@ -22,7 +22,24 @@ var ASSETS = [
   './',
   './index.html',
   './style.css',
-  './app.js',
+  './js/adjust.js',
+  './js/calc.js',
+  './js/compat.js',
+  './js/constants.js',
+  './js/dom.js',
+  './js/fast.js',
+  './js/load.js',
+  './js/main.js',
+  './js/media.js',
+  './js/naming.js',
+  './js/plan.js',
+  './js/precompress.js',
+  './js/run.js',
+  './js/settings.js',
+  './js/state.js',
+  './js/trim.js',
+  './js/util.js',
+  './js/view.js',
   './easy.js',
   './manifest.json',
   './vendor/mediabunny.min.js',
