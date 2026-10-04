@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import {
   makePlan, resolutionCap, nextBitrate, audioBytesOf, preEstimate, exactCutBytes, fitSecOf, isOverTarget, preUseRatioOf, preKey,
   planSettings, describePlan, snapFps, estimateFps, fmtBytes, fmtDuration, fmtRate, fmtFps, even, resValue, isStandardRes, isSmallSource,
-  noAudio, aacAudio, onOffWord, CUT_OVERHEAD_BASE, CUT_OVERHEAD_PER_SAMPLE
+  noAudio, aacAudio, onOffWord, CUT_OVERHEAD_BASE, CUT_OVERHEAD_PER_SAMPLE, retryAfterSize, recoveryAfterFailure
 } from '../../../public/js/calc.js';
-import { SIZE_SAFETY, MB, DEFAULT_MIN_KBPS, MIN_KBPS_LIMITS, HIGH_FPS_FLOOR_FACTOR } from '../../../public/js/constants.js';
+import { SIZE_SAFETY, MB, DEFAULT_MIN_KBPS, MIN_KBPS_LIMITS, HIGH_FPS_FLOOR_FACTOR, MAX_ATTEMPTS, MAX_BG_RETRIES } from '../../../public/js/constants.js';
 
 const MIN = { '480': Math.round(DEFAULT_MIN_KBPS['720'] * 1000 * 4 / 9), '720': DEFAULT_MIN_KBPS['720'] * 1000, '1080': DEFAULT_MIN_KBPS['1080'] * 1000 };
 // 画面の設定（readSettings の結果）の代わり
@@ -167,4 +167,45 @@ test('設定の値の読み取り', () => {
   assert.equal(onOffWord('maybe'), undefined);
   assert.equal(noAudio().mode, 'none');
   assert.equal(aacAudio().mode, 'aac');
+});
+
+test('retryAfterSize：「◯MB以内」で目標以上なら、実際の大きさから求め直したビットレートで圧縮し直す', () => {
+  const plan = { mode: 'size', targetBytes: 20 * MB, videoBitrate: 8000000, floorBitrate: 1200000, audioBitrate: 0, duration: 20 };
+  assert.deepEqual(retryAfterSize(plan, 19 * MB, 0, 0, null), { kind: 'done' });                       // 目標未満
+  assert.deepEqual(retryAfterSize(Object.assign({}, plan, { mode: 'quality' }), 30 * MB, 0, 0, null), { kind: 'done' });   // なるべく圧縮
+  assert.deepEqual(retryAfterSize(plan, 40 * MB, 0, 0, null), { kind: 'retry', bitrate: Math.floor(8000000 * 0.485) });
+  assert.deepEqual(retryAfterSize(plan, 40 * MB, MAX_ATTEMPTS - 1, 50 * MB, 50 * MB), { kind: 'done' });   // 回数の上限
+  // 下限より下は下限に揃え、それ以上下げられなければやめる
+  assert.deepEqual(retryAfterSize(plan, 200 * MB, 0, 0, null), { kind: 'retry', bitrate: Math.max(Math.floor(8000000 * 0.3), 1200000) });
+  assert.deepEqual(retryAfterSize(Object.assign({}, plan, { videoBitrate: 1200000 }), 40 * MB, 0, 0, null), { kind: 'done' });
+});
+
+test('retryAfterSize：圧縮し直しても小さくならなければやめ、前の結果の方が小さければそれを使う', () => {
+  const plan = { mode: 'size', targetBytes: 20 * MB, videoBitrate: 4000000, floorBitrate: 1200000, audioBitrate: 0, duration: 20 };
+  // 前回 25MB → 今回 24.5MB（3%未満しか減っていない）
+  assert.deepEqual(retryAfterSize(plan, 24.5 * MB, 1, 25 * MB, 25 * MB), { kind: 'floor', usePrevious: false });
+  assert.deepEqual(retryAfterSize(plan, 26 * MB, 1, 25 * MB, 25 * MB), { kind: 'floor', usePrevious: true });
+  assert.deepEqual(retryAfterSize(plan, 26 * MB, 1, 25 * MB, null), { kind: 'floor', usePrevious: false });
+  // 十分に減っていれば、もう一度下げる
+  assert.equal(retryAfterSize(plan, 22 * MB, 1, 25 * MB, 25 * MB).kind, 'retry');
+});
+
+test('recoveryAfterFailure：失敗・停止したあとのやり直し方（上から順に当てはまるもの）', () => {
+  const base = { wentHidden: false, bgRetries: 0, index: 0, hasPrevious: false, engine: 'fast', audioMode: 'aac', stalled: false,
+    audioRetried: false, audioError: false, compatAvailable: true };
+  const r = over => recoveryAfterFailure(Object.assign({}, base, over));
+  assert.equal(r({ wentHidden: true }), 'background');
+  assert.equal(r({ wentHidden: true, bgRetries: MAX_BG_RETRIES }), 'compat');   // やり直しの上限を超えたら、ほかの理由で決める
+  assert.equal(r({ index: 1, hasPrevious: true }), 'previous');
+  assert.equal(r({ audioMode: 'copy', audioError: true }), 'audio');
+  assert.equal(r({ audioMode: 'copy', audioError: true, audioRetried: true }), 'compat');
+  assert.equal(r({ audioMode: 'copy', audioError: true, stalled: true }), 'compat');   // 停止は音声のせいとはみない
+  assert.equal(r({ audioMode: 'aac', audioError: true }), 'compat');                   // 作り直した音声なら外さない
+  assert.equal(r({ engine: 'copy' }), 'fast');
+  assert.equal(r({}), 'compat');
+  assert.equal(r({ compatAvailable: false }), 'error');
+  assert.equal(r({ index: 1 }), 'error');                                             // 圧縮し直しの失敗（前の結果なし）は互換モードにしない
+  assert.equal(r({ index: 1, stalled: true }), 'compat');
+  assert.equal(r({ engine: 'compat', stalled: true }), 'stalled');
+  assert.equal(r({ engine: 'compat' }), 'error');
 });

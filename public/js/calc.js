@@ -1,6 +1,6 @@
 // 計算だけの関数（画面・状態に触らない。定数のほかは何も読み込まないので、Node の単体テスト（npm run test:unit）でそのまま試せる）
 
-import { AUDIO_BITRATE, DEFAULT_FPS, DISCORD_FREE_BYTES, HIGH_FPS_FLOOR_FACTOR, MAX_FPS, MB, MIN_KBPS_LIMITS, PRE_USE_PCT_DEFAULT, SIZE_SAFETY, SRC_CAP_RATIO, SRC_CAP_RATIO_HEVC } from './constants.js';
+import { AUDIO_BITRATE, DEFAULT_FPS, DISCORD_FREE_BYTES, HIGH_FPS_FLOOR_FACTOR, MAX_ATTEMPTS, MAX_BG_RETRIES, MAX_FPS, MB, MIN_KBPS_LIMITS, MIN_SHRINK, PRE_USE_PCT_DEFAULT, SIZE_SAFETY, SRC_CAP_RATIO, SRC_CAP_RATIO_HEVC } from './constants.js';
 
 export function fmtBytes(n) {
   if (n < 1000) return n + ' B';
@@ -243,4 +243,45 @@ export function planSettings(plan) {
     mode: plan.mode, res: plan.res, halfFps: plan.halfFps, audio: plan.wantAudio,
     targetMB: plan.targetMB, targetBytes: plan.targetBytes, minBitrate: plan.minBitrate, preUseRatio: plan.preUseRatio
   };
+}
+
+// ---------------------------------------------------------------- 圧縮1回ぶんが終わったあとの判断（run.js）
+// 書き出せたあと、圧縮し直すか（「◯MB以内」で目標以上のときだけ。回数は MAX_ATTEMPTS まで）
+//   size         … 書き出した大きさ。index … 何回目か（0から）
+//   prevSize     … 前回の大きさ（圧縮し直したとき）。previousSize … 圧縮し直す前の結果の大きさ（なければ null）
+// 返す値
+//   { kind: 'done' }                … 圧縮し直さない（目標未満・なるべく圧縮・回数の上限・これ以上下げられない）
+//   { kind: 'retry', bitrate }      … 実際の大きさから求め直したビットレート（下限は下回らない）で圧縮し直す
+//   { kind: 'floor', usePrevious }  … 圧縮し直しても MIN_SHRINK 以上小さくならなかった（下げても減らない端末）。
+//                                     usePrevious なら、前の結果の方が小さい（か同じ）ので、前の結果を使う
+export function retryAfterSize(plan, size, index, prevSize, previousSize) {
+  if (plan.mode !== 'size' || size < plan.targetBytes || index + 1 >= MAX_ATTEMPTS) return { kind: 'done' };
+  if (index > 0 && prevSize > 0 && size > prevSize * (1 - MIN_SHRINK)) {
+    return { kind: 'floor', usePrevious: previousSize !== null && previousSize !== undefined && previousSize <= size };
+  }
+  var audioBytes = audioBytesOf(plan);
+  var next = nextBitrate(plan, size - audioBytes, audioBytes);
+  if (next) next = Math.max(next, plan.floorBitrate);
+  if (!next || next >= plan.videoBitrate) return { kind: 'done' };
+  return { kind: 'retry', bitrate: next };
+}
+
+// 失敗・停止したあと、どうやり直すか（上から順に、最初に当てはまるもの）
+//   'background' … 途中で別のアプリに切り替えていた（MAX_BG_RETRIES 回まで）。失敗は動画のせいではない（iPhone は裏に回ると
+//                  読み込み・書き出しを壊す）ので、方式を変えずに、画面に戻るのを待ってから最初からやり直す
+//   'previous'   … 圧縮し直している途中で失敗した。その前にできた結果を使う
+//   'audio'      … 高速モードで元の音声をそのまま使い、音声のことで失敗した（停止ではない・まだ試していない）。
+//                  音声を作り直すか外して、高速モードのままやり直す（映像の失敗では音声を外さない）
+//   'fast'       … トリミングのみで失敗した。高速モードでやり直す
+//   'compat'     … 高速モードで扱えなかった（1回目か、停止した）。互換モードが使えればやり直す
+//   'stalled'    … 停止したまま。あきらめる（止まった旨のエラー）
+//   'error'      … あきらめる（そのエラー）
+// f … { wentHidden, bgRetries, index, hasPrevious, engine, audioMode, stalled, audioRetried, audioError, compatAvailable }
+export function recoveryAfterFailure(f) {
+  if (f.wentHidden && f.bgRetries < MAX_BG_RETRIES) return 'background';
+  if (f.index > 0 && f.hasPrevious) return 'previous';
+  if (f.engine === 'fast' && f.audioMode === 'copy' && !f.stalled && !f.audioRetried && f.audioError) return 'audio';
+  if (f.engine === 'copy') return 'fast';
+  if (f.engine === 'fast' && (f.index === 0 || f.stalled) && f.compatAvailable) return 'compat';
+  return f.stalled ? 'stalled' : 'error';
 }
