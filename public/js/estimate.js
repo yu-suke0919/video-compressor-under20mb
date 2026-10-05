@@ -53,14 +53,16 @@ export function withEstimate(plan) {
   return p;
 }
 export function planParts(plan, trimEst) {
-  // ビットレートは、指定するビットレート（エンコーダーが実際に使う量は、予想の大きさに入っている）
+  var sure = !trimEst && !!(plan.probed && pre && preReady(plan) && plan.exactEst && !precompressWhyNot(plan));
+  // ビットレートは、指定するビットレート（エンコーダーが実際に使う量は、予想の大きさに入っている）。
+  // 先行圧縮をそのまま使う（確定）ときは、切り出した大きさから求めた実際の値（3 の結果と同じ計算。
+  // 「◯MB以内」の指定は範囲の長さで変わるが、先行圧縮を切り出すときは使わないため）
   var line1 = '現在の設定：' + Math.min(plan.width, plan.height) + 'p/' + fmtFps(plan.outFps) + '/' + fmtDuration(plan.duration) + '/' +
-    (trimEst ? '再圧縮なし' : fmtRate(plan.videoBitrate));
+    (trimEst ? '再圧縮なし' : fmtRate(sure ? plan.expectedBps : plan.videoBitrate));
   var est = trimEst || plan.estBytes;
   var tag;
   if (trimEst) tag = '予想・' + copyLabel(plan);
   else {
-    var sure = !!(plan.probed && pre && preReady(plan) && plan.exactEst && !precompressWhyNot(plan));
     var probe = plan.probed ? (preReady(plan) ? '先行圧縮済み' : '先行圧縮 ' + Math.floor(pre.time / pre.plan.duration * 100) + '%')
       : pre && pre.file === state.file && (pre.job || preTimer) ? '先行圧縮中' : '';
     tag = (sure ? '確定' : '予想') + (probe ? '・' + probe : '');
