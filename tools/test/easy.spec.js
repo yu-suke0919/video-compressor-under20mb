@@ -413,11 +413,11 @@ test('見出しの「使い方」で、3ステップの画面の説明書（手�
     dots: document.getElementById('helpDots').children.length,
     imgs: Array.from(document.querySelectorAll('#helpSlides img')).map(i => i.getAttribute('src'))
   }));
-  expect(r.slides).toBe(17);
-  expect(r.dots).toBe(17);
+  expect(r.slides).toBe(18);
+  expect(r.dots).toBe(18);
   expect(r.imgs).toEqual(['./help/step-1.webp', './help/step-2.webp', './help/step-3.webp', './help/step-4.webp']);
   await expect.poll(() => page.evaluate(() => document.querySelector('#helpSlides img').naturalWidth), { timeout: 10000 }).toBeGreaterThan(0);
-  expect(await page.textContent('#helpHint')).toContain('全17枚');
+  expect(await page.textContent('#helpHint')).toContain('全18枚');
   await page.click('#helpClose');
   expect(await page.isVisible('#helpDlg')).toBe(false);
 });

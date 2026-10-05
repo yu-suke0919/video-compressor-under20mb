@@ -261,7 +261,7 @@
     <p>動画をDiscordに送れるサイズ（20MB以内）に小さくします。</p>
 
     <!-- 画像は説明書を開いたときに読み込む（data-src → src）。アプリの起動時には読まない -->
-    <p class="help-hint" id="helpHint" aria-hidden="true"><span class="hint-arrow">‹</span><span>左右にスワイプ（全17枚）</span><span class="hint-arrow">›</span></p>
+    <p class="help-hint" id="helpHint" aria-hidden="true"><span class="hint-arrow">‹</span><span>左右にスワイプ（全18枚）</span><span class="hint-arrow">›</span></p>
     <div class="help-dots" id="helpDots">
       <button type="button" aria-label="1枚目" aria-current="true"></button>
       <button type="button" aria-label="2枚目"></button>
@@ -280,6 +280,7 @@
       <button type="button" aria-label="15枚目"></button>
       <button type="button" aria-label="16枚目"></button>
       <button type="button" aria-label="17枚目"></button>
+      <button type="button" aria-label="18枚目"></button>
     </div>
     <div class="help-slides" id="helpSlides" tabindex="0" aria-label="手順の画像（横にスワイプで次の画像）">
       <img data-src="./help/step-1.webp" width="390" height="780" alt="①どう圧縮するか選ぶ（なるべく圧縮は軽さ重視、画質優先（20MB以内）は画質重視。細かく決めたいときは「詳しく設定する」）">
@@ -351,6 +352,13 @@
       </div>
       <div class="help-card help-qa">
         <span class="card-icon qa-icon" aria-hidden="true">Q</span>
+        <span class="card-title"><span>Q. 一瞬で</span><span>圧縮が終わるのは</span><span>なぜですか？</span></span>
+        <p class="qa-answer">A. 動画を選ぶと、裏で先に圧縮を始めています（先行圧縮）。済んでいれば「圧縮する」の下に「◯MBで即出力します」と出て、押すとすぐに出来上がります。</p>
+        <p class="qa-answer">「画質優先（20MB以内）」では、先行圧縮の大きさが20MBの80%以上（16MB以上）のときだけ使います。小さすぎるときは、20MBに近づくよう圧縮し直します。</p>
+        <p class="qa-answer qa-note">※80%は「詳しく設定する」の「許容する最小サイズ」で変えられます。圧縮後に「← 戻る」で範囲を変えても、先行圧縮の済んだ所ならすぐ出せます。</p>
+      </div>
+      <div class="help-card help-qa">
+        <span class="card-icon qa-icon" aria-hidden="true">Q</span>
         <span class="card-title"><span>Q. 圧縮中に</span><span>他のアプリを</span><span>開いてもいいですか？</span></span>
         <p class="qa-answer">A. 圧縮が終わるまで、この画面を表示したまま待ってください。</p>
         <p class="qa-answer">他のアプリに切り替えたり、画面をロックしたりすると、圧縮が止まることがあります。そのときは、この画面に戻ると最初からやり直します。</p>
@@ -373,6 +381,7 @@
       <div class="help-card help-qa help-news">
         <span class="card-icon qa-icon" aria-hidden="true">i</span>
         <span class="card-title"><span>更新情報</span></span>
+        <p class="qa-answer"><b>2026年10月6日</b><br>「画質優先（20MB以内）」で、先行圧縮が目標の80%以上ならすぐ出力するように（「詳しく設定する」の「許容する最小サイズ」で変更可）。圧縮後に戻っても先行圧縮を残すように。予想サイズと圧縮結果を大きく表示</p>
         <p class="qa-answer"><b>2026年9月28日</b><br>サイト公開</p>
       </div>
     </div>
