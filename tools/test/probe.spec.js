@@ -313,6 +313,11 @@ test('「◯MB以内」でも、先行圧縮を切り出した大きさが目標
   expect(await page.isVisible('#quickNoteSize')).toBe(true);
   expect(await page.textContent('#quickNote')).toBe(label);   // 「なるべく圧縮」の下にも同じ大きさ
   expect(await pc(page, () => window.__compressor.state.plan.estBytes)).toBe(cut);   // 予想の行も切り出したときの大きさ
+  // 予想の行のビットレートは、「◯MB以内」の指定（範囲の長さで変わる）ではなく、切り出したときの実際の値（3 の結果と同じ）
+  const rate = bps => bps >= 1000000 ? (bps / 1000000).toFixed(1) + 'Mbps' : Math.round(bps / 1000) + 'kbps';
+  const p = await pc(page, () => { const x = window.__compressor.state.plan; return { spec: x.videoBitrate, real: x.expectedBps }; });
+  expect(rate(p.spec)).not.toBe(rate(p.real));
+  expect((await ui(page)).planInfo).toMatch(new RegExp('/' + rate(p.real) + '\\n→ [\\d.]+MB（確定・先行圧縮済み）$'));
   await compress(page);
   const d = await diag(page);
   expect(d).toMatch(/先行圧縮を使う（完了済み）/);
