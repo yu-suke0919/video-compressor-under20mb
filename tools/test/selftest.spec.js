@@ -3,16 +3,22 @@
 
 const { test, expect } = require('@playwright/test');
 
-test('自動テストが最後まで動き、失敗がない', async ({ page }) => {
-  test.setTimeout(15 * 60 * 1000);
+test('自動テスト（圧縮の結果・先行圧縮・3ステップの画面）が最後まで動き、失敗がない', async ({ page }) => {
+  test.setTimeout(30 * 60 * 1000);
   await page.goto('/selftest.html');
   await page.click('#autoBtn');
-  await page.waitForFunction(() => /^(\d+)\/\1 件完了/.test(document.getElementById('summary').textContent), null, { timeout: 14 * 60 * 1000 });
+  await page.waitForFunction(() => /^(\d+)\/\1 件完了/.test(document.getElementById('summary').textContent), null, { timeout: 29 * 60 * 1000 });
   const results = await page.evaluate(() => window.__selftest.results.map(r => ({ title: r.title, status: r.status, detail: r.detail })));
   const failed = results.filter(r => r.status === 'ng');
   if (failed.length) console.log(await page.evaluate(() => window.__selftest.resultText()));
   expect(failed).toEqual([]);
-  expect(results.length).toBe(14);
+  const pre = results.filter(r => r.title.startsWith('先行圧縮: '));
+  const easy = results.filter(r => r.title.startsWith('3ステップ: '));
+  expect(results.length - pre.length - easy.length).toBe(14);   // 圧縮の結果
+  expect(pre.length).toBe(6);
+  expect(pre.filter(r => r.status === 'ok').length).toBeGreaterThanOrEqual(4);   // 端末が速いと、途中で押す場面を作れず「注意」になる
+  expect(easy.length).toBe(9);
+  expect(easy.filter(r => r.status === 'ok').length).toBeGreaterThanOrEqual(8);
   expect(await page.isDisabled('#copyBtn')).toBe(false);
 });
 
@@ -24,26 +30,4 @@ test('手元の動画でも試せる', async ({ page }) => {
   const results = await page.evaluate(() => window.__selftest.results.map(r => ({ title: r.title, status: r.status, detail: r.detail })));
   expect(results.filter(r => r.status === 'ng')).toEqual([]);
   expect(results[0].title).toContain('1280×720');
-});
-
-test('先行圧縮のテストが最後まで動き、失敗がない', async ({ page }) => {
-  test.setTimeout(10 * 60 * 1000);
-  await page.goto('/selftest.html');
-  await page.click('#preBtn');
-  await page.waitForFunction(() => /^6\/6 件完了/.test(document.getElementById('summary').textContent), null, { timeout: 9 * 60 * 1000 });
-  const results = await page.evaluate(() => window.__selftest.results.map(r => ({ title: r.title, status: r.status, detail: r.detail })));
-  console.log(await page.evaluate(() => window.__selftest.resultText()));
-  expect(results.filter(r => r.status === 'ng')).toEqual([]);
-  expect(results.filter(r => r.status === 'ok').length).toBeGreaterThanOrEqual(4);
-});
-
-test('新しい画面（3ステップ）のテストが最後まで動き、失敗がない', async ({ page }) => {
-  test.setTimeout(10 * 60 * 1000);
-  await page.goto('/selftest.html');
-  await page.click('#easyBtn');
-  await page.waitForFunction(() => /^9\/9 件完了/.test(document.getElementById('summary').textContent), null, { timeout: 9 * 60 * 1000 });
-  const results = await page.evaluate(() => window.__selftest.results.map(r => ({ title: r.title, status: r.status, detail: r.detail })));
-  console.log(await page.evaluate(() => window.__selftest.resultText()));
-  expect(results.filter(r => r.status === 'ng')).toEqual([]);
-  expect(results.filter(r => r.status === 'ok').length).toBeGreaterThanOrEqual(8);
 });

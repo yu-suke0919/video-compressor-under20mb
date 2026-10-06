@@ -3,7 +3,8 @@
  * この端末で、テスト用の動画をその場で作り（WebCodecs で H.264 と AAC/Opus に書き出す）、
  * アプリの画面（3ステップの index.html。URL で設定を渡すと「詳しく設定する」で開く）を iframe で開いて実際に圧縮し、結果の中身を Mediabunny で調べる。
  * 画面の設定は URL で渡すので、この端末に保存してある設定は使わず、変えもしない。
- * 「新しい画面（3ステップ）を試す」は、画面のボタンを押してステップを進め、ステップの切り替えと2択（なるべく圧縮・画質優先）の結果を確かめる。
+ * 「自動テストを始める」は、操作の要らないテストをすべて続けて行う（圧縮の結果 → 先行圧縮 → 3ステップの画面のボタンを押して進める）。
+ * 「別のアプリへの切り替え」と「手元の動画」は、手で操作する（動画を選ぶ・アプリを切り替える）ので別にしてある。
  */
 'use strict';
 
@@ -463,7 +464,7 @@
   }
 
   function setBusy(busy) {
-    ['autoBtn', 'switchBtn', 'preBtn', 'easyBtn', 'fileBtn'].forEach(function (id) { $(id).disabled = busy; });
+    ['autoBtn', 'switchBtn', 'fileBtn'].forEach(function (id) { $(id).disabled = busy; });
   }
 
   async function runAll(list, getSource) {
@@ -482,13 +483,17 @@
     }
   }
 
+  // 操作の要らないテストをすべて続けて行う（圧縮の結果 → 先行圧縮 → 3ステップの画面）
   $('autoBtn').addEventListener('click', async function () {
     setBusy(true);
     setNotice('');
     try {
       await runAll(CASES, function (c) { return makeVideo(c.video); });
+      await runPreCases();
+      await runEasyCases();
       setStatus('自動テストが終わりました');
     } finally {
+      render();
       setBusy(false);
     }
   });
@@ -800,38 +805,30 @@
     }
   ];
 
-  $('preBtn').addEventListener('click', async function () {
-    setBusy(true);
-    setNotice('');
-    var rows = PRE_CASES.map(function (c) { return addResult(c.title); });
+  async function runPreCases() {
+    var rows = PRE_CASES.map(function (c) { return addResult('先行圧縮: ' + c.title); });
     var ctx = {};
+    var source = null;
     try {
-      var source = null;
-      try {
-        source = await makeVideo('vPre');
-      } catch (e) {
-        rows.forEach(function (r) { fail(r, errorDetail(e)); });
-        return;
-      }
-      for (var i = 0; i < PRE_CASES.length; i++) {
-        var r = rows[i];
-        r.title = PRE_CASES[i].title + '（元: ' + source.label + (source.audio ? '・' + source.audio : '・音声なし') + '）';
-        setStatus('先行圧縮のテスト中 ' + (i + 1) + '/' + PRE_CASES.length + '：' + PRE_CASES[i].title);
-        try {
-          await PRE_CASES[i].run(source, r, ctx);
-        } catch (e) {
-          fail(r, errorDetail(e));
-        }
-        render();
-      }
-      setStatus('先行圧縮のテストが終わりました');
-    } finally {
-      render();
-      setBusy(false);
+      source = await makeVideo('vPre');
+    } catch (e) {
+      rows.forEach(function (r) { fail(r, errorDetail(e)); });
+      return;
     }
-  });
+    for (var i = 0; i < PRE_CASES.length; i++) {
+      var r = rows[i];
+      r.title += '（元: ' + source.label + (source.audio ? '・' + source.audio : '・音声なし') + '）';
+      setStatus('先行圧縮のテスト中 ' + (i + 1) + '/' + PRE_CASES.length + '：' + PRE_CASES[i].title);
+      try {
+        await PRE_CASES[i].run(source, r, ctx);
+      } catch (e) {
+        fail(r, errorDetail(e));
+      }
+      render();
+    }
+  }
 
-  // ---------------------------------------------------------------- 新しい画面（3ステップ）のテスト
+  // ---------------------------------------------------------------- 3ステップの画面のテスト
   // 設定なしで開き、画面のボタンを押して「1. 選ぶ →（設定）→ 2. 動画 → 3. 保存」と進め、ステップの切り替えと結果を確かめる。
   // 2択（なるべく圧縮・画質優先）は決めた設定を使い、この端末に保存してある設定を読まず、変えもしない（最後に確かめる）
   var STEP_KEYS = { step1: '1', stepSet: 'set', step2: '2', step3: '3' };
@@ -1142,30 +1139,22 @@
     }
   ];
 
-  $('easyBtn').addEventListener('click', async function () {
-    setBusy(true);
-    setNotice('');
-    var rows = EASY_CASES.map(function (c) { return addResult('新しい画面: ' + c.title); });
+  async function runEasyCases() {
+    var rows = EASY_CASES.map(function (c) { return addResult('3ステップ: ' + c.title); });
     var ctx = { stored: storedSettings() };   // 始める前の保存してある設定（最後に変わっていないか確かめる）
-    try {
-      for (var i = 0; i < EASY_CASES.length; i++) {
-        var c = EASY_CASES[i], r = rows[i];
-        try {
-          var source = c.video ? await makeVideo(c.video) : null;
-          if (source) r.title += '（元: ' + source.label + (source.audio ? '・' + source.audio : '・音声なし') + '）';
-          setStatus('新しい画面のテスト中 ' + (i + 1) + '/' + EASY_CASES.length + '：' + c.title);
-          await c.run(source, r, ctx);
-        } catch (e) {
-          fail(r, errorDetail(e));
-        }
-        render();
+    for (var i = 0; i < EASY_CASES.length; i++) {
+      var c = EASY_CASES[i], r = rows[i];
+      try {
+        var source = c.video ? await makeVideo(c.video) : null;
+        if (source) r.title += '（元: ' + source.label + (source.audio ? '・' + source.audio : '・音声なし') + '）';
+        setStatus('3ステップの画面のテスト中 ' + (i + 1) + '/' + EASY_CASES.length + '：' + c.title);
+        await c.run(source, r, ctx);
+      } catch (e) {
+        fail(r, errorDetail(e));
       }
-      setStatus('新しい画面のテストが終わりました');
-    } finally {
       render();
-      setBusy(false);
     }
-  });
+  }
 
   // ---------------------------------------------------------------- 結果のコピー
   function resultText() {

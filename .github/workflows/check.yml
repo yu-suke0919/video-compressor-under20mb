@@ -1,0 +1,27 @@
+# PR と main への push で、lint と単体テストを回す（数十秒で終わる）。
+# 実際のブラウザで圧縮するテスト（npm test）は、H.264 を扱える Chrome とテスト用の動画（約470MB）が要るので、手元で回す。
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      - run: npm run lint
+      - run: npm run test:unit
