@@ -204,6 +204,8 @@ npm run test:unit     # calc.js・fmp4.js の単体テスト（ブラウザ不�
 npm run lint          # ESLint
 ```
 
+lint と単体テストは、PR と main への push のたびに GitHub Actions（`.github/workflows/check.yml`）でも回します。`npm test` は手元で回してください。
+
 環境変数：`FFMPEG`（ffmpeg の場所）、`CHROME_PATH`（Chrome の実行ファイル）、`CHROME_ARGS`（GPU のない Linux では `--disable-gpu`）、`WORKERS`（同時に動かす数。既定1）。
 
 | ファイル | 確かめること |
@@ -224,7 +226,7 @@ npm run lint          # ESLint
 ### 実機での自己テスト（`selftest.html`）
 
 実機で `https://maka-u20mb.pages.dev/selftest.html` を開くと、その端末で圧縮を試せます（どこからもリンクしていません）。
-テスト用の動画をその場で作り、本番の画面を iframe で開いて判定します。「自動テスト」「別のアプリへの切り替え」「先行圧縮」「新しい画面（3ステップ）」「手元の動画」の5種類があり、
+テスト用の動画をその場で作り、本番の画面を iframe で開いて判定します。「自動テストを始める」で操作の要らないテスト（圧縮の結果・先行圧縮・3ステップの画面の29件）をすべて続けて行います。手で操作する「別のアプリへの切り替え」「手元の動画」は別のボタンです。
 「結果をコピー」で失敗した項目の診断情報ごとコピーできます。設定は URL で渡すので、端末に保存してある設定は変えません。
 
 ### ファイル構成
@@ -241,6 +243,7 @@ npm run lint          # ESLint
 | `public/help/` / `public/shortcut.html` | 説明書の画像と、ショートカットの使い方のページ |
 | `public/selftest.html` / `public/selftest.js` | 実機での自己テスト |
 | `tools/` | テスト、同梱ライブラリの作成、説明書の画像の作成、版の更新 |
+| `.github/workflows/check.yml` | GitHub Actions（lint と単体テスト） |
 
 ### コードの構成（`public/js/`）
 
