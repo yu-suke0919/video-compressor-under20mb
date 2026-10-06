@@ -170,7 +170,7 @@ export function preReady(plan) {
 export function precompressUsable(plan) {
   return precompressWhyNot(plan) ? null : pre;
 }
-// 先行圧縮を使えない理由（診断情報に書く。使えれば ''）
+// 先行圧縮をそのまま使えない理由（使えれば ''）。使うかどうか・即出力の表示・「確定」の判断に使い、使わないときは診断情報にも書く
 export function precompressWhyNot(plan) {
   if (!pre || pre.file !== state.file) return '先行圧縮していない';
   if (pre.failed) return '先行圧縮に失敗した';
