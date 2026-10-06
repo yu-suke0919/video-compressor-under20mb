@@ -85,6 +85,11 @@ function numberSetting(key, id, def, min, max, round, read) {
     toUrl: String
   };
 }
+// 画面で変えられる設定。保存・読み込み・初期値に戻す・URL の読み取りと作成は、すべてこの一覧から行う
+// （設定を足すときは、ここに1つ足せばよい。ファイル名の設定は naming で別に扱う）
+//   key … 保存するときの名前   url … URL での名前   def … 初期値   ids … 画面の入力欄（変えたら保存する）
+//   read() … 画面から今の値を読む        write(v) … 画面に値を入れる（おかしな値は無視する）
+//   fromUrl(文字) … URL の値を読む（読めなければ undefined）   toUrl(v) … URL に書く文字
 export var SETTING_DEFS = [
   // 解像度（480p・720p・1080p・元の解像度）
   {
@@ -164,7 +169,7 @@ export function hasSettingParams() {
   } catch (e) { return false; }
 }
 // ショートカットなどから URL で初期値を渡せる（詳細設定の項目も含む）
-//   res=720|1080|source  mode=size|quality  target=MB  preuse=%  min720=kbps  min1080=kbps  fps=30|source  auto=on|off  audio=on|off
+//   res=480|720|1080|source  mode=size|quality  target=MB  preuse=%  min720=kbps  min1080=kbps  fps=30|source  auto=on|off  audio=on|off
 export function applyUrlParams() {
   var params;
   try { params = new URLSearchParams(window.location.search); } catch (e) { return; }

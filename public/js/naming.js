@@ -7,7 +7,7 @@ import { readSettings } from './settings.js';
 import { easyName, easyNameTouched } from './adjust.js';
 
 // ---------------------------------------------------------------- 書き出す動画のファイル名
-// 詳細設定でオンにすると、選んだ項目を選んだ順に「_」でつないだ名前にする（全部オフなら今までの名前）
+// 詳細設定でオンにすると、選んだ項目を選んだ順に「_」でつないだ名前にする（全部オフなら、元の名前に _compressed などを付けた名前）
 var NAME_PARTS = [
   { key: 'date', label: '日付' },
   { key: 'datetime', label: '日付+時間' },
@@ -86,7 +86,7 @@ function namePart(key, ctx) {
   if (key === 'orig') return cleanName(ctx.base);
   return '';
 }
-// 指定した名前（拡張子なし）。オフのとき・使う項目がないときは null（今までの名前にする）
+// 指定した名前（拡張子なし）。オフのとき・使う項目がないときは null（元の名前に _compressed などを付ける）
 export function customName(ctx) {
   // 2 のファイル名の欄に入れた名前をそのまま使う（日付などは付けない）。
   // 空なら元の動画の名前（_compressed なども付けない）

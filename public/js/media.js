@@ -91,7 +91,6 @@ function readMetaFast(input) {
   });
 }
 
-// 読み込めなかったときの文言。codec は高速モードで分かった映像の形式（分からなければ undefined）
 var CODEC_NAMES = { hevc: 'HEVC/H.265', avc: 'H.264', vp9: 'VP9', vp8: 'VP8', av1: 'AV1' };
 // 端末によっては一時的に読み込めず、もう一度選ぶと読み込めることがあるので、まず選び直してもらう
 export var MSG_READ_FAIL = '動画をうまく受け取れませんでした（端末側で一時的に読み込めないことがあります）。「動画を選択」からもう一度同じ動画を選んでください。';
@@ -117,6 +116,7 @@ export function codecStuckError() { var e = new Error(MSG_CODEC_STUCK); e.stuck 
 export function withinDecoderCheck(promise) {
   return Promise.race([promise, sleep(DECODER_CHECK_MS).then(function () { throw codecStuckError(); })]);
 }
+// 読み込めなかったときの文言。codec は高速モードで分かった映像の形式（分からなければ undefined）
 export function loadFailMessage(codec) {
   if (!codec) return '動画を読み込めませんでした。' + MSG_PICK_AGAIN + '何度選んでも読み込めないときは、ファイルが壊れているか、対応していない形式です（MP4・MOVに対応しています）。';
   return 'この端末は、この動画の映像形式（' + (CODEC_NAMES[codec] || codec) + '）の読み込みに対応していない可能性があります。' + MSG_PICK_AGAIN +
@@ -240,12 +240,12 @@ export function audioStrategy(meta, wanted, engine) {
   return noAudio('この端末では音声をAACに変換できないため、音声なしで圧縮します。');
 }
 
-// iPhone / iPad（iPadOS はMacとして名乗るので、タッチ対応かどうかで見分ける）
 // Safari（WebKit）。iPhone・iPad はどのブラウザも中身は Safari
 export function isWebKit() {
   var ua = navigator.userAgent || '';
   return isIOS() || (/AppleWebKit/.test(ua) && /Safari/.test(ua) && !/Chrome|Chromium|CriOS|Edg|OPR|Android/.test(ua));
 }
+// iPhone / iPad（iPadOS はMacとして名乗るので、タッチ対応かどうかで見分ける）
 export function isIOS() {
   var ua = navigator.userAgent || '';
   return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 0);

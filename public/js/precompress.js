@@ -166,10 +166,11 @@ export function preReady(plan) {
   var need = Math.min(pre.plan.duration, plan.trimEnd + PRE_TAIL_SEC);   // finishFromPrecompress と同じ
   return pre.marks[pre.marks.length - 1].t >= need;
 }
-// 「なるべく圧縮」で、先行圧縮が今の設定と同じで、範囲の始まりまで届いていれば、その先行圧縮（使えなければ null）
+// 押したときに先行圧縮をそのまま使えれば、その先行圧縮（使えなければ null）
 export function precompressUsable(plan) {
   return precompressWhyNot(plan) ? null : pre;
 }
+// 先行圧縮を使えない理由（診断情報に書く。使えれば ''）
 export function precompressWhyNot(plan) {
   if (!pre || pre.file !== state.file) return '先行圧縮していない';
   if (pre.failed) return '先行圧縮に失敗した';

@@ -165,7 +165,6 @@ function runAudioEncoder(audioBuffer, from, to, channels, sampleRate, config, on
   });
 }
 
-// 映像: <video> をトリミング範囲だけ再生し、フレームを取り出してエンコードする
 // 取り込んだコマを描く面。OffscreenCanvas を使い、そこから VideoFrame を作れない環境では、ふつうの canvas に切り替える。
 // 作れなければ null
 function frameSurface(width, height) {
@@ -198,6 +197,7 @@ function frameSurface(width, height) {
   };
 }
 
+// 映像: <video> をトリミング範囲だけ再生し、フレームを取り出してエンコードする
 function encodeCompatVideo(videoEl, plan, config, onPacket, onProgress, job) {
   // キャンセル済みなら、プレビューの動画（ミュート・再生位置など）に触れずに終える
   if (job.cancelled) return Promise.reject(new Error(CANCELLED));

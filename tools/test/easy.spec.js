@@ -1,5 +1,4 @@
 // アプリの画面（index.html・3ステップ）：1. 圧縮の仕方を選ぶ → 2. 動画を選んでトリミング → 3. 共有・保存
-// （従来の画面 old.html のテストは、ほかのファイルで helpers の open を使う）
 'use strict';
 
 const { test, expect } = require('@playwright/test');
@@ -300,7 +299,7 @@ test('圧縮中にキャンセルしたら 2 に戻る。手順の帯で 1 に�
   expect(await page.evaluate(() => !!window.__compressor.state.meta)).toBe(true);   // 選んだ動画はそのまま
 });
 
-test('2択は、従来の画面と共通の保存してある設定を使わず、変えもしない', async ({ page }) => {
+test('2択は、保存してある設定を使わず、変えもしない', async ({ page }) => {
   await open(page);
   await page.evaluate(() => {
     localStorage.setItem('video-compressor-under20mb:settings', JSON.stringify({ res: '1080', mode: 'size', target: 50, min720: 800, halfFps: false }));

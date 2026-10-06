@@ -52,6 +52,11 @@ export function withEstimate(plan) {
   p.overDiscord = p.estBytes > DISCORD_FREE_BYTES;
   return p;
 }
+// 予想の行（showPlanText で出す）
+//   現在の設定：720p/30fps/1分00秒/1.2Mbps
+//   → 7.5MB（予想・先行圧縮 60%）… 先行圧縮から切り出せて、大きさが分かっていれば「確定・先行圧縮済み」
+//   目標サイズに収まらなければ、次の行に「◯分◯秒以内で20MBに収まります。」
+// trimEst … トリミングのみ（再エンコードしない）で書き出すときの見込みの大きさ
 export function planParts(plan, trimEst) {
   var sure = !trimEst && !!(plan.probed && pre && preReady(plan) && plan.exactEst && !precompressWhyNot(plan));
   // ビットレートは、指定するビットレート（エンコーダーが実際に使う量は、予想の大きさに入っている）。
