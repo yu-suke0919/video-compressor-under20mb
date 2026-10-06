@@ -487,10 +487,11 @@
   $('autoBtn').addEventListener('click', async function () {
     setBusy(true);
     setNotice('');
+    var stored = storedSettings();   // 始める前の保存してある設定（最後に、すべてのテストで変わっていないか確かめる）
     try {
       await runAll(CASES, function (c) { return makeVideo(c.video); });
       await runPreCases();
-      await runEasyCases();
+      await runEasyCases(stored);
       setStatus('自動テストが終わりました');
     } finally {
       render();
@@ -1139,9 +1140,10 @@
     }
   ];
 
-  async function runEasyCases() {
+  // stored … 自動テストを始める前の保存してある設定（最後のテストで、変わっていないか確かめる）
+  async function runEasyCases(stored) {
     var rows = EASY_CASES.map(function (c) { return addResult('3ステップ: ' + c.title); });
-    var ctx = { stored: storedSettings() };   // 始める前の保存してある設定（最後に変わっていないか確かめる）
+    var ctx = { stored: stored };
     for (var i = 0; i < EASY_CASES.length; i++) {
       var c = EASY_CASES[i], r = rows[i];
       try {
