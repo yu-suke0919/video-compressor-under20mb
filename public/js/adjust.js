@@ -27,7 +27,7 @@ var EASY_PRESETS = {
 };
 
 // 3ステップの画面の 2 で変えた値（その動画だけ。新しい動画を選ぶ・1 で選び直す・設定のステップで設定を変えると戻す）
-//   res     … 解像度（'1080' | '720' | '480'。null なら設定のまま）
+//   res     … 解像度（'1080' | '720' | '480' | 'source'。null なら設定のまま）
 //   halfFps … 60fpsの動画を30fpsにするか（null なら設定のまま）
 //   mode    … 圧縮方法（'quality'＝指定ビットレートでなるべく圧縮 | 'size'＝目標サイズに収まるなるべく高いビットレート。null なら設定のまま）
 export var adjust = { res: null, halfFps: null, mode: null };
@@ -177,7 +177,7 @@ export function ruleName() {
 }
 
 // 3ステップの画面で選ぶ。圧縮した動画があれば消す
-//   2択 … 初期値の設定に、選んだ方の設定を重ねる。custom … 初期値に保存してある設定を重ねる（アプリの画面と同じ）
+//   2択 … 初期値の設定に、選んだ方の設定を重ねる。custom … 初期値に保存してある設定を重ねる
 export function setEasyPreset(name) {
   var p = EASY_PRESETS[name];
   if ((!p && name !== 'custom') || state.running) return;

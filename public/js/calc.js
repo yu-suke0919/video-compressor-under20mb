@@ -34,11 +34,7 @@ export function isStandardRes(meta) {
 // （1080p を選んでいても 720p として計画する。1080p の下限ビットレートで 720p の動画を圧縮してしまうのを防ぐ）
 export function isSmallSource(meta) { return !!meta && Math.min(meta.width, meta.height) <= 720 + 8; }
 
-// 画面で変えられる設定。保存・読み込み・初期値に戻す・URL の読み取りと作成は、すべてこの一覧から行う
-// （設定を足すときは、ここに1つ足せばよい。ファイル名の設定は naming で別に扱う）
-//   key … 保存するときの名前   url … URL での名前   def … 初期値   ids … 画面の入力欄（変えたら保存する）
-//   read() … 画面から今の値を読む        write(v) … 画面に値を入れる（おかしな値は無視する）
-//   fromUrl(文字) … URL の値を読む（読めなければ undefined）   toUrl(v) … URL に書く文字
+// URL の on/off（1/0・true/false も）を読む（読めなければ undefined）
 export function onOffWord(v) {
   v = v.toLowerCase();
   if (v === 'on' || v === '1' || v === 'true') return true;
@@ -188,11 +184,6 @@ export function preEstimate(plan, rec, bps) {
   var rest = Math.max(0, (b - a) - inSec);
   return { videoBps: Math.round((inBits + rest * allBits / allSec) / (b - a)), covered: Math.min(1, inSec / (b - a)) };
 }
-// 画面の予想の後ろに付ける、先行圧縮の状況
-// 予想の行
-//   現在の設定：720p/30fps/1分00秒/1.2Mbps
-//   → 7.5MB（予想・先行圧縮 60%）… 先行圧縮が使えて、切り出す大きさが分かっていれば「確定・先行圧縮済み」
-//   目標サイズに収まらなければ、次の行に「◯分◯秒以内で20MBに収まります。」（先行圧縮で測れたビットレートか、指定のビットレートから）
 // 目標サイズに収まる長さの目安（秒）。先行圧縮で測れていれば、その実際のビットレートから（plan.fitSec）、
 // なければ、この計画の下限ビットレートから。予想の行・2 の注意・トリミングの帯で同じ値を使う
 export function fitSecOf(plan) {

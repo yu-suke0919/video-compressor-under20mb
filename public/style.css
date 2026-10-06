@@ -1,4 +1,4 @@
-/* アプリの画面（index.html）と簡単モード（easy.html）で共通の見た目 */
+/* アプリの画面（index.html）の見た目 */
 :root {
   color-scheme: light dark;
   --bg: #f2f2f7;
@@ -301,7 +301,7 @@ header .btn-sm {
   text-align: left;
 }
 #helpDlg .help-qa .qa-answer b {
-  white-space: nowrap;   /* 「720pで約1分55秒」などを途中で折り返さない */
+  white-space: nowrap;   /* 「720pで約1分56秒」などを途中で折り返さない */
 }
 #helpDlg .help-qa .qa-answer a {
   color: var(--accent);
@@ -894,7 +894,7 @@ a.btn {
   text-decoration: none;
 }
 
-/* ---------------------------------------------------------------- 簡単モード（easy.html）
+/* ---------------------------------------------------------------- 3ステップの画面
    3つのステップ（1. 圧縮の仕方を選ぶ → 2. 動画を選んでトリミング → 3. 共有・保存）を1つずつ出す */
 .steps {
   display: flex;

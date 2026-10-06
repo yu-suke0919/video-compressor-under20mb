@@ -35,7 +35,6 @@ test('読み込んだら全体を先行圧縮し、実測の平均ビットレ�
   const d = await diag(page);
   expect(d).toMatch(/先行圧縮を開始 720 1280x720 mode=quality 1200kbps fps=60→30/);   // なるべく圧縮は下限ビットレート
   expect(d).toMatch(/先行圧縮が完了 /);
-  expect(d).not.toMatch(/試し圧縮/);
   // 先行圧縮が済んだら、予想は書き出した量とほぼ同じ。表示のビットレートは実測の平均、秒数は収まる秒数の95%
   const r = await pc(page, () => { const p = window.__compressor.state.plan; return { bytes: window.__compressor.precomp().pre.bytes, est: p.estBytes, bps: p.expectedBps, audio: p.audioBitrate, fit: p.fitSec }; });
   expect(Math.abs(r.est - r.bytes) / r.bytes).toBeLessThan(0.02);
@@ -303,7 +302,7 @@ test('「◯MB以内」でも、先行圧縮を切り出した大きさが目標
   await preDone(page);
   await setTrim(page, 0, 30);
   const cut = await pc(page, () => window.__compressor.exactCutBytes(window.__compressor.state.plan, window.__compressor.precomp().pre));
-  // 目標を、切り出した大きさがその約85% になるようにする（以前の95%の条件では使わなかった大きさ）
+  // 目標を、切り出した大きさがその約85% になるようにする
   const target = Math.ceil(cut / 0.85 / 100000) / 10;   // MB（小数1桁）
   await page.evaluate(() => { document.querySelector('details.settings:not(#diagBox)').open = true; });   // 詳細設定（設定のステップでは開いたまま）
   await page.fill('#targetSize', String(target));

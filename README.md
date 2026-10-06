@@ -3,7 +3,7 @@
 動画をDiscordに投稿できるサイズ（20MB以下）に圧縮するサイトです。ブラウザの付属機能（WebCodecs）を使って端末の中で圧縮するため、動画はアップロードされません。
 共有シートからそのままDiscordに投稿でき、ホーム画面に追加すればオフラインでも起動できます（PWA。アイコン名は「20MB圧縮」）。
 
-**公開URL: https://maka-u20mb.pages.dev/**（Cloudflare Pages）
+**公開URL: [https://maka-u20mb.pages.dev/](https://maka-u20mb.pages.dev/)**（Cloudflare Pages）
 
 ---
 

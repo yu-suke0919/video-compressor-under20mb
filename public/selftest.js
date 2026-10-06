@@ -279,7 +279,7 @@
     a.value = String(start); a.dispatchEvent(new w.Event('input'));
   }
 
-  // 新しい画面で、読み込んだ動画の解像度が元のまま固定か（720p・1080p ではない動画）
+  // 読み込んだ動画の解像度が元のまま固定か（720p・1080p ではない動画）
   function resFixedInApp() {
     var seg = appDoc().getElementById('adjResSeg');
     return !!seg && !!appWin().__compressor.state.meta && seg.classList.contains('hidden');
@@ -339,7 +339,7 @@
     // 目標に収まるので、再エンコードせずに切り出す（範囲の始まりより前はファイルに入るが再生されないので、長さは範囲どおり）
     { title: 'トリミングのみ（再圧縮なし）', video: 'v720', query: 'res=720&mode=size&target=20', trim: [2, 5], expect: { w: 1280, h: 720, trimOnly: true, duration: 3 } },
     { title: '1080p60 → 720p30', video: 'v1080p60', query: 'res=720&mode=quality', expect: { w: 1280, h: 720, fps: 30, audio: true } },
-    // 480p は、新しい画面の 2 の解像度でだけ選べる（縦横比はそのまま、短い辺を480に）
+    // 480p は、2 の解像度でだけ選べる（縦横比はそのまま、短い辺を480に）
     { title: '1080p60 → 480p30（2 の解像度で選ぶ）', video: 'v1080p60', query: 'res=720&mode=quality', adjRes: '480', expect: { w: 854, h: 480, fps: 30, audio: true } },
     { title: '1080p60 → 1080p60（fps そのまま）', video: 'v1080p60', query: 'res=1080&mode=quality&fps=source', expect: { w: 1920, h: 1080, fps: 60, audio: true } },
     { title: '縦長 → 720p', video: 'vVert', query: 'res=720&mode=quality', expect: { w: 720, h: 1280, audio: true } },
@@ -567,7 +567,7 @@
           if (!s) continue;
           var meta = s.meta;
           r.title = c.title + '（元: ' + meta.width + '×' + meta.height + '・' + (meta.codecString || meta.videoCodec) + (meta.hdr ? '・HDR' : '') + '・' + fmtMB(file.size) + '）';
-          // 新しい画面では、720p・1080p ではない動画は元の解像度のまま（解像度は選べない）
+          // 720p・1080p ではない動画は元の解像度のまま（解像度は選べない）
           var fixed = resFixedInApp();
           if (c.adjRes && !fixed) setAdjRes(c.adjRes);
           await runInApp(COMPRESS_TIMEOUT_MS);

@@ -11,7 +11,7 @@
 //                   超えたら実サイズからビットレートを直し、最大2回まで再圧縮（run.js）
 //
 // すべて端末内で完結し、外部にデータは送信しない。
-// モジュールの一覧と役割は README の「ファイル構成」を参照
+// モジュールの一覧と役割は README の「コードの構成」を参照
 
 import { APP_VERSION, AUDIO_BITRATE, DEFAULT_MIN_KBPS, DISCORD_FREE_BYTES, MAX_ATTEMPTS, MB, SIZE_SAFETY } from './constants.js';
 import { estimateFps, exactCutBytes, makePlan, nextBitrate, preEstimate, snapFps } from './calc.js';
