@@ -144,12 +144,12 @@ async function shootShot(page, name, crop, marks) {
     // 3. 範囲を決めて、圧縮する（実機のスクリーンショット）
     const rectOf = (at, l, t, r, b) => { const a = at(l, t), z = at(r, b); return { l: a.x, t: a.y, r: z.x, b: z.y }; };
     await shootShot(page, 'step-3', { top: 334, bottom: 2348 }, at => {   // 位置は元の画像（1206×2622）のもの
-      const left = at(148, 1623), right = at(1053, 1623), video = at(0, 1466), run = rectOf(at, 49, 2002, 1158, 2180);
+      const left = at(148, 1614), right = at(1053, 1614), video = at(0, 1458), run = rectOf(at, 49, 1993, 1158, 2172);
       return [
         { type: 'circle', x: left.x, y: left.y },
         { type: 'circle', x: right.x, y: right.y },
         { type: 'note', n: '③', text: '青い線で使う範囲を決める', x: 40, y: video.y - 92, to: [{ x: left.x, y: left.y - 24 }, { x: right.x, y: right.y - 24 }] },
-        { type: 'frame', rect: rectOf(at, 49, 1757, 1158, 1825), color: '#1f6feb', tag: 'お好みで画質を調整', pad: 6 },
+        { type: 'frame', rect: rectOf(at, 49, 1748, 1158, 1816), color: '#1f6feb', tag: 'お好みで画質を調整', pad: 6 },
         { type: 'frame', rect: run },
         { type: 'note', n: '④', text: '押して圧縮！', x: 120, y: run.b + 22, to: [{ x: 195, y: run.b + 6 }] }
       ];
@@ -157,7 +157,7 @@ async function shootShot(page, name, crop, marks) {
 
     // 4. 共有・保存（実機のスクリーンショット）
     await shootShot(page, 'step-4', { top: 334, bottom: 2348 }, at => {
-      const share = rectOf(at, 49, 1645, 1158, 1822);
+      const share = rectOf(at, 49, 1636, 1158, 1816);
       return [
         { type: 'frame', rect: share },
         { type: 'note', n: '⑤', text: 'Discordに送る・写真に保存', x: 40, y: share.b + 22, to: [{ x: 195, y: share.b + 6 }] }   // 結果の行を隠さないよう、ボタンの下に
