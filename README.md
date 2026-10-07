@@ -188,7 +188,7 @@ python3 -m http.server 8000 -d public   # 手元で確認（Service Workerを使
 - `public/js/` にファイルを足したときは、`public/sw.js` の `ASSETS` にも足します（オフラインで起動できなくなるため）。
 - Service Worker は、本番では**キャッシュ優先**（更新は裏で取得して次に開いたときに反映）、プレビューと localhost では**ネット優先**（3秒応答がなければキャッシュ）です。動画は Service Worker を通しません。
 - `public/vendor/mediabunny.min.js` は、Mediabunny から使う機能と入力形式（MP4 / MOV）だけを束ねたものです。`npm install && npm run build:vendor` で作り直します（含める機能は `tools/mediabunny-entry.js`）。
-- 説明書の画像（`public/help/step-1〜4.webp`・`sc-url.webp`）は `node tools/make-help-images.js` で作ります（画面を変えたら作り直し、変わらなかった画像は戻す）。
+- 説明書の画像（`public/help/step-1〜4.webp`・`sc-url.webp`）は `node tools/make-help-images.js` で作ります（画面を変えたら作り直し、変わらなかった画像は戻す）。動画が映る `step-3`・`step-4` は、実機のスクリーンショット（`tools/help-shots/`）に書き込むので、画面を変えたら実機で撮り直して差し替えます（書き込む位置は `tools/make-help-images.js` に元の画像の座標で書いてある）。
 
 ### テスト
 

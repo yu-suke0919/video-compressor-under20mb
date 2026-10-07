@@ -1,9 +1,10 @@
 // アプリの画面（3ステップ）の説明書の画像（public/help/step-1.webp 〜 step-4.webp）と、
 // ショートカットのページの「設定を指定して開く」の画像（public/help/sc-url.webp）を作る
-// テスト用のサーバーでアプリを開き、iPhone の画面の大きさで撮って、説明の書き込み（番号・枠・矢印）を重ね、WebP にする。
-// 画面を変えたら作り直す。
+// step-1・step-2・sc-url は、テスト用のサーバーでアプリを開き、iPhone の画面の大きさで撮る。
+// step-3・step-4 は、実機（iPhone）のスクリーンショット（tools/help-shots/。動画が映る画面なので、実際のゲームの動画で撮ったもの）を使う。
+// どれも説明の書き込み（番号・枠・矢印）を重ね、WebP にする。画面を変えたら作り直す（step-3・step-4 は実機で撮り直して差し替える）。
 //   使い方: node tools/make-help-images.js
-//   必要なもの: テスト用の動画（npm run test:videos）、H.264 を扱える Chrome（CHROME_PATH。npm test と同じ）、ffmpeg（FFMPEG。WebP にする）
+//   必要なもの: H.264 を扱える Chrome（CHROME_PATH。npm test と同じ）、ffmpeg（FFMPEG。WebP にする）
 'use strict';
 
 const { chromium } = require('@playwright/test');
@@ -17,11 +18,11 @@ const PORT = Number(process.env.PORT || 8791);
 const BASE = 'http://127.0.0.1:' + PORT;
 const OUT = path.join(ROOT, 'public', 'help');
 const FFMPEG = process.env.FFMPEG || 'ffmpeg';
-const VIDEO = path.join(ROOT, 'tools', 'test', 'videos', '1080p60-45s.mp4');
+const SHOTS = path.join(__dirname, 'help-shots');
 const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1';
 
 // 画面に説明の書き込みを重ねる（ページの中で動かす）。marks … [{ type, ... }]
-//   frame  … 枠（sel の部品を囲む。color、tag はその上に付ける札）
+//   frame  … 枠（sel の部品、または rect: { l, t, r, b } を囲む。color、tag はその上に付ける札）
 //   circle … 丸（x, y を中心に）
 //   note   … 番号つきの説明（n, text, x, y。to があれば、そこへ矢印を引く）
 function draw(marks) {
@@ -51,7 +52,8 @@ function draw(marks) {
   };
   for (const m of marks) {
     if (m.type === 'frame') {
-      const r = rect(m.sel), c = m.color || RED, pad = m.pad == null ? 4 : m.pad;
+      const r = m.rect ? { left: m.rect.l, top: m.rect.t, right: m.rect.r, width: m.rect.r - m.rect.l, height: m.rect.b - m.rect.t } : rect(m.sel);
+      const c = m.color || RED, pad = m.pad == null ? 4 : m.pad;
       add('<div style="position:absolute;left:' + (r.left - pad) + 'px;top:' + (r.top - pad) + 'px;width:' + (r.width + pad * 2) + 'px;height:' +
         (r.height + pad * 2) + 'px;border:3px solid ' + c + ';border-radius:16px;box-sizing:border-box"></div>');
       if (m.tag) {
@@ -86,6 +88,29 @@ async function shoot(page, name, marks, keepScroll) {
   console.log('作成: public/help/' + name + '.webp');
 }
 
+// 実機のスクリーンショットに書き込む。crop … 使う範囲（元の画像の縦の位置。上の Safari のアドレスバーと下のツールバーを除く）。
+// 画面の幅（390）に合わせて縮め、足りない下の部分はアプリの背景の色で埋める。marks(at) … at(x, y) で元の画像の位置を画面の位置にする
+async function shootShot(page, name, crop, marks) {
+  const file = path.join(SHOTS, name + '.webp');
+  const src = 'data:image/webp;base64,' + fs.readFileSync(file).toString('base64');
+  await page.setContent('<html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>' +
+    '<body style="margin:0;overflow:hidden"><div id="shot" style="position:relative;overflow:hidden;width:390px">' +
+    '<img id="img" src="' + src + '" style="position:absolute;left:0;width:390px"></div></body></html>');
+  const size = await page.evaluate(() => new Promise(r => { const i = document.getElementById('img'); (i.complete ? Promise.resolve() : new Promise(d => { i.onload = d; })).then(() => r({ w: i.naturalWidth, h: i.naturalHeight })); }));
+  const s = 390 / size.w;
+  await page.evaluate(o => {
+    const i = document.getElementById('img'), box = document.getElementById('shot');
+    i.style.top = (-o.top * o.s) + 'px';
+    box.style.height = ((o.bottom - o.top) * o.s) + 'px';
+    // 背景の色は、使う範囲の下の端の、左の余白から取る（埋める所とつながるように）
+    const c = document.createElement('canvas'); c.width = i.naturalWidth; c.height = i.naturalHeight;
+    const g = c.getContext('2d'); g.drawImage(i, 0, 0);
+    const d = g.getImageData(6, o.bottom - 4, 1, 1).data;
+    document.body.style.background = 'rgb(' + d[0] + ',' + d[1] + ',' + d[2] + ')';
+  }, { top: crop.top, bottom: crop.bottom, s });
+  await shoot(page, name, marks((x, y) => ({ x: x * s, y: (y - crop.top) * s })), true);
+}
+
 (async () => {
   const server = spawn(process.execPath, [path.join(ROOT, 'tools', 'test', 'server.js')], { env: Object.assign({}, process.env, { PORT: String(PORT) }), stdio: 'ignore' });
   try {
@@ -116,39 +141,28 @@ async function shoot(page, name, marks, keepScroll) {
       { type: 'note', n: '②', text: 'タップして動画を選ぶ', x: 70, y: pick.t + 30, to: [{ x: 195, y: pick.t + (pick.b - pick.t) / 2 - 22 }] }
     ]);
 
-    // 3. 範囲を決めて、圧縮する
-    await page.setInputFiles('#file', VIDEO);
-    await page.waitForFunction(() => !!window.__compressor.state.meta);
-    await page.evaluate(() => {
-      const a = document.getElementById('trimStart'), z = document.getElementById('trimEnd');
-      z.value = '33'; z.dispatchEvent(new Event('input'));
-      a.value = '8'; a.dispatchEvent(new Event('input'));
+    // 3. 範囲を決めて、圧縮する（実機のスクリーンショット）
+    const rectOf = (at, l, t, r, b) => { const a = at(l, t), z = at(r, b); return { l: a.x, t: a.y, r: z.x, b: z.y }; };
+    await shootShot(page, 'step-3', { top: 334, bottom: 2348 }, at => {   // 位置は元の画像（1206×2622）のもの
+      const left = at(148, 1623), right = at(1053, 1623), video = at(0, 1466), run = rectOf(at, 49, 2002, 1158, 2180);
+      return [
+        { type: 'circle', x: left.x, y: left.y },
+        { type: 'circle', x: right.x, y: right.y },
+        { type: 'note', n: '③', text: '青い線で使う範囲を決める', x: 40, y: video.y - 92, to: [{ x: left.x, y: left.y - 24 }, { x: right.x, y: right.y - 24 }] },
+        { type: 'frame', rect: rectOf(at, 49, 1757, 1158, 1825), color: '#1f6feb', tag: 'お好みで画質を調整', pad: 6 },
+        { type: 'frame', rect: run },
+        { type: 'note', n: '④', text: '押して圧縮！', x: 120, y: run.b + 22, to: [{ x: 195, y: run.b + 6 }] }
+      ];
     });
-    await page.evaluate(() => document.getElementById('srcVideo').currentTime = 2);
-    await page.waitForTimeout(500);
-    // 「圧縮する」の下の説明まで入るように、少し下へずらす
-    await page.evaluate(() => window.scrollTo(0, Math.max(0, document.getElementById('runBtn').getBoundingClientRect().bottom + 80 - innerHeight)));
-    const fill = await box('#trimFill'), trim = await box('#trimBox'), run = await box('#runBtn'), video = await box('#srcBox');
-    const cy = (trim.t + trim.b) / 2;
-    await shoot(page, 'step-3', [
-      { type: 'circle', x: fill.l, y: cy },
-      { type: 'circle', x: fill.r, y: cy },
-      { type: 'note', n: '③', text: '青い線で使う範囲を決める', x: 40, y: video.b - 92, to: [{ x: fill.l, y: cy - 24 }, { x: fill.r, y: cy - 24 }] },
-      { type: 'frame', sel: '#adjMenu', color: '#1f6feb', tag: 'お好みで画質を調整', pad: 6 },
-      { type: 'frame', sel: '#runBtn' },
-      { type: 'note', n: '④', text: '押して圧縮！', x: 120, y: run.b + 22, to: [{ x: 195, y: run.b + 6 }] }
-    ], true);
 
-    // 4. 共有・保存
-    await page.click('#runBtn');
-    await page.waitForFunction(() => !window.__compressor.state.running && !!window.__compressor.state.out, null, { timeout: 120000 });
-    await page.evaluate(() => document.getElementById('outVideo').currentTime = 1);
-    await page.waitForTimeout(800);
-    const share = await box('#shareBtn');
-    await shoot(page, 'step-4', [
-      { type: 'frame', sel: '#shareBtn' },
-      { type: 'note', n: '⑤', text: 'Discordに送る・写真に保存', x: 40, y: share.b + 22, to: [{ x: 195, y: share.b + 6 }] }   // 結果の行を隠さないよう、ボタンの下に
-    ]);
+    // 4. 共有・保存（実機のスクリーンショット）
+    await shootShot(page, 'step-4', { top: 334, bottom: 2348 }, at => {
+      const share = rectOf(at, 49, 1645, 1158, 1822);
+      return [
+        { type: 'frame', rect: share },
+        { type: 'note', n: '⑤', text: 'Discordに送る・写真に保存', x: 40, y: share.b + 22, to: [{ x: 195, y: share.b + 6 }] }   // 結果の行を隠さないよう、ボタンの下に
+      ];
+    });
 
     // ショートカットのページ：「詳しく設定する」の設定の画面で「現在の設定を記憶したURLを生成してコピー」を押す
     await page.setViewportSize({ width: 390, height: 844 });
