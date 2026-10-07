@@ -85,7 +85,7 @@ test('720p・1080p ではない動画は、どの圧縮の仕方でも元の解�
     expect(await page.evaluate(() => document.getElementById('adjResSeg').classList.contains('hidden'))).toBe(false);
   }
   // 「詳しく設定する」で 720p を選んでいても元の解像度のまま。設定のステップの解像度は押せず、同じことを出す
-  await openEasy(page, '?res=720&mode=quality&probe=off');
+  await openEasy(page, '?res=720&mode=narubeku&probe=off');
   await pick(page, 'screenrec-886x1920.mp4');
   const p = await plan(page);
   expect([p.w, p.h]).toEqual([886, 1920]);
@@ -317,7 +317,7 @@ test('2択は、保存してある設定を使わず、変えもしない', asyn
 test('URL に設定があれば（ショートカットから開いたとき）、その設定の「詳しく設定する」にして、すぐ動画を選べる', async ({ page }) => {
   await open(page);
   await page.evaluate(() => localStorage.setItem('video-compressor-under20mb:settings', JSON.stringify({ res: '720', mode: 'size', target: 50 })));
-  await openEasy(page, '?res=1080&mode=quality&auto=on&probe=off');
+  await openEasy(page, '?res=1080&mode=narubeku&auto=on&probe=off');
   expect(await currentStep(page)).toEqual(['step2']);
   expect(await page.textContent('#easyModeName')).toBe('カスタム');   // なるべく圧縮（720p）・画質優先のどちらとも違う
   const s = await settings(page);

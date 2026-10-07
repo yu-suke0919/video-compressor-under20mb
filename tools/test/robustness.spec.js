@@ -48,7 +48,7 @@ test.describe('別のアプリへの切り替え（iPhone で圧縮が壊れる�
   };
 
   test('切り替え中に失敗したら、戻ってから高速モードで最初からやり直す', async ({ page }) => {
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     await failFirstConversion(page, 'fail');
     await pick(page, 'small-5mb.mp4');
     await page.click('#runBtn');
@@ -59,7 +59,7 @@ test.describe('別のアプリへの切り替え（iPhone で圧縮が壊れる�
   });
 
   test('失敗の直後に画面が隠れた知らせが届く場合（実機の順番）も、やり直す', async ({ page }) => {
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     await failFirstConversion(page, 'late');
     await pick(page, 'small-5mb.mp4');
     await page.click('#runBtn');
@@ -70,7 +70,7 @@ test.describe('別のアプリへの切り替え（iPhone で圧縮が壊れる�
   });
 
   test('戻っても止まったままなら、3秒で見切ってやり直す', async ({ page }) => {
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     await failFirstConversion(page, 'hang');
     await pick(page, 'small-5mb.mp4');
     await page.click('#runBtn');
@@ -82,7 +82,7 @@ test.describe('別のアプリへの切り替え（iPhone で圧縮が壊れる�
   });
 
   test('戻ってやり直しても止まったままなら、3秒で見切って互換モードに切り替える', async ({ page }) => {
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     // iPhone で、戻ったあとも高速モードが固まったままになる状況（1回目も2回目も進まない）
     await page.evaluate(() => {
       const C = window.Mediabunny.Conversion.prototype, orig = C.execute;
@@ -105,7 +105,7 @@ test.describe('別のアプリへの切り替え（iPhone で圧縮が壊れる�
   });
 
   test('戻ったときにデコーダーが固まっていたら、互換モードを試さず、開き直すよう案内する', async ({ page }) => {
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     await failFirstConversion(page, 'hang');
     await pick(page, 'small-5mb.mp4');
     // 裏に回ったらデコーダーが固まる（iPhone の実機で、Safari を開き直すまで応答しなくなった）
@@ -128,7 +128,7 @@ test.describe('別のアプリへの切り替え（iPhone で圧縮が壊れる�
   });
 
   test('知らせがないままページが止められていた場合も、やり直す', async ({ page }) => {
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     await failFirstConversion(page, 'fail');
     await pick(page, 'small-5mb.mp4');
     await page.click('#runBtn');
@@ -139,7 +139,7 @@ test.describe('別のアプリへの切り替え（iPhone で圧縮が壊れる�
   });
 
   test('切り替えていないのに失敗したら、今までどおり互換モードに切り替える', async ({ page }) => {
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     await failFirstConversion(page, 'quick');
     await pick(page, 'small-5mb.mp4');
     await compress(page);
@@ -150,7 +150,7 @@ test.describe('別のアプリへの切り替え（iPhone で圧縮が壊れる�
   });
 
   test('やり直しを待っている間のキャンセルは、すぐ効く', async ({ page }) => {
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     await failFirstConversion(page, 'late');
     await pick(page, 'small-5mb.mp4');
     await page.click('#runBtn');
@@ -173,7 +173,7 @@ test.describe('デコーダーを確かめている間に裏に回った', () =>
       const orig = VideoDecoder.isConfigSupported.bind(VideoDecoder);
       VideoDecoder.isConfigSupported = c => window.__hangDecoder ? new Promise(() => {}) : orig(c);   // 裏では応答しない
     });
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     await failFirstConversion(page, 'hang');
     await pick(page, 'small-5mb.mp4');
     await page.click('#runBtn');
@@ -212,7 +212,7 @@ test.describe('デコーダーが固まっている（iPhone で、圧縮中に�
   });
 
   test('圧縮を始めるとき：準備で止まり続けず、互換モードも試さず、開き直すよう案内する', async ({ page }) => {
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     await pick(page, 'small-5mb.mp4');
     await hangDecoder(page);
     const t0 = Date.now();
@@ -227,7 +227,7 @@ test.describe('デコーダーが固まっている（iPhone で、圧縮中に�
   });
 
   test('圧縮を始めるときの確認中でも、キャンセルはすぐ効く', async ({ page }) => {
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     await pick(page, 'small-5mb.mp4');
     await hangDecoder(page);
     await page.click('#runBtn');
@@ -278,7 +278,7 @@ test.describe('エンコーダーが可変ビットレートの指定を守ら�
 
   test('なるべく圧縮で指定より大きく書き出しても、CBR で圧縮し直さず VBR のまま', async ({ page }) => {
     await greedyVbr(page);
-    await open(page, '?mode=quality&audio=off');
+    await open(page, '?mode=narubeku&audio=off');
     await pick(page, '720p-60s.mp4');
     await setTrim(page, 0, 10);
     await compress(page);
@@ -353,7 +353,7 @@ test.describe('エンコーダーが可変ビットレートの指定を守ら�
       const configure = VideoEncoder.prototype.configure;
       VideoEncoder.prototype.configure = function (c) { return configure.call(this, c.hardwareAcceleration === 'prefer-hardware' ? soft(c) : c); };
     });
-    await open(page, '?mode=quality&audio=off');
+    await open(page, '?mode=narubeku&audio=off');
     await pick(page, '720p-60s.mp4');
     await setTrim(page, 0, 10);
     await compress(page);
@@ -365,7 +365,7 @@ test.describe('エンコーダーが可変ビットレートの指定を守ら�
   });
 
   test('ハードウェアが使えなければソフトウェアの VBR を使い、ソフトウェアの CBR は試さない', async ({ page }) => {
-    await open(page, '?mode=quality&audio=off');   // テストの Chrome にはハードウェアのエンコーダーがない
+    await open(page, '?mode=narubeku&audio=off');   // テストの Chrome にはハードウェアのエンコーダーがない
     await pick(page, '720p-60s.mp4');
     await setTrim(page, 0, 10);
     await compress(page);
@@ -417,7 +417,7 @@ test.describe('エンコーダーが可変ビットレートの指定を守ら�
 
 test.describe('元の音声をそのままコピーできない（音声の設定データが壊れた動画など）', () => {
   test('互換モードにせず、音声を作り直すか外して、高速モードのままやり直す', async ({ page }) => {
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     // 音声をそのままコピーする変換だけ、Mediabunny が音声の形式を不正として止める（自己テストで実際に起きた失敗）
     await page.evaluate(() => {
       const C = window.Mediabunny.Conversion, init = C.init.bind(C);
@@ -487,7 +487,7 @@ test.describe('互換モード', () => {
     await page.addInitScript(() => {
       VideoEncoder.prototype.configure = function () { throw new DOMException('configure failed', 'NotSupportedError'); };
     });
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     await pick(page, 'small-5mb.mp4');
     await page.evaluate(() => { window.__compressor.state.engine = 'compat'; });
     await compress(page);
@@ -501,7 +501,7 @@ test.describe('互換モード', () => {
   test('「音声を残す」をオフで始めたら、互換モードに切り替わっても音声を入れない（圧縮中は設定を初期値に戻せない）', async ({ page }) => {
     // 互換モードで AAC の音声を作れる端末にする（この Chrome は AAC で書き出せないので、書き出す真似をする）
     await fakeAacEncoder(page, AAC_LC_48K_STEREO);
-    await open(page, '?mode=quality&audio=off');
+    await open(page, '?mode=narubeku&audio=off');
     await failFirstConversion(page, 'quick');   // 高速モードで失敗して、互換モードに切り替わる
     await pick(page, 'small-5mb.mp4');
     await page.click('#runBtn');
@@ -551,7 +551,7 @@ test.describe('互換モード', () => {
   test('iPhone の AudioEncoder が AAC の設定データの代わりに esds ごと出しても、正しい AAC として書き出す', async ({ page }) => {
     // iPhone の Safari と同じく、description に esds の中身（39バイト）を入れてくる AudioEncoder
     await fakeAacEncoder(page, SAFARI_ESDS);
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     await pick(page, '720p-60s.mp4');
     await setTrim(page, 0, 4);
     await page.evaluate(() => { window.__compressor.state.engine = 'compat'; });   // 互換モードで圧縮する
@@ -575,7 +575,7 @@ test.describe('互換モード', () => {
       await page.addInitScript(() => {
         HTMLMediaElement.prototype.play = () => Promise.reject(new DOMException('The request is not allowed by the user agent', 'NotAllowedError'));
       });
-      await open(page, '?mode=quality');
+      await open(page, '?mode=narubeku');
       await pick(page, 'small-5mb.mp4');
       await page.evaluate(() => { window.__compressor.state.engine = 'compat'; });
       await compress(page);
@@ -625,7 +625,7 @@ test.describe('画面を暗くしない設定（Wake Lock）', () => {
 
   test('取れる前に圧縮が終わったら、取れた時点ですぐ外す', async ({ page }) => {
     await fakeWakeLock(page, 2000);
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     await pick(page, 'short-0.3s.mp4');
     await compress(page);
     await page.waitForTimeout(2500);
@@ -635,7 +635,7 @@ test.describe('画面を暗くしない設定（Wake Lock）', () => {
   test('別のアプリから戻ったら取り直し、終わったら全部外す', async ({ page }) => {
     await controllableVisibility(page);
     await fakeWakeLock(page, 0);
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     await pick(page, '720p-60s.mp4');
     await page.click('#runBtn');
     await page.waitForTimeout(800);
@@ -651,7 +651,7 @@ test.describe('画面を暗くしない設定（Wake Lock）', () => {
 });
 
 test('圧縮に失敗したら、3 の見出しを「うまく圧縮できませんでした」にする（「圧縮しています…」のままにしない）', async ({ page }) => {
-  await open(page, '?mode=quality');
+  await open(page, '?mode=narubeku');
   await pick(page, 'small-5mb.mp4');
   await page.evaluate(() => {
     window.__compressor.state.caps.compat = false;   // 互換モードでのやり直しもしない

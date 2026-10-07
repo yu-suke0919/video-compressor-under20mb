@@ -33,7 +33,7 @@ test('何も指定しなければ初期値。URL は res だけ付ける（前�
 });
 
 test('URL の設定をすべて読み取り、同じ URL を作れる', async ({ page, context }) => {
-  const query = '?res=1080&mode=quality&target=50&preuse=90&min720=1500&min1080=3000&fps=source&auto=on&audio=off&name=date,text1,rand&text1=abc';
+  const query = '?res=1080&mode=narubeku&target=50&preuse=90&min720=1500&min1080=3000&fps=source&auto=on&audio=off&name=date,text1,rand&text1=abc';
   await open(page, query);
   expect(await readUi(page)).toEqual({ res: '1080', mode: 'quality', target: '50', preuse: '90', min720: '1500', min1080: '3000', halfFps: false, auto: true, audio: false, nameOn: true });
   expect(new URL(await copiedUrl(page, context)).search).toBe(query);
@@ -44,9 +44,11 @@ test('元の解像度（res=source）は URL と保存の両方で覚える', as
   expect(new URL(await copiedUrl(page, context)).search).toBe('?res=source');
 });
 
-test('URL の別名（720p・best・60・0・true など）も読み取る', async ({ page }) => {
+test('URL の別名（720p・best・quality・60・0・true など）も読み取る', async ({ page }) => {
   await open(page, '?res=1080p&mode=best&fps=60&audio=0&auto=true');
   expect(await readUi(page)).toEqual(Object.assign({}, DEFAULTS, { res: '1080', mode: 'quality', halfFps: false, audio: false, auto: true }));
+  await open(page, '?mode=quality');   // 以前の名前（配布しているショートカットの URL）
+  expect(await readUi(page)).toEqual(Object.assign({}, DEFAULTS, { mode: 'quality' }));
   await open(page, '?res=720p&mode=target&fps=half&audio=true&auto=0');
   expect(await readUi(page)).toEqual(DEFAULTS);
 });

@@ -22,7 +22,7 @@ const videoStart = page => page.evaluate(async () => {
 });
 
 test('読み込んだら全体を先行圧縮し、実測の平均ビットレート・予想・目標サイズに収まる秒数を出す', async ({ page }) => {
-  await open(page, '?probe=on&mode=quality');
+  await open(page, '?probe=on&mode=narubeku');
   await pick(page, '1080p60-10s.mp4');   // 初期設定は 720p・30fps
   await waitPc(page, () => { const p = window.__compressor.precomp().pre; return p && p.marks.length > 2; });
   // 途中なら進み具合を出す（短い動画なので、見た時にはもう済んでいることもある）
@@ -45,7 +45,7 @@ test('読み込んだら全体を先行圧縮し、実測の平均ビットレ�
 });
 
 test('「なるべく圧縮」で、先行圧縮が済んでいれば、押したら範囲を切り出してすぐ結果にする', async ({ page }) => {
-  await open(page, '?probe=on&mode=quality');
+  await open(page, '?probe=on&mode=narubeku');
   await pick(page, '720p-60s.mp4');
   await preDone(page);
   await setTrim(page, 10.7, 30.7);   // 「なるべく圧縮」では、範囲を変えても先行圧縮はやり直さない（始まりはキーフレームの間）
@@ -75,7 +75,7 @@ test('「なるべく圧縮」で、先行圧縮が済んでいれば、押し�
 });
 
 test('先行圧縮の途中で押しても、範囲の始まりを越えていれば、範囲の終わりまで続けて使う', async ({ page }) => {
-  await open(page, '?probe=on&mode=quality');
+  await open(page, '?probe=on&mode=narubeku');
   await pick(page, '720p-60s.mp4');
   await setTrim(page, 2.5, 20.5);
   await waitPc(page, () => { const p = window.__compressor.precomp().pre; return p && !p.done && p.time >= 3; });
@@ -91,7 +91,7 @@ test('先行圧縮の途中で押しても、範囲の始まりを越えてい�
 
 test('3 から戻って範囲を縮めたときは、範囲の終わりで止めた先行圧縮をそのまま使う。範囲を延ばして届かなければ最初からやり直す', async ({ page }) => {
   const starts = async () => ((await diag(page)).match(/先行圧縮を開始/g) || []).length;
-  await open(page, '?probe=on&mode=quality');
+  await open(page, '?probe=on&mode=narubeku');
   await pick(page, '720p-60s.mp4');
   await setTrim(page, 2.5, 20.5);
   await waitPc(page, () => { const p = window.__compressor.precomp().pre; return p && !p.done && p.time >= 3; });
@@ -142,7 +142,7 @@ const failConversion = (page, kind) => page.addInitScript(k => {
 
 test('先行圧縮に失敗したら、同じ設定ではやり直さず、押したら普通に圧縮する', async ({ page }) => {
   await failConversion(page, 'pre');
-  await open(page, '?probe=on&mode=quality');
+  await open(page, '?probe=on&mode=narubeku');
   await pick(page, 'small-5mb.mp4');
   await waitPc(page, () => /先行圧縮に失敗/.test(document.getElementById('diagOut').value), 10000);
   await page.waitForTimeout(2000);
@@ -157,7 +157,7 @@ test('先行圧縮に失敗したら、同じ設定ではやり直さず、押�
 
 test('先行圧縮から切り出せなかったら、普通に圧縮する', async ({ page }) => {
   await failConversion(page, 'cut');
-  await open(page, '?probe=on&mode=quality');
+  await open(page, '?probe=on&mode=narubeku');
   await pick(page, 'small-5mb.mp4');
   await preDone(page);
   await setTrim(page, 0, 3);
@@ -170,7 +170,7 @@ test('先行圧縮から切り出せなかったら、普通に圧縮する', as
 });
 
 test('先行圧縮が範囲の始まりまで届いていなければ、使わずに範囲だけを圧縮する', async ({ page }) => {
-  await open(page, '?probe=on&mode=quality');
+  await open(page, '?probe=on&mode=narubeku');
   await pick(page, '720p-60s.mp4');
   await setTrim(page, 50, 58);
   await waitPc(page, () => { const p = window.__compressor.precomp().pre; return p && p.job && p.time < 40; });
@@ -282,7 +282,7 @@ test('「◯MB以内」の予想は、範囲が目安の長さを超えるかど
 });
 
 test('先行圧縮が範囲の終わりまで済んでいれば、切り出したときの大きさを1コマごとの表から正確に予想する', async ({ page }) => {
-  await open(page, '?probe=on&mode=quality');
+  await open(page, '?probe=on&mode=narubeku');
   await pick(page, '720p-60s.mp4');
   await preDone(page);
   for (const [a, b] of [[0, 21.4], [10.3, 37.7]]) {   // 区切り（約2秒）の途中で始まり・終わる範囲
@@ -354,7 +354,7 @@ test('VBR の指定を守らない端末（Android）でも、先行圧縮は VB
       return orig.call(this, c);
     };
   });
-  await open(page, '?probe=on&mode=quality&audio=off');
+  await open(page, '?probe=on&mode=narubeku&audio=off');
   await pick(page, '720p-60s.mp4');
   await setTrim(page, 0, 10);
   await preDone(page);
@@ -377,7 +377,7 @@ test('指定ビットレートを下げても先行圧縮の大きさが変わ�
     const orig = VideoEncoder.prototype.configure;
     VideoEncoder.prototype.configure = function (c) { return orig.call(this, c.bitrate ? Object.assign({}, c, { bitrate: Math.max(c.bitrate, 3000000) }) : c); };
   });
-  await open(page, '?probe=on&mode=quality&audio=off');
+  await open(page, '?probe=on&mode=narubeku&audio=off');
   await pick(page, '720p-60s.mp4');
   await preDone(page);
   expect((await ui(page)).planWarn).not.toContain('下げられない');
@@ -397,7 +397,7 @@ test('指定ビットレートを下げても先行圧縮の大きさが変わ�
 });
 
 test('前の動画の先行圧縮は、比べるための数字だけを残し、新しい動画を選んだら消す（動画や書き出したデータを持ち続けない）', async ({ page }) => {
-  await open(page, '?probe=on&mode=quality');
+  await open(page, '?probe=on&mode=narubeku');
   await pick(page, 'small-5mb.mp4');
   await preDone(page);
   const last = await page.evaluate(() => {

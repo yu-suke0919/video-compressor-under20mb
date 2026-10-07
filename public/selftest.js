@@ -331,24 +331,24 @@
   // ---------------------------------------------------------------- テストの一覧
   // expect: w,h（解像度）fps audio（true: あるはず / false: ないはず）maxBytes original duration
   var CASES = [
-    { title: '720p → 720p（なるべく圧縮）', video: 'v720', query: 'res=720&mode=quality', expect: { w: 1280, h: 720, fps: 30, audio: true } },
+    { title: '720p → 720p（なるべく圧縮）', video: 'v720', query: 'res=720&mode=narubeku', expect: { w: 1280, h: 720, fps: 30, audio: true } },
     { title: '720p → 2MB以内に圧縮', video: 'v720', query: 'res=720&mode=size&target=2', expect: { w: 1280, h: 720, audio: true, maxBytes: 2 * MB } },
-    { title: '音声をオフ', video: 'v720', query: 'res=720&mode=quality&audio=off', expect: { w: 1280, h: 720, audio: false } },
+    { title: '音声をオフ', video: 'v720', query: 'res=720&mode=narubeku&audio=off', expect: { w: 1280, h: 720, audio: false } },
     // 読み込んだ時点で元の動画を渡せるようになる（「圧縮する」は押さない）
     { title: '目標以下なら元の動画をそのまま渡す', video: 'v720', query: 'res=720&mode=size&target=20', noRun: true, expect: { w: 1280, h: 720, original: true } },
-    { title: 'トリミング（2〜5秒）', video: 'v720', query: 'res=720&mode=quality', trim: [2, 5], expect: { w: 1280, h: 720, duration: 3 } },
+    { title: 'トリミング（2〜5秒）', video: 'v720', query: 'res=720&mode=narubeku', trim: [2, 5], expect: { w: 1280, h: 720, duration: 3 } },
     // 目標に収まるので、再エンコードせずに切り出す（範囲の始まりより前はファイルに入るが再生されないので、長さは範囲どおり）
     { title: 'トリミングのみ（再圧縮なし）', video: 'v720', query: 'res=720&mode=size&target=20', trim: [2, 5], expect: { w: 1280, h: 720, trimOnly: true, duration: 3 } },
-    { title: '1080p60 → 720p30', video: 'v1080p60', query: 'res=720&mode=quality', expect: { w: 1280, h: 720, fps: 30, audio: true } },
+    { title: '1080p60 → 720p30', video: 'v1080p60', query: 'res=720&mode=narubeku', expect: { w: 1280, h: 720, fps: 30, audio: true } },
     // 480p は、2 の解像度でだけ選べる（縦横比はそのまま、短い辺を480に）
-    { title: '1080p60 → 480p30（2 の解像度で選ぶ）', video: 'v1080p60', query: 'res=720&mode=quality', adjRes: '480', expect: { w: 854, h: 480, fps: 30, audio: true } },
-    { title: '1080p60 → 1080p60（fps そのまま）', video: 'v1080p60', query: 'res=1080&mode=quality&fps=source', expect: { w: 1920, h: 1080, fps: 60, audio: true } },
-    { title: '縦長 → 720p', video: 'vVert', query: 'res=720&mode=quality', expect: { w: 720, h: 1280, audio: true } },
-    { title: '縦長 → 1080p', video: 'vVert', query: 'res=1080&mode=quality', expect: { w: 1080, h: 1920, audio: true } },
-    { title: '小さい動画（拡大しない）', video: 'vSmall', query: 'res=720&mode=quality', expect: { w: 320, h: 240 } },
-    { title: 'とても短い動画（0.4秒）', video: 'vShort', query: 'res=720&mode=quality', expect: { w: 1280, h: 720 } },
+    { title: '1080p60 → 480p30（2 の解像度で選ぶ）', video: 'v1080p60', query: 'res=720&mode=narubeku', adjRes: '480', expect: { w: 854, h: 480, fps: 30, audio: true } },
+    { title: '1080p60 → 1080p60（fps そのまま）', video: 'v1080p60', query: 'res=1080&mode=narubeku&fps=source', expect: { w: 1920, h: 1080, fps: 60, audio: true } },
+    { title: '縦長 → 720p', video: 'vVert', query: 'res=720&mode=narubeku', expect: { w: 720, h: 1280, audio: true } },
+    { title: '縦長 → 1080p', video: 'vVert', query: 'res=1080&mode=narubeku', expect: { w: 1080, h: 1920, audio: true } },
+    { title: '小さい動画（拡大しない）', video: 'vSmall', query: 'res=720&mode=narubeku', expect: { w: 320, h: 240 } },
+    { title: 'とても短い動画（0.4秒）', video: 'vShort', query: 'res=720&mode=narubeku', expect: { w: 1280, h: 720 } },
     // 高速モードで扱えない動画のときに使う、再生しながら処理する方式（音声はアプリが自分で AAC にする）
-    { title: '互換モード', video: 'v720', query: 'res=720&mode=quality', compat: true, expect: { w: 1280, h: 720, audio: true } }
+    { title: '互換モード', video: 'v720', query: 'res=720&mode=narubeku', compat: true, expect: { w: 1280, h: 720, audio: true } }
   ];
 
   // ---------------------------------------------------------------- 結果の表示
@@ -507,7 +507,7 @@
       var source = await makeVideo('vLong');
       r.status = 'run';
       render();
-      await openApp('res=720&mode=quality');
+      await openApp('res=720&mode=narubeku');
       await pickInApp(source.file);
       setNotice('圧縮が始まったら、すぐにほかのアプリ（ホーム画面など）に切り替え、10秒ほど待ってから、この画面に戻ってください。');
       setStatus('圧縮中（切り替えて、10秒後に戻ってください）');
@@ -560,9 +560,9 @@
       }
       var source = { file: file, audio: null, label: '手元の動画 ' + fmtMB(file.size) };
       var list = [
-        { title: '手元の動画 → 720p', query: 'res=720&mode=quality', limit: 720 },
-        { title: '手元の動画 → 1080p', query: 'res=1080&mode=quality', limit: 1080 },
-        { title: '手元の動画 → 480p（2 の解像度で選ぶ）', query: 'res=720&mode=quality', limit: 480, adjRes: '480' }
+        { title: '手元の動画 → 720p', query: 'res=720&mode=narubeku', limit: 720 },
+        { title: '手元の動画 → 1080p', query: 'res=1080&mode=narubeku', limit: 1080 },
+        { title: '手元の動画 → 480p（2 の解像度で選ぶ）', query: 'res=720&mode=narubeku', limit: 480, adjRes: '480' }
       ];
       var rows = list.map(function (c) { return addResult(c.title); });
       for (var i = 0; i < list.length; i++) {
@@ -604,7 +604,7 @@
   // ---------------------------------------------------------------- 先行圧縮のテスト
   // 動画を読み込むと、アプリは動画全体を裏で圧縮し（先行圧縮）、書き出した量からサイズを予想する。
   // 「圧縮する」を押したとき、設定が同じで、先行圧縮が範囲の始まりまで届いていれば、先行圧縮から範囲を切り出して結果にする
-  var PRE_QUERY = 'res=720&mode=quality';
+  var PRE_QUERY = 'res=720&mode=narubeku';
   function appState() { return appWin().__compressor.state; }
   function appPre() { return appWin().__compressor.precomp().pre; }
   function appDiag() { return appText('diagOut'); }
