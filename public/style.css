@@ -1007,13 +1007,14 @@ a.btn {
 .easy-mode > .btn {
   flex: none;
 }
+/* 動画の枠は 16:9 に固定する（画面の高さで決めると、Safari のバーの状態で高さが変わり、16:9 の動画に黒い帯が出ていた） */
 .app.easy-app .media-box.is-large,
 .app.easy-app .media-box.is-small,
 .app.easy-app.is-running .media-box.is-small {
   width: 100%;
-  height: 32vh;
-  height: 32svh;
-  min-height: 180px;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  min-height: 0;
 }
 /* 2. 予想の行（現在の設定・予想の大きさ・収まる秒数）は、ほかの補足より1段大きくする */
 .app.easy-app #planInfo {
