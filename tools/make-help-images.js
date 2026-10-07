@@ -138,7 +138,7 @@ async function shootShot(page, name, crop, marks) {
     const pick = await box('#pickBtn');
     await shoot(page, 'step-2', [
       { type: 'frame', sel: '#pickBtn' },
-      { type: 'note', n: '②', text: 'タップして動画を選ぶ', x: 70, y: pick.t + 30, to: [{ x: 195, y: pick.t + (pick.b - pick.t) / 2 - 22 }] }
+      { type: 'note', n: '②', text: 'タップして動画を選ぶ', x: 70, y: pick.t + 12, to: [{ x: 195, y: pick.t + (pick.b - pick.t) / 2 - 36 }] }
     ]);
 
     // 3. 範囲を決めて、圧縮する（実機のスクリーンショット）
