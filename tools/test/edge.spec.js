@@ -18,7 +18,7 @@ test.describe('小さい・短い動画', () => {
   });
 
   test('0.3秒の動画：長さを「0.3秒」と出し、圧縮できる', async ({ page }) => {
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     await pick(page, 'short-0.3s.mp4');
     expect((await ui(page)).srcInfo).toContain('0.3秒');
     await compress(page);
@@ -27,7 +27,7 @@ test.describe('小さい・短い動画', () => {
   });
 
   test('1コマだけの動画も圧縮できる', async ({ page }) => {
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     await pick(page, 'oneframe.mp4');
     await compress(page);
     expect((await outputInfo(page)).videoCodec).toBe('avc');
@@ -57,7 +57,7 @@ test.describe('目標サイズに収まらない長さ', () => {
   });
 
   test('なるべく圧縮なら長くても最後まで圧縮し、20MB超えを知らせる', async ({ page }) => {
-    await open(page, '?mode=quality&min720=3500');   // 1分で20MBを超えるビットレート
+    await open(page, '?mode=narubeku&min720=3500');   // 1分で20MBを超えるビットレート
     await pick(page, '720p-60s.mp4');
     expect((await ui(page)).planWarn).toContain('20MBに収まらない可能性があります');   // 押す前に知らせる
     await compress(page);
@@ -111,7 +111,7 @@ test.describe('音声', () => {
 
   for (const file of ['mp3-audio.mp4', 'opus-audio.mp4']) {
     test(`AAC 以外の音声（${file}）：AAC に変換するか、できない端末では事前に知らせる`, async ({ page }) => {
-      await open(page, '?mode=quality');
+      await open(page, '?mode=narubeku');
       await pick(page, file);
       const aac = await canEncodeAac(page);
       const u = await ui(page);
@@ -123,7 +123,7 @@ test.describe('音声', () => {
   }
 
   test('AAC 5.1ch の音声は残る', async ({ page }) => {
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     await pick(page, 'aac-5.1.mp4');
     await compress(page);
     expect((await outputInfo(page)).audioCodec).toBe('aac');
@@ -209,7 +209,7 @@ test('URL でファイル名の付け方を指定できる', async ({ page }) =>
 });
 
 test('音声が2本ある動画は、メインの音声1本だけを書き出す（大きさの見積もりと合う）', async ({ page }) => {
-  await open(page, '?mode=quality');
+  await open(page, '?mode=narubeku');
   await pick(page, 'two-aac.mp4');
   const countTracks = () => page.evaluate(async () => {
     const M = window.Mediabunny, o = window.__compressor.state.out;
@@ -235,7 +235,7 @@ test('音声が2本ある動画は、メインの音声1本だけを書き出す
 test('「30fps」は、30fps 以下になるまで元の fps を割る（120fps → 30fps）', async ({ page }) => {
   // 元の fps ごとの出力の fps の計算は、単体テスト（tools/test/unit/calc.test.mjs）で確かめる
   // 実際に書き出した動画（120fps → 30fps）
-  await open(page, '?mode=quality&fps=30');
+  await open(page, '?mode=narubeku&fps=30');
   await pick(page, 'hfr-120fps.mp4');
   expect(await page.evaluate(() => Math.round(window.__compressor.state.plan.outFps))).toBe(30);
   await compress(page);

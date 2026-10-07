@@ -104,11 +104,12 @@ export var SETTING_DEFS = [
     key: 'mode', url: 'mode', def: 'size', ids: ['modeQuality', 'modeSize'],
     read: function () { return radioValue('mode', 'size') === 'quality' ? 'quality' : 'size'; },
     write: function (v) { if (v === 'quality') els.modeQuality.checked = true; else if (v === 'size') els.modeSize.checked = true; },
+    // URL では「なるべく圧縮」を narubeku と書く（以前の quality と、別名の max・best も読む）
     fromUrl: function (v) {
       v = v.toLowerCase();
-      return (v === 'max' || v === 'best') ? 'quality' : v === 'target' ? 'size' : v;
+      return (v === 'narubeku' || v === 'max' || v === 'best') ? 'quality' : v === 'target' ? 'size' : v;
     },
-    toUrl: String
+    toUrl: function (v) { return v === 'quality' ? 'narubeku' : v; }
   },
   numberSetting('target', 'targetSize', DEFAULT_TARGET_MB, MIN_TARGET_MB, MAX_TARGET_MB, false, readTargetMB),
   numberSetting('preuse', 'preUse', PRE_USE_PCT_DEFAULT, PRE_USE_PCT_LIMITS[0], PRE_USE_PCT_LIMITS[1], true, readPreUsePct),
@@ -169,7 +170,7 @@ export function hasSettingParams() {
   } catch (e) { return false; }
 }
 // ショートカットなどから URL で初期値を渡せる（詳細設定の項目も含む）
-//   res=480|720|1080|source  mode=size|quality  target=MB  preuse=%  min720=kbps  min1080=kbps  fps=30|source  auto=on|off  audio=on|off
+//   res=480|720|1080|source  mode=size|narubeku  target=MB  preuse=%  min720=kbps  min1080=kbps  fps=30|source  auto=on|off  audio=on|off
 export function applyUrlParams() {
   var params;
   try { params = new URLSearchParams(window.location.search); } catch (e) { return; }

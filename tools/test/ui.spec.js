@@ -92,7 +92,7 @@ test('設定はこの端末に保存され、URL に設定があるときは使�
   await page.waitForTimeout(100);
   await open(page);
   expect(await page.isChecked('#res1080')).toBe(true);
-  await open(page, '?mode=quality');   // URL に設定がある → 保存した設定は使わず、初期値＋URL
+  await open(page, '?mode=narubeku');   // URL に設定がある → 保存した設定は使わず、初期値＋URL
   expect(await page.isChecked('#res720')).toBe(true);
   expect(await page.isChecked('#modeQuality')).toBe(true);
 });
@@ -150,7 +150,7 @@ test('診断情報に、ファイル名の欄に入れた名前や、選んだ�
 test.describe('共有・保存', () => {
   // 短い動画を圧縮して、結果を出しておく
   async function compressed(page) {
-    await open(page, '?mode=quality');
+    await open(page, '?mode=narubeku');
     await pick(page, 'small-5mb.mp4');
     await setTrim(page, 0, 2);
     await compress(page);
